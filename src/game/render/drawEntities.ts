@@ -4,7 +4,7 @@ import type { GameEnemy, GameTower } from '../simulation/createGame';
 import type { Vec2 } from '../types';
 import type { GameAssets, LoadedSprite } from './assetLoader';
 import type { CanvasLayout } from './layout';
-import { worldToScreen } from './drawMap';
+import { isRenderablePoint, worldToScreen } from './drawMap';
 import type { SpriteDirection } from './spriteManifest';
 
 export type RenderEntitiesSnapshot = {
@@ -72,36 +72,6 @@ function towerSprite(
   return assets.towers.arrow[movementDirection(vector)];
 }
 
-function drawTowers(
-  ctx: CanvasRenderingContext2D,
-  layout: CanvasLayout,
-  snapshot: RenderEntitiesSnapshot,
-  assets: GameAssets,
-): void {
-  const labels = { slow: 'S', arrow: 'A', deokbae: 'D', huchu: 'H' } as const;
-  const colors = {
-    slow: '#7563c8',
-    arrow: '#b68d48',
-    deokbae: '#d9673d',
-    huchu: '#35acc7',
-  } as const;
-  const towers = [...snapshot.towers].sort((left, right) => (
-    left.position.y - right.position.y || left.id - right.id
-  ));
-
-  for (const tower of towers) {
-    const center = worldToScreen(layout, tower.position);
-    drawSprite(
-      ctx,
-      towerSprite(tower, snapshot, assets),
-      center,
-      layout.cellSize * 1.75,
-      colors[tower.type],
-      labels[tower.type],
-    );
-  }
-}
-
 function drawEnemyHp(
   ctx: CanvasRenderingContext2D,
   layout: CanvasLayout,
@@ -112,7 +82,11 @@ function drawEnemyHp(
   const height = Math.max(3, layout.cellSize * 0.09);
   const x = center.x - width / 2;
   const y = center.y - layout.cellSize * 0.57;
-  const hpRatio = Math.max(0, Math.min(1, enemy.hp / enemy.maxHp));
+  const hpRatio = Number.isFinite(enemy.hp)
+    && Number.isFinite(enemy.maxHp)
+    && enemy.maxHp > 0
+    ? Math.max(0, Math.min(1, enemy.hp / enemy.maxHp))
+    : 0;
 
   ctx.fillStyle = 'rgba(44, 38, 32, 0.72)';
   ctx.fillRect(x, y, width, height);
@@ -120,38 +94,43 @@ function drawEnemyHp(
   ctx.fillRect(x, y, width * hpRatio, height);
 }
 
-function drawEnemies(
-  ctx: CanvasRenderingContext2D,
-  layout: CanvasLayout,
-  enemies: readonly Readonly<GameEnemy>[],
-  assets: GameAssets,
-): void {
-  const sizes = { slime: 1.25, fairy: 1.28, orc: 1.38, golem: 1.5, minotaur: 1.72 } as const;
-  const colors = {
-    slime: '#78c96d',
-    fairy: '#77cbd6',
-    orc: '#5f9b56',
-    golem: '#85877f',
-    minotaur: '#9b6048',
-  } as const;
-  const visible = enemies
-    .map((enemy) => ({ enemy, position: enemyPosition(enemy) }))
-    .filter((item): item is { enemy: Readonly<GameEnemy>; position: Vec2 } => item.position !== undefined)
-    .sort((left, right) => left.position.y - right.position.y || left.enemy.id - right.enemy.id);
+const TOWER_LABELS = { slow: 'S', arrow: 'A', deokbae: 'D', huchu: 'H' } as const;
+const TOWER_COLORS = {
+  slow: '#7563c8',
+  arrow: '#b68d48',
+  deokbae: '#d9673d',
+  huchu: '#35acc7',
+} as const;
+const ENEMY_SIZES = { slime: 1.25, fairy: 1.28, orc: 1.38, golem: 1.5, minotaur: 1.72 } as const;
+const ENEMY_COLORS = {
+  slime: '#78c96d',
+  fairy: '#77cbd6',
+  orc: '#5f9b56',
+  golem: '#85877f',
+  minotaur: '#9b6048',
+} as const;
 
-  for (const { enemy, position } of visible) {
-    const center = worldToScreen(layout, position);
-    const direction = movementDirection(enemyMovement(enemy));
-    drawSprite(
-      ctx,
-      assets.enemies[enemy.type][direction],
-      center,
-      layout.cellSize * sizes[enemy.type],
-      colors[enemy.type],
-      enemy.type.slice(0, 1).toUpperCase(),
-    );
-    drawEnemyHp(ctx, layout, enemy, center);
-  }
+type TowerBody = {
+  kind: 'tower';
+  entity: Readonly<GameTower>;
+  center: Vec2;
+  order: number;
+};
+
+type EnemyBody = {
+  kind: 'enemy';
+  entity: Readonly<GameEnemy>;
+  center: Vec2;
+  order: number;
+};
+
+type EntityBody = TowerBody | EnemyBody;
+
+function compareBodies(left: EntityBody, right: EntityBody): number {
+  return left.center.y - right.center.y
+    || (left.kind === right.kind ? 0 : left.kind === 'tower' ? -1 : 1)
+    || left.entity.id - right.entity.id
+    || left.order - right.order;
 }
 
 export function drawEntities(
@@ -160,6 +139,43 @@ export function drawEntities(
   snapshot: RenderEntitiesSnapshot,
   assets: GameAssets,
 ): void {
-  drawTowers(ctx, layout, snapshot, assets);
-  drawEnemies(ctx, layout, snapshot.enemies, assets);
+  const bodies: EntityBody[] = [];
+  snapshot.towers.forEach((tower, order) => {
+    if (!isRenderablePoint(layout, tower.position)) return;
+    bodies.push({ kind: 'tower', entity: tower, center: worldToScreen(layout, tower.position), order });
+  });
+  snapshot.enemies.forEach((enemy, order) => {
+    const position = enemyPosition(enemy);
+    if (position === undefined || !isRenderablePoint(layout, position)) return;
+    bodies.push({ kind: 'enemy', entity: enemy, center: worldToScreen(layout, position), order });
+  });
+  bodies.sort(compareBodies);
+
+  for (const body of bodies) {
+    if (body.kind === 'tower') {
+      const tower = body.entity;
+      drawSprite(
+        ctx,
+        towerSprite(tower, snapshot, assets),
+        body.center,
+        layout.cellSize * 1.75,
+        TOWER_COLORS[tower.type],
+        TOWER_LABELS[tower.type],
+      );
+    } else {
+      const enemy = body.entity;
+      drawSprite(
+        ctx,
+        assets.enemies[enemy.type][movementDirection(enemyMovement(enemy))],
+        body.center,
+        layout.cellSize * ENEMY_SIZES[enemy.type],
+        ENEMY_COLORS[enemy.type],
+        enemy.type.slice(0, 1).toUpperCase(),
+      );
+    }
+  }
+
+  for (const body of bodies) {
+    if (body.kind === 'enemy') drawEnemyHp(ctx, layout, body.entity, body.center);
+  }
 }

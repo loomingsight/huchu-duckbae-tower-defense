@@ -22,13 +22,30 @@ export type MapSelection = {
 
 export type ScreenPoint = { x: number; y: number };
 
+export function isFinitePoint(point: Readonly<{ x: number; y: number }>): boolean {
+  return Number.isFinite(point.x) && Number.isFinite(point.y);
+}
+
+export function isRenderablePoint(
+  layout: CanvasLayout,
+  point: Readonly<{ x: number; y: number }>,
+): boolean {
+  return isFinitePoint(point)
+    && Number.isFinite(layout.mapArea.x + point.x * layout.cellSize)
+    && Number.isFinite(layout.mapArea.y + point.y * layout.cellSize);
+}
+
 export function worldToScreen(
   layout: CanvasLayout,
   point: Readonly<{ x: number; y: number }>,
 ): ScreenPoint {
+  const x = Number.isFinite(point.x) ? point.x : 0;
+  const y = Number.isFinite(point.y) ? point.y : 0;
+  const screenX = layout.mapArea.x + x * layout.cellSize;
+  const screenY = layout.mapArea.y + y * layout.cellSize;
   return {
-    x: alignToDevicePixel(layout.mapArea.x + point.x * layout.cellSize, layout.dpr),
-    y: alignToDevicePixel(layout.mapArea.y + point.y * layout.cellSize, layout.dpr),
+    x: alignToDevicePixel(Number.isFinite(screenX) ? screenX : layout.mapArea.x, layout.dpr),
+    y: alignToDevicePixel(Number.isFinite(screenY) ? screenY : layout.mapArea.y, layout.dpr),
   };
 }
 
@@ -99,20 +116,34 @@ function drawSelection(
 ): void {
   if (selection.cell == null) return;
   const { cell } = selection;
-  if (cell.col < 0 || cell.col >= STAGE_1.width || cell.row < 0 || cell.row >= STAGE_1.height) {
+  if (
+    !Number.isInteger(cell.col)
+    || !Number.isInteger(cell.row)
+    || cell.col < 0
+    || cell.col >= STAGE_1.width
+    || cell.row < 0
+    || cell.row >= STAGE_1.height
+  ) {
     return;
   }
 
   const edges = cellEdges(layout, cell);
-  if (selection.range !== undefined && selection.range > 0) {
+  if (
+    selection.range !== undefined
+    && Number.isFinite(selection.range)
+    && selection.range > 0
+  ) {
     const center = worldToScreen(layout, cellCenter(cell));
-    ctx.fillStyle = COLORS.range;
-    ctx.strokeStyle = COLORS.rangeEdge;
-    ctx.lineWidth = Math.max(1, 1 / layout.dpr);
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, selection.range * layout.cellSize, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
+    const radius = selection.range * layout.cellSize;
+    if (Number.isFinite(radius)) {
+      ctx.fillStyle = COLORS.range;
+      ctx.strokeStyle = COLORS.rangeEdge;
+      ctx.lineWidth = Math.max(1, 1 / layout.dpr);
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
   }
 
   ctx.fillStyle = COLORS.selected;

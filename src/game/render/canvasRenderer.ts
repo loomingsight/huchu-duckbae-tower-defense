@@ -10,7 +10,8 @@ import type { Cell } from '../types';
 import type { GameAssets } from './assetLoader';
 import { drawEntities } from './drawEntities';
 import {
-  drawCombatEffects,
+  drawForegroundEffects,
+  drawGroundEffects,
   drawOrientationPrompt,
   drawPauseOverlay,
   type FloatingGold,
@@ -98,11 +99,10 @@ export function createCanvasRenderer(
       cell: options.selectedCell,
       range: options.selectedRange,
     });
+    const timeSeconds = Number.isFinite(options.timeSeconds) ? options.timeSeconds ?? 0 : 0;
+    drawGroundEffects(context, layout, snapshot, timeSeconds);
     drawEntities(context, layout, snapshot, assets);
-    drawCombatEffects(context, layout, snapshot, {
-      timeSeconds: options.timeSeconds ?? 0,
-      floatingGold: options.floatingGold ?? [],
-    });
+    drawForegroundEffects(context, layout, snapshot, options.floatingGold ?? []);
     if (options.paused === true) drawPauseOverlay(context, layout);
     context.restore();
 

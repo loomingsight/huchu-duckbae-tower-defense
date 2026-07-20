@@ -6,7 +6,7 @@ import type {
 } from '../simulation/createGame';
 import type { Vec2 } from '../types';
 import type { CanvasLayout } from './layout';
-import { worldToScreen } from './drawMap';
+import { isRenderablePoint, worldToScreen } from './drawMap';
 
 export type FloatingGold = {
   readonly position: Readonly<Vec2>;
@@ -28,7 +28,7 @@ function drawSlowAuras(
 ): void {
   const pulse = 0.94 + Math.sin(timeSeconds * 3.5) * 0.04;
   for (const tower of towers) {
-    if (tower.type !== 'slow') continue;
+    if (tower.type !== 'slow' || !isRenderablePoint(layout, tower.position)) continue;
     const center = worldToScreen(layout, tower.position);
     const radius = TOWER_CATALOG.slow.range * layout.cellSize * pulse;
     ctx.fillStyle = 'rgba(116, 102, 215, 0.075)';
@@ -77,6 +77,7 @@ function drawProjectiles(
   projectiles: readonly Readonly<GameProjectile>[],
 ): void {
   for (const projectile of projectiles) {
+    if (!isRenderablePoint(layout, projectile.position)) continue;
     const center = worldToScreen(layout, projectile.position);
     const size = Math.max(5, layout.cellSize * 0.2);
     if (projectile.towerType === 'arrow') {
@@ -94,8 +95,10 @@ function drawHitEvent(
   layout: CanvasLayout,
   event: Readonly<GameHitEvent>,
 ): void {
+  if (!isRenderablePoint(layout, event.position) || !Number.isFinite(event.radius)) return;
   const center = worldToScreen(layout, event.position);
   const effectRadius = Math.max(layout.cellSize * 0.24, event.radius * layout.cellSize);
+  if (!Number.isFinite(effectRadius)) return;
 
   if (event.towerType === 'arrow') {
     ctx.strokeStyle = '#ffe399';
@@ -138,6 +141,14 @@ function drawFloatingGold(
   ctx.textBaseline = 'middle';
   ctx.font = `800 ${Math.max(11, layout.cellSize * 0.32)}px system-ui, sans-serif`;
   for (const pop of gold) {
+    if (
+      !isRenderablePoint(layout, pop.position)
+      || !Number.isFinite(pop.value)
+      || !Number.isFinite(pop.ageSeconds)
+      || pop.ageSeconds >= 0.9
+    ) {
+      continue;
+    }
     const center = worldToScreen(layout, pop.position);
     const age = Math.max(0, pop.ageSeconds);
     ctx.globalAlpha = Math.max(0, 1 - age / 0.9);
@@ -147,16 +158,24 @@ function drawFloatingGold(
   ctx.globalAlpha = 1;
 }
 
-export function drawCombatEffects(
+export function drawGroundEffects(
   ctx: CanvasRenderingContext2D,
   layout: CanvasLayout,
   snapshot: EffectSnapshot,
-  options: Readonly<{ timeSeconds: number; floatingGold: readonly FloatingGold[] }>,
+  timeSeconds: number,
 ): void {
-  drawSlowAuras(ctx, layout, snapshot.towers, options.timeSeconds);
+  drawSlowAuras(ctx, layout, snapshot.towers, timeSeconds);
+}
+
+export function drawForegroundEffects(
+  ctx: CanvasRenderingContext2D,
+  layout: CanvasLayout,
+  snapshot: EffectSnapshot,
+  floatingGold: readonly FloatingGold[],
+): void {
   drawProjectiles(ctx, layout, snapshot.projectiles);
   for (const event of snapshot.hitEvents) drawHitEvent(ctx, layout, event);
-  drawFloatingGold(ctx, layout, options.floatingGold);
+  drawFloatingGold(ctx, layout, floatingGold);
 }
 
 export function drawPauseOverlay(
