@@ -1,4 +1,7 @@
 import type { GameState } from './createGame';
+import { updateProjectiles } from '../combat/updateProjectiles';
+import { updateSlow } from '../combat/updateSlow';
+import { updateTowers } from '../combat/updateTowers';
 import { updateEnemies } from './updateEnemies';
 import { updateWaves } from './updateWaves';
 import { STAGE_1_WAVES } from '../waves/stage1Waves';
@@ -8,6 +11,9 @@ export function updateGame(state: GameState, dt: number): void {
 
   const safeDt = Number.isFinite(dt) && dt >= 0 ? dt : 0;
   const hadEnemies = state.enemies.length > 0;
+  updateSlow(state);
+  updateTowers(state, safeDt);
+  updateProjectiles(state, safeDt);
   updateEnemies(state, safeDt);
   if (state.baseHp === 0) return;
 

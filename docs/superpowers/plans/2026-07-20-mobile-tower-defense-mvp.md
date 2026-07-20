@@ -298,6 +298,7 @@ git commit -m "feat: add five enemies and ten-wave stage flow"
 - Create: `src/game/combat/updateSlow.ts`
 - Create: `src/game/combat/updateTowers.ts`
 - Create: `src/game/combat/updateProjectiles.ts`
+- Modify: `src/game/simulation/createGame.ts`
 - Create: `src/game/simulation/placeTower.ts`
 - Modify: `src/game/simulation/updateGame.ts`
 - Test: `tests/game/placement.test.ts`
