@@ -1,12 +1,22 @@
 import type { GameState } from './createGame';
 import { updateEnemies } from './updateEnemies';
 import { updateWaves } from './updateWaves';
+import { STAGE_1_WAVES } from '../waves/stage1Waves';
 
 export function updateGame(state: GameState, dt: number): void {
   if (state.outcome !== 'playing') return;
 
-  updateWaves(state, dt);
-  updateEnemies(state, dt);
+  const safeDt = Number.isFinite(dt) && dt >= 0 ? dt : 0;
+  const hadEnemies = state.enemies.length > 0;
+  updateEnemies(state, safeDt);
+  if (state.baseHp === 0) return;
+
+  const currentWave = STAGE_1_WAVES[state.wave.index];
+  const clearedCompletedWave = hadEnemies
+    && state.enemies.length === 0
+    && currentWave !== undefined
+    && state.wave.groupIndex >= currentWave.groups.length;
+  updateWaves(state, clearedCompletedWave ? 0 : safeDt);
 
   if (state.outcome === 'playing' && state.wave.allSpawned && state.enemies.length === 0) {
     state.outcome = 'victory';

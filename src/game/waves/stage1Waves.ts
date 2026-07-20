@@ -1,4 +1,4 @@
-import type { EnemyType } from '../enemies/enemyCatalog';
+import { ENEMY_TYPES, type EnemyType } from '../enemies/enemyCatalog';
 
 export type WaveGroup = {
   type: EnemyType;
@@ -9,6 +9,20 @@ export type WaveGroup = {
 export type Wave = {
   groups: readonly WaveGroup[];
 };
+
+export function isValidWaveGroup(group: unknown): group is WaveGroup {
+  if (typeof group !== 'object' || group === null) return false;
+  const candidate = group as Partial<WaveGroup>;
+  const { type, count, spawnInterval } = candidate;
+  return typeof type === 'string'
+    && (ENEMY_TYPES as readonly string[]).includes(type)
+    && typeof count === 'number'
+    && Number.isInteger(count)
+    && count > 0
+    && typeof spawnInterval === 'number'
+    && Number.isFinite(spawnInterval)
+    && spawnInterval >= 0;
+}
 
 export const STAGE_1_WAVES: readonly Wave[] = [
   { groups: [{ type: 'slime', count: 8, spawnInterval: 0.7 }] },

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { STAGE_1_WAVES } from '../../src/game/waves/stage1Waves';
+import { createGame } from '../../src/game/simulation/createGame';
+import { updateWaves } from '../../src/game/simulation/updateWaves';
+import { isValidWaveGroup, STAGE_1_WAVES } from '../../src/game/waves/stage1Waves';
 
 describe('stage 1 waves', () => {
   it('contains ten declarative waves', () => {
@@ -10,5 +12,34 @@ describe('stage 1 waves', () => {
     expect(STAGE_1_WAVES.slice(0, 9).flatMap((wave) => wave.groups)
       .some((group) => group.type === 'minotaur')).toBe(false);
     expect(STAGE_1_WAVES[9].groups.some((group) => group.type === 'minotaur')).toBe(true);
+  });
+
+  it('matches ten seconds of spawning when the same time is partitioned', () => {
+    const wholeStep = createGame();
+    const partitioned = createGame();
+
+    updateWaves(wholeStep, 10);
+    for (let index = 0; index < 10; index += 1) updateWaves(partitioned, 1);
+
+    expect(wholeStep).toEqual(partitioned);
+  });
+
+  it('ignores zero or invalid elapsed time without spawning an enemy', () => {
+    const state = createGame();
+
+    updateWaves(state, 0);
+    updateWaves(state, -1);
+    updateWaves(state, Number.NaN);
+    updateWaves(state, Number.POSITIVE_INFINITY);
+
+    expect(state.enemies).toEqual([]);
+    expect(state.wave.spawnCooldown).toBe(0);
+  });
+
+  it('rejects malformed groups so a zero-time spawn loop cannot be scheduled', () => {
+    expect(isValidWaveGroup({ type: 'slime', count: 0, spawnInterval: 0 })).toBe(false);
+    expect(isValidWaveGroup({ type: 'slime', count: Number.POSITIVE_INFINITY, spawnInterval: 0 }))
+      .toBe(false);
+    expect(isValidWaveGroup({ type: 'slime', count: 1, spawnInterval: Number.NaN })).toBe(false);
   });
 });

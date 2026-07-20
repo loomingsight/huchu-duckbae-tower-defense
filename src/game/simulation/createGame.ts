@@ -18,6 +18,7 @@ export type WaveState = {
   spawnedInGroup: number;
   spawnCooldown: number;
   delayRemaining: number;
+  delayActive: boolean;
   allSpawned: boolean;
 };
 
@@ -43,6 +44,7 @@ export function createGame(_seed?: number): GameState {
       spawnedInGroup: 0,
       spawnCooldown: 0,
       delayRemaining: 0,
+      delayActive: false,
       allSpawned: false,
     },
   };
