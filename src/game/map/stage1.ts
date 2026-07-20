@@ -35,7 +35,12 @@ const pathCells = expandPath(WAYPOINTS);
 const pathCellKeys = new Set(pathCells.map(({ col, row }) => `${col}:${row}`));
 
 function isBuildableCell(cell: Cell, occupiedCells: readonly Cell[]): boolean {
-  const isInBounds = cell.col >= 0 && cell.col < GRID_WIDTH && cell.row >= 0 && cell.row < GRID_HEIGHT;
+  const isInBounds = Number.isInteger(cell.col)
+    && Number.isInteger(cell.row)
+    && cell.col >= 0
+    && cell.col < GRID_WIDTH
+    && cell.row >= 0
+    && cell.row < GRID_HEIGHT;
   if (!isInBounds || pathCellKeys.has(`${cell.col}:${cell.row}`)) {
     return false;
   }

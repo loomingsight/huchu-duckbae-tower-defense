@@ -14,7 +14,10 @@ export function createFixedStepLoop({ update, render }: FixedStepLoopOptions): F
 
   return {
     tick(frameDeltaSeconds) {
-      accumulator += Math.min(frameDeltaSeconds, MAX_FRAME_DELTA_SECONDS);
+      const safeFrameDelta = Number.isFinite(frameDeltaSeconds) && frameDeltaSeconds >= 0
+        ? Math.min(frameDeltaSeconds, MAX_FRAME_DELTA_SECONDS)
+        : 0;
+      accumulator += safeFrameDelta;
 
       while (accumulator >= FIXED_STEP_SECONDS) {
         update(FIXED_STEP_SECONDS);

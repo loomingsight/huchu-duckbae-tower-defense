@@ -27,4 +27,22 @@ describe('fixed-step loop', () => {
 
     expect(updates).toHaveLength(15);
   });
+
+  it('ignores invalid frame deltas without poisoning later valid ticks', () => {
+    const updates: number[] = [];
+    let renders = 0;
+    const loop = createFixedStepLoop({
+      update: (deltaSeconds) => updates.push(deltaSeconds),
+      render: () => { renders += 1; },
+    });
+
+    loop.tick(-1);
+    loop.tick(Number.NaN);
+    loop.tick(Number.POSITIVE_INFINITY);
+    loop.tick(Number.NEGATIVE_INFINITY);
+    loop.tick(0.1);
+
+    expect(updates).toEqual(Array.from({ length: 6 }, () => 1 / 60));
+    expect(renders).toBe(5);
+  });
 });
