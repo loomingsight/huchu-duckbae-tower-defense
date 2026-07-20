@@ -96,7 +96,7 @@ export function createGameRuntime(dependencies: GameRuntimeDependencies): GameRu
     const safeTimestamp = Number.isFinite(timestampMs) ? timestampMs : (lastFrameMs ?? 0);
     const deltaSeconds = lastFrameMs === null ? 0 : Math.max(0, (safeTimestamp - lastFrameMs) / 1000);
     lastFrameMs = safeTimestamp;
-    loop.tick(canUpdate() ? deltaSeconds * speed : 0);
+    loop.tick(deltaSeconds, canUpdate() ? speed : 0);
     scheduleFrame();
   }
 

@@ -1,4 +1,6 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type TestInfo } from '@playwright/test';
+
+type TowerCell = Readonly<{ col: number; row: number }>;
 
 type ClockSnapshot = {
   phase: 'ready' | 'playing' | 'paused' | 'victory' | 'defeat';
@@ -9,6 +11,7 @@ type ClockSnapshot = {
   damagedEnemyCount: number;
   baseHp: number;
   gold: number;
+  towerCells: TowerCell[];
   pendingFrames: number;
   totalFrameRequests: number;
 };
@@ -38,20 +41,32 @@ async function startGame(page: Page): Promise<void> {
 }
 
 async function placeTower(page: Page, name: string, col: number, row: number): Promise<void> {
-  await page.getByRole('button', { name: new RegExp(name) }).click();
+  const towerButton = page.getByRole('button', { name: new RegExp(name) });
+  if (await towerButton.getAttribute('aria-pressed') !== 'true') await towerButton.click();
   const box = await page.locator('canvas').boundingBox();
   if (box === null) throw new Error('Canvas has no layout box');
   const gameWidth = Math.min(box.width, box.height * 16 / 9);
   const gameHeight = gameWidth * 9 / 16;
   const offsetX = (box.width - gameWidth) / 2;
   const offsetY = (box.height - gameHeight) / 2;
-  const cellSize = gameWidth / 20;
+  const cellSize = Math.min(gameWidth / 20, gameHeight / 10);
+  const mapWidth = cellSize * 20;
+  const mapHeight = cellSize * 10;
+  const mapOffsetX = offsetX + (gameWidth - mapWidth) / 2;
+  const mapOffsetY = offsetY + (gameHeight - mapHeight) / 2;
   await page.locator('canvas').click({
     position: {
-      x: offsetX + (col + 0.5) * cellSize,
-      y: offsetY + (row + 0.5) * cellSize,
+      x: mapOffsetX + (col + 0.5) * cellSize,
+      y: mapOffsetY + (row + 0.5) * cellSize,
     },
   });
+  expect((await clockSnapshot(page)).towerCells).toContainEqual({ col, row });
+}
+
+function screenshotPath(testInfo: TestInfo, filename: string): string {
+  return process.env.UPDATE_QA_SCREENSHOTS === '1'
+    ? `docs/qa/${filename}`
+    : testInfo.outputPath(filename);
 }
 
 function captureConsoleErrors(page: Page): string[] {
@@ -63,7 +78,7 @@ function captureConsoleErrors(page: Page): string[] {
   return errors;
 }
 
-test('844x390 touch flow builds, controls time, and progresses deterministically', async ({ page }) => {
+test('844x390 touch flow builds, controls time, and progresses deterministically', async ({ page }, testInfo) => {
   const consoleErrors = captureConsoleErrors(page);
   await startGame(page);
   const initial = await clockSnapshot(page);
@@ -71,8 +86,17 @@ test('844x390 touch flow builds, controls time, and progresses deterministically
   await placeTower(page, '화살 타워', 2, 5);
   await expect(page.locator('[data-hud="gold"]')).toHaveText('350');
 
+  const beforeOneTimes = await clockSnapshot(page);
+  const afterOneTimes = await advance(page, 250);
+  const oneTimesElapsed = afterOneTimes.elapsedSeconds - beforeOneTimes.elapsedSeconds;
   await page.getByRole('button', { name: '게임 속도 1×, 변경' }).click();
   await expect(page.getByRole('button', { name: '게임 속도 2×, 변경' })).toBeVisible();
+  const beforeTwoTimes = await clockSnapshot(page);
+  const afterTwoTimes = await advance(page, 250);
+  const twoTimesElapsed = afterTwoTimes.elapsedSeconds - beforeTwoTimes.elapsedSeconds;
+  expect(oneTimesElapsed).toBeCloseTo(0.25, 10);
+  expect(twoTimesElapsed).toBeCloseTo(0.5, 10);
+  expect(twoTimesElapsed / oneTimesElapsed).toBeCloseTo(2, 10);
   await page.getByRole('button', { name: '게임 일시정지' }).click();
   const paused = await clockSnapshot(page);
   const stillPaused = await advance(page, 2_000);
@@ -87,11 +111,11 @@ test('844x390 touch flow builds, controls time, and progresses deterministically
     || progressed.maxEnemyProgress > beforeProgress.maxEnemyProgress
     || progressed.damagedEnemyCount > beforeProgress.damagedEnemyCount,
   ).toBe(true);
-  await page.screenshot({ path: 'docs/qa/landscape-844x390.png' });
+  await page.screenshot({ path: screenshotPath(testInfo, 'landscape-844x390.png') });
   expect(consoleErrors).toEqual([]);
 });
 
-test('victory overlay appears and restart resets the game', async ({ page }) => {
+test('victory overlay appears and restart resets the game', async ({ page }, testInfo) => {
   const consoleErrors = captureConsoleErrors(page);
   await startGame(page);
   await placeTower(page, '후추 타워', 8, 5);
@@ -114,7 +138,7 @@ test('victory overlay appears and restart resets the game', async ({ page }) => 
   }
 
   await expect(page.getByRole('heading', { name: '간식 창고를 지켰어요!' })).toBeVisible();
-  await page.screenshot({ path: 'docs/qa/victory-844x390.png' });
+  await page.screenshot({ path: screenshotPath(testInfo, 'victory-844x390.png') });
   await page.getByRole('button', { name: '다시 하기' }).click();
   const restarted = await clockSnapshot(page);
   expect(restarted).toMatchObject({
@@ -128,7 +152,7 @@ test('victory overlay appears and restart resets the game', async ({ page }) => 
   expect(consoleErrors).toEqual([]);
 });
 
-test('defeat can repeat without multiplying the animation lifecycle', async ({ page }) => {
+test('defeat can repeat without multiplying the animation lifecycle', async ({ page }, testInfo) => {
   const consoleErrors = captureConsoleErrors(page);
   await startGame(page);
 
@@ -138,7 +162,9 @@ test('defeat can repeat without multiplying the animation lifecycle', async ({ p
       if (state.phase === 'defeat') break;
     }
     await expect(page.getByRole('heading', { name: '간식 창고가 비었어요' })).toBeVisible();
-    if (run === 0) await page.screenshot({ path: 'docs/qa/defeat-844x390.png' });
+    if (run === 0) {
+      await page.screenshot({ path: screenshotPath(testInfo, 'defeat-844x390.png') });
+    }
     await page.getByRole('button', { name: '다시 도전' }).click();
     const restarted = await clockSnapshot(page);
     expect(restarted.pendingFrames).toBe(1);
@@ -149,7 +175,7 @@ test('defeat can repeat without multiplying the animation lifecycle', async ({ p
   expect(consoleErrors).toEqual([]);
 });
 
-test('390x844 portrait prompt blocks simulation progress', async ({ page }) => {
+test('390x844 portrait prompt blocks simulation progress', async ({ page }, testInfo) => {
   const consoleErrors = captureConsoleErrors(page);
   await startGame(page);
   await page.setViewportSize({ width: 390, height: 844 });
@@ -159,6 +185,6 @@ test('390x844 portrait prompt blocks simulation progress', async ({ page }) => {
 
   expect(after.elapsedSeconds).toBe(before.elapsedSeconds);
   expect(after.enemyCount).toBe(before.enemyCount);
-  await page.screenshot({ path: 'docs/qa/portrait-390x844.png' });
+  await page.screenshot({ path: screenshotPath(testInfo, 'portrait-390x844.png') });
   expect(consoleErrors).toEqual([]);
 });

@@ -23,6 +23,12 @@ npm run test:e2e
 
 `npm run test:e2e`는 로컬 Vite 서버와 Chromium을 자동으로 시작합니다. Playwright 브라우저가 없는 환경에서는 먼저 `npx playwright install chromium`을 실행합니다. QA 범위와 최신 캡처는 [`docs/qa/mvp-verification.md`](docs/qa/mvp-verification.md)에 기록합니다.
 
+일반 E2E 실행의 스크린샷과 trace는 gitignored `test-results/`에 저장됩니다. 추적 중인 `docs/qa/*.png`를 명시적으로 갱신할 때만 다음 명령을 사용합니다.
+
+```bash
+UPDATE_QA_SCREENSHOTS=1 npm run test:e2e
+```
+
 ## 조작법
 
 - 시작 화면의 `게임 시작`을 누릅니다

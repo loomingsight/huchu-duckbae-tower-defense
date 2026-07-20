@@ -2,5 +2,8 @@ node_modules/
 dist/
 playwright-report/
 test-results/
+.playwright-cli/
+.superpowers/
+output/
 *.tsbuildinfo
 .DS_Store

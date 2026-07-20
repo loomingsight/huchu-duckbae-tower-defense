@@ -68,24 +68,40 @@ describe('GameRuntime lifecycle', () => {
     const { runtime, scheduler, renders } = setupRuntime((delta) => updates.push(delta));
     runtime.startFrames();
     runtime.startGame();
+    runtime.toggleSpeed();
 
     scheduler.frame(0);
     scheduler.frame(100);
-    expect(updates).toHaveLength(6);
+    expect(updates).toHaveLength(12);
 
     runtime.togglePause();
     scheduler.frame(200);
-    expect(updates).toHaveLength(6);
+    expect(updates).toHaveLength(12);
 
     runtime.togglePause();
     runtime.setPortraitBlocked(true);
     scheduler.frame(1_200);
-    expect(updates).toHaveLength(6);
+    expect(updates).toHaveLength(12);
 
     runtime.setPortraitBlocked(false);
     scheduler.frame(1_300);
-    expect(updates).toHaveLength(12);
+    expect(updates).toHaveLength(24);
     expect(renders()).toBeGreaterThanOrEqual(5);
+  });
+
+  it('advances 500ms of simulation for one 250ms frame at 2x', () => {
+    const updates: number[] = [];
+    const { runtime, scheduler } = setupRuntime((delta) => updates.push(delta));
+    runtime.startFrames();
+    runtime.startGame();
+    runtime.toggleSpeed();
+
+    scheduler.frame(0);
+    scheduler.frame(250);
+
+    expect(updates).toHaveLength(30);
+    expect(runtime.getSnapshot().elapsedSeconds).toBeCloseTo(0.5, 10);
+    expect(new Set(updates)).toEqual(new Set([1 / 60]));
   });
 
   it('stops after a terminal outcome but keeps rendering', () => {
@@ -103,6 +119,7 @@ describe('GameRuntime lifecycle', () => {
     });
     runtime.startFrames();
     runtime.startGame();
+    runtime.toggleSpeed();
 
     scheduler.frame(0);
     scheduler.frame(100);

@@ -81,4 +81,15 @@ describe('project harness', () => {
       expect(orchestrator).toContain(token);
     }
   });
+
+  it('keeps specialist constraints aligned with the landscape no-upgrade MVP', () => {
+    const architect = readFileSync('.codex/agents/game-architect.md', 'utf8');
+    const balanceDesigner = readFileSync('.codex/agents/balance-economy-designer.md', 'utf8');
+
+    expect(architect).toContain('모바일 가로 화면 16:9');
+    expect(architect).not.toMatch(/세로 화면.*먼저|세로.*우선/);
+    expect(balanceDesigner).toContain('타워 배치 비용');
+    expect(balanceDesigner).toContain('업그레이드·판매·이동은 MVP 범위에서 제외');
+    expect(balanceDesigner).not.toContain('업그레이드 비용');
+  });
 });

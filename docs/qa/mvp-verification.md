@@ -7,7 +7,7 @@
 | 명령 | 결과 |
 | --- | --- |
 | `npm test -- tests/game/effects.test.ts` | PASS, 1 file / 11 tests |
-| `npm run test` | PASS, 22 files / 114 tests |
+| `npm run test` | PASS, 22 files / 119 tests |
 | `npm run build` | PASS, TypeScript + Vite production build, 36 modules transformed |
 | `npm run test:e2e` | PASS, Chromium 4 / 4 tests, 1 worker |
 
@@ -16,7 +16,8 @@
 ## 브라우저 수락 범위
 
 - 844×390: 게임 시작, 화살 타워 선택, buildable cell 배치, 골드 450→350 확인
-- 844×390: 2× 전환, pause 중 debug clock 2초 전진에도 elapsed 고정, resume 뒤 wave index·최대 path 진행도·피해 적 수 중 하나가 실제 증가함을 확인
+- 844×390: debug clock 250ms씩 전진해 1× elapsed 0.25초, 2× elapsed 0.5초와 실제 2배 비율을 확인하고, pause 중 debug clock 2초 전진에도 elapsed 고정, resume 뒤 wave index·최대 path 진행도·피해 적 수 중 하나가 실제 증가함을 확인
+- 844×390: 내부 map letterbox를 반영한 cell center를 탭하고 debug snapshot의 설치 cell이 요청 cell과 정확히 같은지 확인
 - 844×390: 실제 UI 타워 구매와 실제 simulation 진행으로 victory overlay 확인, restart 뒤 gold 450 / HP 20 / wave 1 reset 확인
 - 844×390: 무타워 defeat를 2회 반복하고 매 restart마다 pending animation frame이 정확히 1개임을 확인
 - 390×844: 회전 안내 표시, debug clock 5초 전진에도 elapsed와 enemy count가 그대로임을 확인
@@ -24,7 +25,13 @@
 - 브라우저 `console.error`: 0건
 - 브라우저 uncaught `pageerror`: 0건
 
-`?debug-clock=1` 훅은 DEV build에서만 설치됩니다. 공개 동작은 `advance(milliseconds)`와 read-only `snapshot()`뿐이며 게임 상태를 직접 덮어쓰지 않습니다. snapshot의 `maxEnemyProgress`와 `damagedEnemyCount`로 spawn 존재가 아닌 실제 진행을 검증합니다. production bundle은 `__HUCHU_DEV_CLOCK__`와 `debug-clock` 문자열 부재를 별도로 확인합니다.
+`?debug-clock=1` 훅은 DEV build에서만 설치됩니다. 공개 동작은 `advance(milliseconds)`와 read-only `snapshot()`뿐이며 게임 상태를 직접 덮어쓰지 않습니다. snapshot의 `maxEnemyProgress`와 `damagedEnemyCount`로 spawn 존재가 아닌 실제 진행을 검증하고, `towerCells`로 요청한 설치 cell을 확인합니다. production bundle은 `__HUCHU_DEV_CLOCK__`와 `debug-clock` 문자열 부재를 별도로 확인합니다.
+
+일반 `npm run test:e2e`의 스크린샷과 trace는 gitignored `test-results/`에 저장되어 추적 중인 QA PNG를 덮어쓰지 않습니다. 아래 명령만 QA 기준 캡처를 명시적으로 갱신합니다.
+
+```bash
+UPDATE_QA_SCREENSHOTS=1 npm run test:e2e
+```
 
 ## 캡처
 

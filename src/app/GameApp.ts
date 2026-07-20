@@ -67,6 +67,7 @@ type DevClockView = Readonly<{
   damagedEnemyCount: number;
   baseHp: number;
   gold: number;
+  towerCells: ReadonlyArray<Readonly<{ col: number; row: number }>>;
   pendingFrames: number;
   totalFrameRequests: number;
 }>;
@@ -138,6 +139,7 @@ function createAppScheduler(
         damagedEnemyCount: snapshot.game.enemies.filter((enemy) => enemy.hp < enemy.maxHp).length,
         baseHp: snapshot.game.baseHp,
         gold: snapshot.game.gold,
+        towerCells: snapshot.game.towers.map(({ cell }) => ({ ...cell })),
         pendingFrames: pending.size,
         totalFrameRequests,
       };
