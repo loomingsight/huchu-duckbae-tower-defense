@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { updateProjectiles } from '../../src/game/combat/updateProjectiles';
+import { updateSlow } from '../../src/game/combat/updateSlow';
 import { updateTowers } from '../../src/game/combat/updateTowers';
 import { createGame } from '../../src/game/simulation/createGame';
 import { placeTower } from '../../src/game/simulation/placeTower';
@@ -88,6 +89,20 @@ describe('tower combat', () => {
 
     expect(state.enemies[0].speedMultiplier).toBe(1);
     expect(state.enemies[0].progress).toBeCloseTo(11.15);
+  });
+
+  it('includes the exact slow boundary and excludes an enemy just beyond it', () => {
+    const state = createGame();
+    placeTower(state, 'slow', { col: 4, row: 3 });
+    spawnEnemy(state, 'slime', 0);
+    spawnEnemy(state, 'slime', 0);
+    const boundaryProgress = 6 + Math.sqrt(2.4 ** 2 - 1);
+    state.enemies[0].progress = boundaryProgress;
+    state.enemies[1].progress = boundaryProgress + 0.0001;
+
+    updateSlow(state);
+
+    expect(state.enemies.map(({ speedMultiplier }) => speedMultiplier)).toEqual([0.62, 1]);
   });
 
   it('removes a projectile without impact when its target has already died', () => {

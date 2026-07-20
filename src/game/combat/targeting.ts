@@ -3,8 +3,7 @@ import { STAGE_1 } from '../map/stage1';
 import { TOWER_CATALOG } from '../towers/towerCatalog';
 import type { Vec2 } from '../types';
 import type { GameEnemy, GameTower } from '../simulation/createGame';
-
-const DISTANCE_EPSILON = 1e-12;
+import { isWithinRadius } from './radius';
 
 export function enemyPosition(enemy: GameEnemy): Vec2 | undefined {
   if (!Number.isFinite(enemy.progress)) return undefined;
@@ -28,16 +27,13 @@ export function selectTarget(
   enemies: readonly GameEnemy[],
 ): GameEnemy | undefined {
   const range = TOWER_CATALOG[tower.type].range;
-  const rangeSquared = range * range;
   let selected: GameEnemy | undefined;
 
   for (const enemy of enemies) {
     if (enemy.hp <= 0) continue;
     const position = enemyPosition(enemy);
     if (position === undefined) continue;
-    const dx = position.x - tower.position.x;
-    const dy = position.y - tower.position.y;
-    if (dx * dx + dy * dy > rangeSquared + DISTANCE_EPSILON) continue;
+    if (!isWithinRadius(tower.position, position, range)) continue;
 
     if (
       selected === undefined

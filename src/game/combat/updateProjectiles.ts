@@ -1,7 +1,6 @@
 import type { GameEnemy, GameState } from '../simulation/createGame';
+import { isWithinRadius } from './radius';
 import { enemyPosition } from './targeting';
-
-const DISTANCE_EPSILON = 1e-12;
 
 function applyDamage(enemy: GameEnemy, damage: number): void {
   enemy.hp = Math.max(0, enemy.hp - damage);
@@ -28,17 +27,11 @@ export function updateProjectiles(state: GameState, dt: number): void {
 
     if (distance <= travelDistance) {
       if (projectile.splash > 0) {
-        const splashSquared = projectile.splash * projectile.splash;
         for (const enemy of state.enemies) {
           if (enemy.hp <= 0) continue;
           const position = enemyPosition(enemy);
           if (position === undefined) continue;
-          const impactDx = position.x - impactPosition.x;
-          const impactDy = position.y - impactPosition.y;
-          if (
-            impactDx * impactDx + impactDy * impactDy
-            <= splashSquared + DISTANCE_EPSILON
-          ) {
+          if (isWithinRadius(impactPosition, position, projectile.splash)) {
             applyDamage(enemy, projectile.damage);
           }
         }
