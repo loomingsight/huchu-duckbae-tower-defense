@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { createHudView, TOWER_CARDS } from '../../src/app/hud';
+import {
+  createHudView,
+  createModalFocusManager,
+  TOWER_CARDS,
+  type ModalFocusTarget,
+} from '../../src/app/hud';
 
 describe('mobile HUD view', () => {
   it('exposes the four tower names, role icons, and prices', () => {
@@ -21,15 +26,110 @@ describe('mobile HUD view', () => {
       phase: 'paused',
       speed: 2,
       muted: true,
+      portraitBlocked: false,
     })).toEqual({
       goldText: '123',
+      goldLabel: '골드 123',
       baseHpText: '7',
+      baseHpLabel: '기지 체력 7',
       waveText: '10/10',
+      waveLabel: '현재 웨이브 10/10',
       pauseText: '계속',
       pauseLabel: '게임 계속하기',
       speedText: '2×',
+      speedLabel: '게임 속도 2×, 변경',
       muteText: '🔇',
       muteLabel: '소리 켜기',
+      hudControlsDisabled: false,
+      towerControlsDisabled: true,
     });
+  });
+
+  it('disables every game control while portrait blocks play', () => {
+    const view = createHudView({
+      gold: 450,
+      baseHp: 20,
+      waveIndex: 0,
+      waveCount: 10,
+      phase: 'playing',
+      speed: 1,
+      muted: false,
+      portraitBlocked: true,
+    });
+
+    expect(view.goldLabel).toBe('골드 450');
+    expect(view.baseHpLabel).toBe('기지 체력 20');
+    expect(view.waveLabel).toBe('현재 웨이브 1/10');
+    expect(view.speedLabel).toBe('게임 속도 1×, 변경');
+    expect(view.hudControlsDisabled).toBe(true);
+    expect(view.towerControlsDisabled).toBe(true);
+  });
+
+  it('moves focus and inert state only when modal visibility changes', () => {
+    class FakeTarget implements ModalFocusTarget {
+      inert = false;
+      isConnected = true;
+      focusCount = 0;
+      focus() { this.focusCount += 1; }
+    }
+    const origin = new FakeTarget();
+    const stateOverlay = new FakeTarget();
+    const stateAction = new FakeTarget();
+    const portraitPrompt = new FakeTarget();
+    const fallback = new FakeTarget();
+    const backgrounds = [new FakeTarget(), new FakeTarget(), new FakeTarget()];
+    const manager = createModalFocusManager({
+      backgrounds,
+      stateOverlay,
+      stateAction,
+      portraitPrompt,
+      fallback,
+      getActiveElement: () => origin,
+    });
+
+    manager.sync({ stateVisible: true, portraitBlocked: false });
+    manager.sync({ stateVisible: true, portraitBlocked: false });
+    expect(backgrounds.every((target) => target.inert)).toBe(true);
+    expect(stateAction.focusCount).toBe(1);
+
+    manager.sync({ stateVisible: true, portraitBlocked: true });
+    manager.sync({ stateVisible: true, portraitBlocked: true });
+    expect(stateOverlay.inert).toBe(true);
+    expect(portraitPrompt.focusCount).toBe(1);
+
+    manager.sync({ stateVisible: false, portraitBlocked: false });
+    expect(backgrounds.every((target) => !target.inert)).toBe(true);
+    expect(stateOverlay.inert).toBe(false);
+    expect(origin.focusCount).toBe(1);
+    expect(fallback.focusCount).toBe(0);
+  });
+
+  it('can capture modal transitions before controls change and focus after they update', () => {
+    class FakeTarget implements ModalFocusTarget {
+      inert = false;
+      isConnected = true;
+      focusCount = 0;
+      focus() { this.focusCount += 1; }
+    }
+    const origin = new FakeTarget();
+    const prompt = new FakeTarget();
+    const manager = createModalFocusManager({
+      backgrounds: [new FakeTarget()],
+      stateOverlay: new FakeTarget(),
+      stateAction: new FakeTarget(),
+      portraitPrompt: prompt,
+      fallback: new FakeTarget(),
+      getActiveElement: () => origin,
+    });
+
+    expect(manager.prepare({ stateVisible: false, portraitBlocked: true })).toBe(true);
+    expect(prompt.focusCount).toBe(0);
+    manager.commit();
+    expect(prompt.focusCount).toBe(1);
+
+    expect(manager.prepare({ stateVisible: false, portraitBlocked: false })).toBe(true);
+    expect(origin.focusCount).toBe(0);
+    manager.commit();
+    expect(origin.focusCount).toBe(1);
   });
 });
