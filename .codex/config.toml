@@ -1,0 +1,13 @@
+[mcp_servers.blender]
+command = "/Users/jadon/.local/bin/uvx"
+args = ["--python", "3.11", "blender-mcp"]
+startup_timeout_sec = 60
+tool_timeout_sec = 300
+default_tools_approval_mode = "prompt"
+enabled = true
+
+[mcp_servers.blender.env]
+BLENDER_HOST = "127.0.0.1"
+BLENDER_PORT = "9876"
+UV_PYTHON_PREFERENCE = "only-managed"
+DISABLE_TELEMETRY = "true"
