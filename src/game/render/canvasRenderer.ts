@@ -1,0 +1,114 @@
+import type {
+  GameEnemy,
+  GameHitEvent,
+  GameProjectile,
+  GameTower,
+  Outcome,
+  WaveState,
+} from '../simulation/createGame';
+import type { Cell } from '../types';
+import type { GameAssets } from './assetLoader';
+import { drawEntities } from './drawEntities';
+import {
+  drawCombatEffects,
+  drawOrientationPrompt,
+  drawPauseOverlay,
+  type FloatingGold,
+} from './drawEffects';
+import { drawMap } from './drawMap';
+import {
+  computeCanvasLayout,
+  type CanvasLayout,
+  type Viewport,
+} from './layout';
+
+export type GameSnapshot = {
+  readonly gold: number;
+  readonly baseHp: number;
+  readonly outcome: Outcome;
+  readonly enemies: readonly Readonly<GameEnemy>[];
+  readonly towers: readonly Readonly<GameTower>[];
+  readonly projectiles: readonly Readonly<GameProjectile>[];
+  readonly hitEvents: readonly Readonly<GameHitEvent>[];
+  readonly wave: Readonly<WaveState>;
+};
+
+export type RenderOptions = {
+  readonly selectedCell?: Readonly<Cell> | null;
+  readonly selectedRange?: number;
+  readonly paused?: boolean;
+  readonly timeSeconds?: number;
+  readonly floatingGold?: readonly FloatingGold[];
+};
+
+export type CanvasRenderer = {
+  resize(viewport: Viewport): CanvasLayout;
+  render(snapshot: GameSnapshot, options?: RenderOptions): void;
+  getLayout(): CanvasLayout;
+};
+
+function initialViewport(canvas: HTMLCanvasElement): Viewport {
+  return {
+    width: canvas.clientWidth || canvas.width || 1,
+    height: canvas.clientHeight || canvas.height || 1,
+    dpr: globalThis.devicePixelRatio ?? 1,
+  };
+}
+
+function canvasContext(canvas: HTMLCanvasElement): CanvasRenderingContext2D {
+  const context = canvas.getContext('2d');
+  if (context === null) throw new Error('Canvas 2D context is unavailable');
+  return context;
+}
+
+export function createCanvasRenderer(
+  canvas: HTMLCanvasElement,
+  assets: GameAssets,
+): CanvasRenderer {
+  const context = canvasContext(canvas);
+  let layout = computeCanvasLayout(initialViewport(canvas));
+
+  function resize(viewport: Viewport): CanvasLayout {
+    layout = computeCanvasLayout(viewport);
+    canvas.width = layout.backingWidth;
+    canvas.height = layout.backingHeight;
+    canvas.style.width = `${layout.viewport.width}px`;
+    canvas.style.height = `${layout.viewport.height}px`;
+    return layout;
+  }
+
+  function render(snapshot: GameSnapshot, options: RenderOptions = {}): void {
+    context.setTransform(1, 0, 0, 1, 0, 0);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
+    context.imageSmoothingEnabled = true;
+    context.fillStyle = '#20362c';
+    context.fillRect(0, 0, layout.viewport.width, layout.viewport.height);
+
+    context.save();
+    context.beginPath();
+    context.rect(
+      layout.gameArea.x,
+      layout.gameArea.y,
+      layout.gameArea.width,
+      layout.gameArea.height,
+    );
+    context.clip();
+    drawMap(context, layout, {
+      cell: options.selectedCell,
+      range: options.selectedRange,
+    });
+    drawEntities(context, layout, snapshot, assets);
+    drawCombatEffects(context, layout, snapshot, {
+      timeSeconds: options.timeSeconds ?? 0,
+      floatingGold: options.floatingGold ?? [],
+    });
+    if (options.paused === true) drawPauseOverlay(context, layout);
+    context.restore();
+
+    if (layout.showOrientationPrompt) drawOrientationPrompt(context, layout);
+  }
+
+  resize(initialViewport(canvas));
+  return { resize, render, getLayout: () => layout };
+}
