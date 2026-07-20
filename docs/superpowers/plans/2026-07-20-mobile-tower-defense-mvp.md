@@ -505,7 +505,11 @@ git commit -m "feat: add touch-first mobile game shell"
 
 **Files:**
 - Create: `src/game/audio/SoundEngine.ts`
+- Create: `src/game/render/effects.ts`
 - Modify: `src/game/render/drawEffects.ts`
+- Modify: `src/app/GameApp.ts`
+- Modify: `package.json`
+- Modify: `index.html`
 - Create: `playwright.config.ts`
 - Create: `e2e/game.spec.ts`
 - Create: `README.md`

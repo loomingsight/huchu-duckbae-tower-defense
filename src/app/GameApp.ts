@@ -1,4 +1,5 @@
 import { loadGameAssets, type GameAssets } from '../game/render/assetLoader';
+import { SoundEngine } from '../game/audio/SoundEngine';
 import { createCanvasRenderer, type CanvasRenderer } from '../game/render/canvasRenderer';
 import { createGame } from '../game/simulation/createGame';
 import { placeTower } from '../game/simulation/placeTower';
@@ -44,10 +45,97 @@ const EMPTY_ASSETS: GameAssets = {
   },
 };
 
-const animationFrameScheduler: AnimationFrameScheduler = {
+const browserAnimationFrameScheduler: AnimationFrameScheduler = {
   request: (callback) => globalThis.requestAnimationFrame(callback),
   cancel: (id) => globalThis.cancelAnimationFrame(id),
 };
+
+type DevClockView = Readonly<{
+  phase: GameRuntimeSnapshot['phase'];
+  elapsedSeconds: number;
+  waveIndex: number;
+  enemyCount: number;
+  baseHp: number;
+  gold: number;
+  pendingFrames: number;
+  totalFrameRequests: number;
+}>;
+
+type DevClock = Readonly<{
+  advance(milliseconds: number): void;
+  snapshot(): DevClockView;
+}>;
+
+function createAppScheduler(
+  scope: LifecycleScope,
+  getSnapshot: () => GameRuntimeSnapshot,
+): AnimationFrameScheduler {
+  const isDevelopment = (import.meta as ImportMeta & { env: { DEV: boolean } }).env.DEV;
+  if (!isDevelopment) return browserAnimationFrameScheduler;
+  const debugClockRequested = new URLSearchParams(globalThis.location.search).get('debug-clock') === '1';
+  if (!debugClockRequested) return browserAnimationFrameScheduler;
+
+  let nextId = 1;
+  let nowMs = 0;
+  let primed = false;
+  let totalFrameRequests = 0;
+  const pending = new Map<number, FrameRequestCallback>();
+  const scheduler: AnimationFrameScheduler = {
+    request(callback) {
+      const id = nextId;
+      nextId += 1;
+      totalFrameRequests += 1;
+      pending.set(id, callback);
+      return id;
+    },
+    cancel(id) {
+      pending.delete(id);
+    },
+  };
+
+  function fireFrame(timestampMs: number): void {
+    const callbacks = [...pending.values()];
+    pending.clear();
+    for (const callback of callbacks) callback(timestampMs);
+  }
+
+  const clock: DevClock = Object.freeze({
+    advance(milliseconds) {
+      const requested = Number.isFinite(milliseconds) ? Math.max(0, milliseconds) : 0;
+      if (!primed) {
+        primed = true;
+        fireFrame(nowMs);
+      }
+      let remaining = requested;
+      while (remaining > 0) {
+        const step = Math.min(250, remaining);
+        nowMs += step;
+        fireFrame(nowMs);
+        remaining -= step;
+      }
+    },
+    snapshot() {
+      const snapshot = getSnapshot();
+      return {
+        phase: snapshot.phase,
+        elapsedSeconds: snapshot.elapsedSeconds,
+        waveIndex: snapshot.game.wave.index,
+        enemyCount: snapshot.game.enemies.length,
+        baseHp: snapshot.game.baseHp,
+        gold: snapshot.game.gold,
+        pendingFrames: pending.size,
+        totalFrameRequests,
+      };
+    },
+  });
+  const debugScope = globalThis as typeof globalThis & { __HUCHU_DEV_CLOCK__?: DevClock };
+  debugScope.__HUCHU_DEV_CLOCK__ = clock;
+  scope.add(() => {
+    pending.clear();
+    delete debugScope.__HUCHU_DEV_CLOCK__;
+  });
+  return scheduler;
+}
 
 function finitePositive(value: number, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
@@ -99,7 +187,14 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     let lastHudKey = '';
     let lastOverlayKey = '';
     let runtime: GameRuntime;
+    let observedGame: GameRuntimeSnapshot['game'] | null = null;
+    let observedNextProjectileId = 0;
+    let observedBaseHp = 0;
+    let observedHitEvents: GameRuntimeSnapshot['game']['hitEvents'] | null = null;
     const renderer = await createRendererWithFallback(hud.canvas);
+    const sound = new SoundEngine();
+    sound.setMuted(preferences.muted);
+    scope.add(() => { void sound.destroy(); });
 
     const focusManager = createModalFocusManager({
       backgrounds: [hud.header, hud.stage, hud.tray],
@@ -139,6 +234,22 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
 
     function render(): void {
       const snapshot = runtime.getSnapshot();
+      if (observedGame !== snapshot.game) {
+        observedGame = snapshot.game;
+        observedNextProjectileId = snapshot.game.nextProjectileId;
+        observedBaseHp = snapshot.game.baseHp;
+        observedHitEvents = snapshot.game.hitEvents;
+      } else {
+        if (snapshot.game.nextProjectileId > observedNextProjectileId) sound.play('shot');
+        if (snapshot.game.baseHp < observedBaseHp) sound.play('leak');
+        if (
+          snapshot.game.hitEvents !== observedHitEvents
+          && snapshot.game.hitEvents.length > 0
+        ) sound.play('hit');
+        observedNextProjectileId = snapshot.game.nextProjectileId;
+        observedBaseHp = snapshot.game.baseHp;
+        observedHitEvents = snapshot.game.hitEvents;
+      }
       const selectedRange = snapshot.selectedTower === null
         ? undefined
         : TOWER_CATALOG[snapshot.selectedTower].range;
@@ -186,12 +297,14 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       if (modalityChanged) focusManager.commit();
     }
 
+    const scheduler = createAppScheduler(scope, () => runtime.getSnapshot());
     runtime = createGameRuntime({
-      scheduler: animationFrameScheduler,
+      scheduler,
       createGame,
       updateGame,
       render,
       onOutcome(outcome, elapsedSeconds) {
+        sound.play(outcome);
         if (outcome === 'victory') preferences = updateBestClear(storage, elapsedSeconds);
       },
     });
@@ -235,6 +348,10 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       runtime.startGame();
     }
 
+    function unlockAudio(): void {
+      void sound.unlock();
+    }
+
     function placeSelectedTower(point: ClientPoint): void {
       const snapshot = runtime.getSnapshot();
       if (
@@ -257,26 +374,33 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         return;
       }
       hud.placementStatus.textContent = '타워를 설치했어요.';
+      sound.play('placement');
       runtime.renderNow();
     }
 
     scope.listen(hud.stateAction, 'click', () => {
+      unlockAudio();
       const phase = runtime.getSnapshot().phase;
       if (phase === 'ready' || phase === 'victory' || phase === 'defeat') startNewGame();
     });
     scope.listen(hud.pauseButton, 'click', () => {
+      unlockAudio();
       if (!runtime.getSnapshot().portraitBlocked) runtime.togglePause();
     });
     scope.listen(hud.speedButton, 'click', () => {
+      unlockAudio();
       if (!runtime.getSnapshot().portraitBlocked) runtime.toggleSpeed();
     });
     scope.listen(hud.muteButton, 'click', () => {
+      unlockAudio();
       if (runtime.getSnapshot().portraitBlocked) return;
       preferences = saveMutedPreference(storage, !preferences.muted);
+      sound.setMuted(preferences.muted);
       runtime.renderNow();
     });
     for (const type of TOWER_TYPES) {
       scope.listen(hud.towerButtons[type], 'click', () => {
+        unlockAudio();
         const snapshot = runtime.getSnapshot();
         if (snapshot.phase !== 'playing' || snapshot.portraitBlocked) return;
         const selected: TowerType | null = snapshot.selectedTower === type ? null : type;
@@ -287,6 +411,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       });
     }
     scope.listen(hud.canvas, 'pointerdown', (event) => {
+      unlockAudio();
       const pointer = event as PointerEvent;
       const snapshot = runtime.getSnapshot();
       if (

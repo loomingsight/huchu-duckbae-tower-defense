@@ -5,6 +5,13 @@ import type {
   GameTower,
 } from '../simulation/createGame';
 import type { Vec2 } from '../types';
+import {
+  createGoldPop,
+  createSlowPulse,
+  effectForHit,
+  updateEffects,
+  type RuntimeEffect,
+} from './effects';
 import type { CanvasLayout } from './layout';
 import { isRenderablePoint, worldToScreen } from './drawMap';
 
@@ -15,10 +22,79 @@ export type FloatingGold = {
 };
 
 export type EffectSnapshot = {
+  readonly gold: number;
   readonly towers: readonly Readonly<GameTower>[];
   readonly projectiles: readonly Readonly<GameProjectile>[];
   readonly hitEvents: readonly Readonly<GameHitEvent>[];
 };
+
+type RetainedEffects = {
+  effects: RuntimeEffect[];
+  lastTimeSeconds: number | null;
+  lastHitEvents: readonly Readonly<GameHitEvent>[] | null;
+  lastGold: number;
+  slowTowerIds: Set<number>;
+};
+
+const retainedBySnapshot = new WeakMap<object, RetainedEffects>();
+
+function retainedEffects(snapshot: EffectSnapshot): RetainedEffects {
+  const key = snapshot as object;
+  const existing = retainedBySnapshot.get(key);
+  if (existing !== undefined) return existing;
+  const created: RetainedEffects = {
+    effects: [],
+    lastTimeSeconds: null,
+    lastHitEvents: null,
+    lastGold: snapshot.gold,
+    slowTowerIds: new Set(),
+  };
+  retainedBySnapshot.set(key, created);
+  return created;
+}
+
+function advanceEffects(snapshot: EffectSnapshot, timeSeconds: number): RetainedEffects {
+  const retained = retainedEffects(snapshot);
+  const safeTime = Number.isFinite(timeSeconds) ? Math.max(0, timeSeconds) : 0;
+  const restarted = retained.lastTimeSeconds !== null && safeTime < retained.lastTimeSeconds;
+  if (restarted) {
+    retained.effects = [];
+    retained.lastHitEvents = null;
+    retained.lastGold = snapshot.gold;
+    retained.slowTowerIds.clear();
+  }
+  const delta = retained.lastTimeSeconds === null || restarted
+    ? 0
+    : safeTime - retained.lastTimeSeconds;
+  retained.effects = updateEffects(retained.effects, delta);
+  retained.lastTimeSeconds = safeTime;
+
+  if (retained.lastHitEvents !== snapshot.hitEvents) {
+    retained.lastHitEvents = snapshot.hitEvents;
+    for (const event of snapshot.hitEvents) {
+      const effect = effectForHit(event);
+      if (effect !== null) retained.effects.push(effect);
+    }
+  }
+
+  const earnedGold = snapshot.gold - retained.lastGold;
+  if (earnedGold > 0) {
+    const position = snapshot.hitEvents.at(-1)?.position;
+    if (position !== undefined) {
+      const gold = createGoldPop(position, earnedGold);
+      if (gold !== null) retained.effects.push(gold);
+    }
+  }
+  retained.lastGold = snapshot.gold;
+
+  for (const tower of snapshot.towers) {
+    if (tower.type !== 'slow' || retained.slowTowerIds.has(tower.id)) continue;
+    retained.slowTowerIds.add(tower.id);
+    const pulse = createSlowPulse(tower.position);
+    if (pulse !== null) retained.effects.push(pulse);
+  }
+  return retained;
+}
 
 function drawSlowAuras(
   ctx: CanvasRenderingContext2D,
@@ -90,46 +166,102 @@ function drawProjectiles(
   }
 }
 
-function drawHitEvent(
+function effectProgress(effect: RuntimeEffect): number {
+  return Math.min(1, Math.max(0, effect.age / effect.duration));
+}
+
+function drawRuntimeEffect(
   ctx: CanvasRenderingContext2D,
   layout: CanvasLayout,
-  event: Readonly<GameHitEvent>,
+  effect: RuntimeEffect,
 ): void {
-  if (!isRenderablePoint(layout, event.position) || !Number.isFinite(event.radius)) return;
-  const center = worldToScreen(layout, event.position);
-  const effectRadius = Math.max(layout.cellSize * 0.24, event.radius * layout.cellSize);
-  if (!Number.isFinite(effectRadius)) return;
+  if (!isRenderablePoint(layout, effect.position)) return;
+  const center = worldToScreen(layout, effect.position);
+  const progress = effectProgress(effect);
+  const alpha = 1 - progress;
 
-  if (event.towerType === 'arrow') {
-    ctx.strokeStyle = '#ffe399';
+  if (effect.kind === 'arrow-impact') {
+    ctx.strokeStyle = `rgba(255, 227, 153, ${alpha})`;
     ctx.lineWidth = Math.max(1.5, 2 / layout.dpr);
+    const radius = layout.cellSize * (0.16 + progress * 0.42);
     for (let index = 0; index < 4; index += 1) {
       const angle = (Math.PI / 2) * index + Math.PI / 4;
       ctx.beginPath();
       ctx.moveTo(
-        center.x + Math.cos(angle) * effectRadius * 0.25,
-        center.y + Math.sin(angle) * effectRadius * 0.25,
+        center.x + Math.cos(angle) * radius * 0.2,
+        center.y + Math.sin(angle) * radius * 0.2,
       );
       ctx.lineTo(
-        center.x + Math.cos(angle) * effectRadius,
-        center.y + Math.sin(angle) * effectRadius,
+        center.x + Math.cos(angle) * radius,
+        center.y + Math.sin(angle) * radius,
       );
       ctx.stroke();
     }
     return;
   }
 
-  ctx.lineWidth = Math.max(2, 3 / layout.dpr);
-  ctx.strokeStyle = event.towerType === 'huchu'
-    ? 'rgba(61, 213, 239, 0.86)'
-    : 'rgba(246, 101, 46, 0.88)';
-  ctx.fillStyle = event.towerType === 'huchu'
-    ? 'rgba(73, 211, 235, 0.2)'
-    : 'rgba(255, 142, 50, 0.2)';
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, effectRadius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.stroke();
+  if (effect.kind === 'fire-burst') {
+    ctx.strokeStyle = `rgba(255, 115, 39, ${alpha})`;
+    ctx.fillStyle = `rgba(255, 189, 59, ${alpha * 0.72})`;
+    ctx.lineWidth = Math.max(2, layout.cellSize * 0.08);
+    const radius = layout.cellSize * (0.2 + progress * 0.7);
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius * 0.38, 0, Math.PI * 2);
+    ctx.fill();
+    for (let index = 0; index < 7; index += 1) {
+      const angle = index * Math.PI * 2 / 7;
+      ctx.beginPath();
+      ctx.moveTo(center.x + Math.cos(angle) * radius * 0.35, center.y + Math.sin(angle) * radius * 0.35);
+      ctx.lineTo(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius);
+      ctx.stroke();
+    }
+    return;
+  }
+
+  if (effect.kind === 'aqua-splash') {
+    ctx.strokeStyle = `rgba(61, 213, 239, ${alpha})`;
+    ctx.fillStyle = 'rgba(73, 211, 235, 0.2)';
+    ctx.lineWidth = Math.max(2, 2.5 / layout.dpr);
+    const radius = layout.cellSize * (0.25 + progress * 1.05);
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+    for (let index = 0; index < 5; index += 1) {
+      const angle = index * Math.PI * 2 / 5 - Math.PI / 2;
+      const distance = radius * (0.55 + progress * 0.35);
+      ctx.beginPath();
+      ctx.arc(center.x + Math.cos(angle) * distance, center.y + Math.sin(angle) * distance, Math.max(1.5, layout.cellSize * 0.06), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return;
+  }
+
+  if (effect.kind === 'gold-pop') {
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = '#ffe27a';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `800 ${Math.max(11, layout.cellSize * 0.32)}px system-ui, sans-serif`;
+    ctx.fillText(`+${Math.round(effect.value)}`, center.x, center.y - progress * layout.cellSize);
+    ctx.globalAlpha = 1;
+  }
+}
+
+function drawSlowPulses(
+  ctx: CanvasRenderingContext2D,
+  layout: CanvasLayout,
+  effects: readonly RuntimeEffect[],
+): void {
+  for (const effect of effects) {
+    if (effect.kind !== 'slow-pulse' || !isRenderablePoint(layout, effect.position)) continue;
+    const center = worldToScreen(layout, effect.position);
+    const progress = effectProgress(effect);
+    ctx.strokeStyle = `rgba(126, 232, 255, ${1 - progress})`;
+    ctx.lineWidth = Math.max(1.5, 2 / layout.dpr);
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, layout.cellSize * (0.35 + progress * 2), 0, Math.PI * 2);
+    ctx.stroke();
+  }
 }
 
 function drawFloatingGold(
@@ -164,7 +296,9 @@ export function drawGroundEffects(
   snapshot: EffectSnapshot,
   timeSeconds: number,
 ): void {
+  const retained = advanceEffects(snapshot, timeSeconds);
   drawSlowAuras(ctx, layout, snapshot.towers, timeSeconds);
+  drawSlowPulses(ctx, layout, retained.effects);
 }
 
 export function drawForegroundEffects(
@@ -174,7 +308,7 @@ export function drawForegroundEffects(
   floatingGold: readonly FloatingGold[],
 ): void {
   drawProjectiles(ctx, layout, snapshot.projectiles);
-  for (const event of snapshot.hitEvents) drawHitEvent(ctx, layout, event);
+  for (const effect of retainedEffects(snapshot).effects) drawRuntimeEffect(ctx, layout, effect);
   drawFloatingGold(ctx, layout, floatingGold);
 }
 

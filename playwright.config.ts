@@ -1,0 +1,23 @@
+import { defineConfig, devices } from '@playwright/test';
+
+export default defineConfig({
+  testDir: './e2e',
+  timeout: 45_000,
+  expect: { timeout: 5_000 },
+  fullyParallel: false,
+  workers: 1,
+  reporter: 'line',
+  outputDir: 'output/playwright/test-results',
+  use: {
+    ...devices['Desktop Chrome'],
+    baseURL: 'http://127.0.0.1:4173',
+    viewport: { width: 844, height: 390 },
+    trace: 'retain-on-failure',
+  },
+  webServer: {
+    command: 'npm run dev -- --host 127.0.0.1 --port 4173 --strictPort',
+    url: 'http://127.0.0.1:4173',
+    reuseExistingServer: false,
+    timeout: 30_000,
+  },
+});
