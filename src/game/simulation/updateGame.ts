@@ -7,6 +7,7 @@ import { updateWaves } from './updateWaves';
 import { STAGE_1_WAVES } from '../waves/stage1Waves';
 
 export function updateGame(state: GameState, dt: number): void {
+  state.hitEvents = [];
   if (state.outcome !== 'playing') return;
 
   const safeDt = Number.isFinite(dt) && dt >= 0 ? dt : 0;
@@ -15,6 +16,10 @@ export function updateGame(state: GameState, dt: number): void {
   updateTowers(state, safeDt);
   updateProjectiles(state, safeDt);
   updateEnemies(state, safeDt);
+  const activeEnemyIds = new Set(state.enemies.map((enemy) => enemy.id));
+  state.projectiles = state.projectiles.filter((projectile) => (
+    activeEnemyIds.has(projectile.targetId)
+  ));
   if (state.baseHp === 0) return;
 
   const currentWave = STAGE_1_WAVES[state.wave.index];

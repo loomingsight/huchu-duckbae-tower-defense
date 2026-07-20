@@ -54,6 +54,25 @@ describe('tower placement', () => {
     expect(state.gold).toBe(350);
   });
 
+  it.each([
+    { col: -1, row: 1 },
+    { col: 20, row: 1 },
+    { col: 1, row: -1 },
+    { col: 1, row: 10 },
+    { col: 1.5, row: 1 },
+    { col: 1, row: Number.NaN },
+    { col: Number.POSITIVE_INFINITY, row: 1 },
+  ])('rejects the invalid grid cell $col:$row directly', (cell) => {
+    const state = createGame();
+
+    expect(placeTower(state, 'arrow', cell)).toEqual({
+      ok: false,
+      reason: 'not-buildable',
+    });
+    expect(state.towers).toEqual([]);
+    expect(state.gold).toBe(450);
+  });
+
   it('places towers at exact cell centers and allows duplicate types on different cells', () => {
     const state = createGame();
 

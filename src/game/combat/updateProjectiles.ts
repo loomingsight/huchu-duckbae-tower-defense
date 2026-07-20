@@ -1,14 +1,16 @@
 import type { GameEnemy, GameState } from '../simulation/createGame';
 import { enemyPosition } from './targeting';
 
+const DISTANCE_EPSILON = 1e-12;
+
 function applyDamage(enemy: GameEnemy, damage: number): void {
   enemy.hp = Math.max(0, enemy.hp - damage);
 }
 
 export function updateProjectiles(state: GameState, dt: number): void {
+  state.hitEvents = [];
   if (!Number.isFinite(dt) || dt <= 0) return;
 
-  state.hitEvents = [];
   const activeProjectiles = [];
 
   for (const projectile of state.projectiles) {
@@ -33,7 +35,10 @@ export function updateProjectiles(state: GameState, dt: number): void {
           if (position === undefined) continue;
           const impactDx = position.x - impactPosition.x;
           const impactDy = position.y - impactPosition.y;
-          if (impactDx * impactDx + impactDy * impactDy <= splashSquared) {
+          if (
+            impactDx * impactDx + impactDy * impactDy
+            <= splashSquared + DISTANCE_EPSILON
+          ) {
             applyDamage(enemy, projectile.damage);
           }
         }

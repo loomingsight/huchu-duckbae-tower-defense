@@ -4,6 +4,8 @@ import { TOWER_CATALOG } from '../towers/towerCatalog';
 import type { Vec2 } from '../types';
 import type { GameEnemy, GameTower } from '../simulation/createGame';
 
+const DISTANCE_EPSILON = 1e-12;
+
 export function enemyPosition(enemy: GameEnemy): Vec2 | undefined {
   if (!Number.isFinite(enemy.progress)) return undefined;
 
@@ -35,7 +37,7 @@ export function selectTarget(
     if (position === undefined) continue;
     const dx = position.x - tower.position.x;
     const dy = position.y - tower.position.y;
-    if (dx * dx + dy * dy > rangeSquared) continue;
+    if (dx * dx + dy * dy > rangeSquared + DISTANCE_EPSILON) continue;
 
     if (
       selected === undefined

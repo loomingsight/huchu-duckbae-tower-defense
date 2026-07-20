@@ -45,4 +45,18 @@ describe('tower targeting', () => {
 
     expect(selectTarget(state.towers[0], [state.enemies[1], state.enemies[0]])?.id).toBe(1);
   });
+
+  it('includes the exact range boundary and excludes an enemy just beyond it', () => {
+    const tower: GameTower = {
+      id: 1,
+      type: 'arrow',
+      cell: { col: 0, row: 2 },
+      position: { x: 0.5, y: 2.5 },
+      cooldownRemaining: 0,
+    };
+    const onBoundary = enemy(1, 3.2);
+    const outside = enemy(2, 3.2001);
+
+    expect(selectTarget(tower, [onBoundary, outside])?.id).toBe(onBoundary.id);
+  });
 });

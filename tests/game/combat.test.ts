@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { updateProjectiles } from '../../src/game/combat/updateProjectiles';
+import { updateTowers } from '../../src/game/combat/updateTowers';
 import { createGame } from '../../src/game/simulation/createGame';
 import { placeTower } from '../../src/game/simulation/placeTower';
 import { updateGame } from '../../src/game/simulation/updateGame';
@@ -107,6 +108,132 @@ describe('tower combat', () => {
 
     expect(state.projectiles).toEqual([]);
     expect(state.hitEvents).toEqual([]);
+  });
+
+  it('removes a projectile whose target id does not exist', () => {
+    const state = createGame();
+    state.projectiles.push({
+      id: 1,
+      towerType: 'arrow',
+      position: { x: 0.5, y: 1.5 },
+      targetId: 999,
+      damage: 18,
+      speed: 8,
+      splash: 0,
+    });
+
+    updateProjectiles(state, 1 / 60);
+
+    expect(state.projectiles).toEqual([]);
+  });
+
+  it('removes an earlier flying projectile when a later splash removes its target', () => {
+    const state = createGame();
+    state.wave.allSpawned = true;
+    spawnEnemy(state, 'fairy', 0);
+    spawnEnemy(state, 'fairy', 0);
+    state.enemies[0].progress = 2;
+    state.enemies[1].progress = 2.5;
+    state.projectiles.push(
+      {
+        id: 1,
+        towerType: 'arrow',
+        position: { x: 0.5, y: 2.5 },
+        targetId: state.enemies[0].id,
+        damage: 18,
+        speed: 0.1,
+        splash: 0,
+      },
+      {
+        id: 2,
+        towerType: 'huchu',
+        position: { x: 3, y: 2.5 },
+        targetId: state.enemies[1].id,
+        damage: 72,
+        speed: 5,
+        splash: 1.25,
+      },
+    );
+
+    updateGame(state, 1 / 60);
+
+    expect(state.enemies).toEqual([]);
+    expect(state.projectiles).toEqual([]);
+    expect(state.outcome).toBe('victory');
+  });
+
+  it('includes the exact splash boundary and excludes an enemy just beyond it', () => {
+    const state = createGame();
+    spawnEnemy(state, 'golem', 0);
+    spawnEnemy(state, 'golem', 0);
+    spawnEnemy(state, 'golem', 0);
+    state.enemies[0].progress = 2;
+    state.enemies[1].progress = 2 + 0.85;
+    state.enemies[2].progress = 2 + 0.8501;
+    state.projectiles.push({
+      id: 1,
+      towerType: 'deokbae',
+      position: { x: 2.5, y: 2.5 },
+      targetId: state.enemies[0].id,
+      damage: 14,
+      speed: 6.5,
+      splash: 0.85,
+    });
+
+    updateProjectiles(state, 1 / 60);
+
+    expect(state.enemies.map(({ hp }) => hp)).toEqual([306, 306, 320]);
+  });
+
+  it.each([
+    0,
+    -1,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+  ])('clears stale hit events when projectile dt is %s', (dt) => {
+    const state = createGame();
+    state.hitEvents.push({
+      kind: 'hit',
+      towerType: 'arrow',
+      position: { x: 1.5, y: 1.5 },
+      radius: 0,
+    });
+
+    updateProjectiles(state, dt);
+
+    expect(state.hitEvents).toEqual([]);
+  });
+
+  it.each(['victory', 'defeat'] as const)('clears stale hit events after %s', (outcome) => {
+    const state = createGame();
+    state.outcome = outcome;
+    state.hitEvents.push({
+      kind: 'hit',
+      towerType: 'huchu',
+      position: { x: 2.5, y: 2.5 },
+      radius: 1.25,
+    });
+
+    updateGame(state, 1 / 60);
+
+    expect(state.hitEvents).toEqual([]);
+  });
+
+  it.each([
+    ['arrow', 4],
+    ['deokbae', 6],
+    ['huchu', 2],
+  ] as const)('preserves %s cooldown cadence across fixed-step cycles', (type, expectedShots) => {
+    const state = combatState(type);
+    spawnEnemy(state, 'minotaur', 0);
+    state.enemies[0].progress = 2;
+
+    for (let step = 0; step < 127; step += 1) {
+      updateTowers(state, 1 / 60);
+    }
+
+    expect(state.projectiles).toHaveLength(expectedShots);
   });
 
   it('does not advance combat for invalid or non-positive elapsed time', () => {
