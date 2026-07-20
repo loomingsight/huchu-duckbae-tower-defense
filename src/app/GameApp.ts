@@ -1,9 +1,17 @@
 import { loadGameAssets, type GameAssets } from '../game/render/assetLoader';
 import { SoundEngine } from '../game/audio/SoundEngine';
 import { createCanvasRenderer, type CanvasRenderer } from '../game/render/canvasRenderer';
+import {
+  createFrameEventBuffer,
+  createGoldPop,
+  createSlowPulse,
+  effectsForHits,
+  updateEffects,
+  type RuntimeEffect,
+} from '../game/render/effects';
 import { createGame } from '../game/simulation/createGame';
 import { placeTower } from '../game/simulation/placeTower';
-import { updateGame } from '../game/simulation/updateGame';
+import { updateGame as updateSimulation } from '../game/simulation/updateGame';
 import { TOWER_CATALOG, TOWER_TYPES, type TowerType } from '../game/towers/towerCatalog';
 import { STAGE_1_WAVES } from '../game/waves/stage1Waves';
 import {
@@ -55,6 +63,8 @@ type DevClockView = Readonly<{
   elapsedSeconds: number;
   waveIndex: number;
   enemyCount: number;
+  maxEnemyProgress: number;
+  damagedEnemyCount: number;
   baseHp: number;
   gold: number;
   pendingFrames: number;
@@ -121,6 +131,11 @@ function createAppScheduler(
         elapsedSeconds: snapshot.elapsedSeconds,
         waveIndex: snapshot.game.wave.index,
         enemyCount: snapshot.game.enemies.length,
+        maxEnemyProgress: snapshot.game.enemies.reduce(
+          (maximum, enemy) => Math.max(maximum, enemy.progress),
+          0,
+        ),
+        damagedEnemyCount: snapshot.game.enemies.filter((enemy) => enemy.hp < enemy.maxHp).length,
         baseHp: snapshot.game.baseHp,
         gold: snapshot.game.gold,
         pendingFrames: pending.size,
@@ -187,10 +202,11 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     let lastHudKey = '';
     let lastOverlayKey = '';
     let runtime: GameRuntime;
-    let observedGame: GameRuntimeSnapshot['game'] | null = null;
-    let observedNextProjectileId = 0;
-    let observedBaseHp = 0;
-    let observedHitEvents: GameRuntimeSnapshot['game']['hitEvents'] | null = null;
+    let renderedGame: GameRuntimeSnapshot['game'] | null = null;
+    let effects: RuntimeEffect[] = [];
+    let lastEffectTimeSeconds = 0;
+    let lastRenderedGold = 0;
+    const frameEvents = createFrameEventBuffer();
     const renderer = await createRendererWithFallback(hud.canvas);
     const sound = new SoundEngine();
     sound.setMuted(preferences.muted);
@@ -234,21 +250,24 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
 
     function render(): void {
       const snapshot = runtime.getSnapshot();
-      if (observedGame !== snapshot.game) {
-        observedGame = snapshot.game;
-        observedNextProjectileId = snapshot.game.nextProjectileId;
-        observedBaseHp = snapshot.game.baseHp;
-        observedHitEvents = snapshot.game.hitEvents;
-      } else {
-        if (snapshot.game.nextProjectileId > observedNextProjectileId) sound.play('shot');
-        if (snapshot.game.baseHp < observedBaseHp) sound.play('leak');
-        if (
-          snapshot.game.hitEvents !== observedHitEvents
-          && snapshot.game.hitEvents.length > 0
-        ) sound.play('hit');
-        observedNextProjectileId = snapshot.game.nextProjectileId;
-        observedBaseHp = snapshot.game.baseHp;
-        observedHitEvents = snapshot.game.hitEvents;
+      if (renderedGame !== snapshot.game) {
+        renderedGame = snapshot.game;
+        effects = [];
+        lastEffectTimeSeconds = snapshot.elapsedSeconds;
+        lastRenderedGold = snapshot.game.gold;
+        frameEvents.reset();
+      }
+      const frame = frameEvents.peek();
+      const effectDelta = Math.max(0, snapshot.elapsedSeconds - lastEffectTimeSeconds);
+      const nextEffects = [
+        ...updateEffects(effects, effectDelta),
+        ...effectsForHits(frame.hitEvents),
+      ];
+      const earnedGold = snapshot.game.gold - lastRenderedGold;
+      const lastHitPosition = frame.hitEvents.at(-1)?.position;
+      if (earnedGold > 0 && lastHitPosition !== undefined) {
+        const gold = createGoldPop(lastHitPosition, earnedGold);
+        if (gold !== null) nextEffects.push(gold);
       }
       const selectedRange = snapshot.selectedTower === null
         ? undefined
@@ -258,7 +277,13 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         selectedRange,
         paused: snapshot.phase === 'paused',
         timeSeconds: snapshot.elapsedSeconds,
+        effects: nextEffects,
       });
+      for (const cue of frame.cueTypes) sound.play(cue);
+      effects = nextEffects;
+      lastEffectTimeSeconds = snapshot.elapsedSeconds;
+      lastRenderedGold = snapshot.game.gold;
+      frameEvents.clear();
 
       const body = overlayBody(snapshot);
       const overlayKey = `${snapshot.phase}|${body}`;
@@ -301,7 +326,16 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     runtime = createGameRuntime({
       scheduler,
       createGame,
-      updateGame,
+      updateGame(game, deltaSeconds) {
+        const nextProjectileId = game.nextProjectileId;
+        const baseHp = game.baseHp;
+        updateSimulation(game, deltaSeconds);
+        frameEvents.recordStep({
+          hitEvents: game.hitEvents,
+          shot: game.nextProjectileId > nextProjectileId,
+          leak: game.baseHp < baseHp,
+        });
+      },
       render,
       onOutcome(outcome, elapsedSeconds) {
         sound.play(outcome);
@@ -344,6 +378,9 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       globalThis.clearTimeout(invalidTimer);
       hud.stage.classList.remove('game-stage--invalid');
       activePointer = null;
+      frameEvents.reset();
+      effects = [];
+      renderedGame = null;
       hud.placementStatus.textContent = '타워를 선택해 주세요.';
       runtime.startGame();
     }
@@ -374,6 +411,11 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         return;
       }
       hud.placementStatus.textContent = '타워를 설치했어요.';
+      const placedTower = snapshot.game.towers.at(-1);
+      if (placedTower?.type === 'slow') {
+        const pulse = createSlowPulse(placedTower.position);
+        if (pulse !== null) effects.push(pulse);
+      }
       sound.play('placement');
       runtime.renderNow();
     }

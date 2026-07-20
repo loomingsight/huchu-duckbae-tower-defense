@@ -12,6 +12,7 @@ export default defineConfig({
     ...devices['Desktop Chrome'],
     baseURL: 'http://127.0.0.1:4173',
     viewport: { width: 844, height: 390 },
+    hasTouch: true,
     trace: 'retain-on-failure',
   },
   webServer: {

@@ -1,17 +1,10 @@
 import { TOWER_CATALOG } from '../towers/towerCatalog';
 import type {
-  GameHitEvent,
   GameProjectile,
   GameTower,
 } from '../simulation/createGame';
 import type { Vec2 } from '../types';
-import {
-  createGoldPop,
-  createSlowPulse,
-  effectForHit,
-  updateEffects,
-  type RuntimeEffect,
-} from './effects';
+import type { RuntimeEffect } from './effects';
 import type { CanvasLayout } from './layout';
 import { isRenderablePoint, worldToScreen } from './drawMap';
 
@@ -22,79 +15,9 @@ export type FloatingGold = {
 };
 
 export type EffectSnapshot = {
-  readonly gold: number;
   readonly towers: readonly Readonly<GameTower>[];
   readonly projectiles: readonly Readonly<GameProjectile>[];
-  readonly hitEvents: readonly Readonly<GameHitEvent>[];
 };
-
-type RetainedEffects = {
-  effects: RuntimeEffect[];
-  lastTimeSeconds: number | null;
-  lastHitEvents: readonly Readonly<GameHitEvent>[] | null;
-  lastGold: number;
-  slowTowerIds: Set<number>;
-};
-
-const retainedBySnapshot = new WeakMap<object, RetainedEffects>();
-
-function retainedEffects(snapshot: EffectSnapshot): RetainedEffects {
-  const key = snapshot as object;
-  const existing = retainedBySnapshot.get(key);
-  if (existing !== undefined) return existing;
-  const created: RetainedEffects = {
-    effects: [],
-    lastTimeSeconds: null,
-    lastHitEvents: null,
-    lastGold: snapshot.gold,
-    slowTowerIds: new Set(),
-  };
-  retainedBySnapshot.set(key, created);
-  return created;
-}
-
-function advanceEffects(snapshot: EffectSnapshot, timeSeconds: number): RetainedEffects {
-  const retained = retainedEffects(snapshot);
-  const safeTime = Number.isFinite(timeSeconds) ? Math.max(0, timeSeconds) : 0;
-  const restarted = retained.lastTimeSeconds !== null && safeTime < retained.lastTimeSeconds;
-  if (restarted) {
-    retained.effects = [];
-    retained.lastHitEvents = null;
-    retained.lastGold = snapshot.gold;
-    retained.slowTowerIds.clear();
-  }
-  const delta = retained.lastTimeSeconds === null || restarted
-    ? 0
-    : safeTime - retained.lastTimeSeconds;
-  retained.effects = updateEffects(retained.effects, delta);
-  retained.lastTimeSeconds = safeTime;
-
-  if (retained.lastHitEvents !== snapshot.hitEvents) {
-    retained.lastHitEvents = snapshot.hitEvents;
-    for (const event of snapshot.hitEvents) {
-      const effect = effectForHit(event);
-      if (effect !== null) retained.effects.push(effect);
-    }
-  }
-
-  const earnedGold = snapshot.gold - retained.lastGold;
-  if (earnedGold > 0) {
-    const position = snapshot.hitEvents.at(-1)?.position;
-    if (position !== undefined) {
-      const gold = createGoldPop(position, earnedGold);
-      if (gold !== null) retained.effects.push(gold);
-    }
-  }
-  retained.lastGold = snapshot.gold;
-
-  for (const tower of snapshot.towers) {
-    if (tower.type !== 'slow' || retained.slowTowerIds.has(tower.id)) continue;
-    retained.slowTowerIds.add(tower.id);
-    const pulse = createSlowPulse(tower.position);
-    if (pulse !== null) retained.effects.push(pulse);
-  }
-  return retained;
-}
 
 function drawSlowAuras(
   ctx: CanvasRenderingContext2D,
@@ -295,10 +218,10 @@ export function drawGroundEffects(
   layout: CanvasLayout,
   snapshot: EffectSnapshot,
   timeSeconds: number,
+  effects: readonly RuntimeEffect[],
 ): void {
-  const retained = advanceEffects(snapshot, timeSeconds);
   drawSlowAuras(ctx, layout, snapshot.towers, timeSeconds);
-  drawSlowPulses(ctx, layout, retained.effects);
+  drawSlowPulses(ctx, layout, effects);
 }
 
 export function drawForegroundEffects(
@@ -306,9 +229,10 @@ export function drawForegroundEffects(
   layout: CanvasLayout,
   snapshot: EffectSnapshot,
   floatingGold: readonly FloatingGold[],
+  effects: readonly RuntimeEffect[],
 ): void {
   drawProjectiles(ctx, layout, snapshot.projectiles);
-  for (const effect of retainedEffects(snapshot).effects) drawRuntimeEffect(ctx, layout, effect);
+  for (const effect of effects) drawRuntimeEffect(ctx, layout, effect);
   drawFloatingGold(ctx, layout, floatingGold);
 }
 

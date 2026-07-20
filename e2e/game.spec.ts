@@ -5,6 +5,8 @@ type ClockSnapshot = {
   elapsedSeconds: number;
   waveIndex: number;
   enemyCount: number;
+  maxEnemyProgress: number;
+  damagedEnemyCount: number;
   baseHp: number;
   gold: number;
   pendingFrames: number;
@@ -77,9 +79,14 @@ test('844x390 touch flow builds, controls time, and progresses deterministically
   expect(stillPaused.elapsedSeconds).toBe(paused.elapsedSeconds);
   await page.getByRole('button', { name: '게임 계속하기' }).click();
 
+  const beforeProgress = await clockSnapshot(page);
   const progressed = await advance(page, 6_000);
   expect(progressed.elapsedSeconds).toBeGreaterThan(initial.elapsedSeconds);
-  expect(progressed.enemyCount > 0 || progressed.waveIndex > 0 || progressed.baseHp < 20).toBe(true);
+  expect(
+    progressed.waveIndex > beforeProgress.waveIndex
+    || progressed.maxEnemyProgress > beforeProgress.maxEnemyProgress
+    || progressed.damagedEnemyCount > beforeProgress.damagedEnemyCount,
+  ).toBe(true);
   await page.screenshot({ path: 'docs/qa/landscape-844x390.png' });
   expect(consoleErrors).toEqual([]);
 });

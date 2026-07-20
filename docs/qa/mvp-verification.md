@@ -6,17 +6,17 @@
 
 | 명령 | 결과 |
 | --- | --- |
-| `npm test -- tests/game/effects.test.ts` | PASS, 1 file / 6 tests |
-| `npm run test` | PASS, 22 files / 108 tests |
+| `npm test -- tests/game/effects.test.ts` | PASS, 1 file / 11 tests |
+| `npm run test` | PASS, 22 files / 114 tests |
 | `npm run build` | PASS, TypeScript + Vite production build, 36 modules transformed |
 | `npm run test:e2e` | PASS, Chromium 4 / 4 tests, 1 worker |
 
-TDD RED는 `updateEffects`의 placeholder가 만료 효과를 남겨 `expected [...] to deeply equal []`로 실패하고, lazy audio placeholder가 `expected "spy" to be called once, but got 0 times`로 실패하는 것을 각각 확인했습니다. GREEN에서는 focused effects/audio 6개가 모두 통과했습니다.
+초기 TDD RED는 `updateEffects`의 placeholder가 만료 효과를 남겨 `expected [...] to deeply equal []`로 실패하고, lazy audio placeholder가 `expected "spy" to be called once, but got 0 times`로 실패하는 것을 각각 확인했습니다. 리뷰 보강 RED에서는 fixed-step buffer 부재로 `createBuffer is not a function`, suspended `play()`의 중복 resume로 `expected "spy" to be called once, but got 3 times`, progress aggregate 부재로 E2E `Expected: true / Received: false`를 확인했습니다. GREEN에서는 focused effects/audio/buffer 11개가 모두 통과했습니다.
 
 ## 브라우저 수락 범위
 
 - 844×390: 게임 시작, 화살 타워 선택, buildable cell 배치, 골드 450→350 확인
-- 844×390: 2× 전환, pause 중 debug clock 2초 전진에도 elapsed 고정, resume 뒤 enemy/wave/HP 진행 확인
+- 844×390: 2× 전환, pause 중 debug clock 2초 전진에도 elapsed 고정, resume 뒤 wave index·최대 path 진행도·피해 적 수 중 하나가 실제 증가함을 확인
 - 844×390: 실제 UI 타워 구매와 실제 simulation 진행으로 victory overlay 확인, restart 뒤 gold 450 / HP 20 / wave 1 reset 확인
 - 844×390: 무타워 defeat를 2회 반복하고 매 restart마다 pending animation frame이 정확히 1개임을 확인
 - 390×844: 회전 안내 표시, debug clock 5초 전진에도 elapsed와 enemy count가 그대로임을 확인
@@ -24,7 +24,7 @@ TDD RED는 `updateEffects`의 placeholder가 만료 효과를 남겨 `expected [
 - 브라우저 `console.error`: 0건
 - 브라우저 uncaught `pageerror`: 0건
 
-`?debug-clock=1` 훅은 DEV build에서만 설치됩니다. 공개 동작은 `advance(milliseconds)`와 read-only `snapshot()`뿐이며 게임 상태를 직접 덮어쓰지 않습니다. production bundle은 `__HUCHU_DEV_CLOCK__` 문자열 부재를 별도로 확인합니다.
+`?debug-clock=1` 훅은 DEV build에서만 설치됩니다. 공개 동작은 `advance(milliseconds)`와 read-only `snapshot()`뿐이며 게임 상태를 직접 덮어쓰지 않습니다. snapshot의 `maxEnemyProgress`와 `damagedEnemyCount`로 spawn 존재가 아닌 실제 진행을 검증합니다. production bundle은 `__HUCHU_DEV_CLOCK__`와 `debug-clock` 문자열 부재를 별도로 확인합니다.
 
 ## 캡처
 

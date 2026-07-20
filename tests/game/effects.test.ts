@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { SoundEngine, type AudioContextLike } from '../../src/game/audio/SoundEngine';
-import { updateEffects } from '../../src/game/render/effects';
+import { FIXED_STEP_SECONDS } from '../../src/game/config';
+import { createFixedStepLoop } from '../../src/game/core/fixedStepLoop';
+import type { GameHitEvent } from '../../src/game/simulation/createGame';
+import {
+  createSlowPulse,
+  effectForHit,
+  updateEffects,
+} from '../../src/game/render/effects';
 
 describe('runtime effects', () => {
   it('removes an effect once its finite lifetime has elapsed', () => {
@@ -23,6 +30,85 @@ describe('runtime effects', () => {
 
     expect(updateEffects(current, Number.NaN)).toEqual(current);
     expect(updateEffects(current, -1)).toEqual(current);
+  });
+
+  it('creates distinct finite aqua, fire, arrow, and slow effects', () => {
+    const position = { x: 2.5, y: 3.5 };
+    const aqua = effectForHit({ kind: 'hit', towerType: 'huchu', position, radius: 1.25 });
+    const fire = effectForHit({ kind: 'hit', towerType: 'deokbae', position, radius: 0.85 });
+    const arrow = effectForHit({ kind: 'hit', towerType: 'arrow', position, radius: 0 });
+    const slow = createSlowPulse(position);
+
+    expect([aqua?.kind, fire?.kind, arrow?.kind, slow?.kind]).toEqual([
+      'aqua-splash', 'fire-burst', 'arrow-impact', 'slow-pulse',
+    ]);
+    expect(updateEffects([aqua!, fire!, arrow!, slow!], 1)).toEqual([]);
+  });
+
+  it('buffers every fixed-step hit, coalesces cue types, and clears after consumption or restart', async () => {
+    const module = await import('../../src/game/render/effects');
+    type BufferApi = {
+      recordStep(step: {
+        hitEvents: readonly GameHitEvent[];
+        shot: boolean;
+        leak: boolean;
+      }): void;
+      peek(): { hitEvents: readonly GameHitEvent[]; cueTypes: readonly string[] };
+      clear(): void;
+      reset(): void;
+    };
+    const createBuffer = (module as unknown as {
+      createFrameEventBuffer(): BufferApi;
+    }).createFrameEventBuffer;
+    const buffer = createBuffer();
+    const firstStep = [{
+      kind: 'hit' as const,
+      towerType: 'huchu' as const,
+      position: { x: 1, y: 1 },
+      radius: 1.25,
+    }];
+
+    let updateCount = 0;
+    const renderedFrames: ReturnType<BufferApi['peek']>[] = [];
+    const loop = createFixedStepLoop({
+      update() {
+        updateCount += 1;
+        if (updateCount === 1) {
+          buffer.recordStep({ hitEvents: firstStep, shot: true, leak: false });
+          firstStep[0].position.x = 99;
+          return;
+        }
+        buffer.recordStep({
+          hitEvents: [
+            { kind: 'hit', towerType: 'deokbae', position: { x: 2, y: 2 }, radius: 0.85 },
+            { kind: 'hit', towerType: 'arrow', position: { x: 3, y: 3 }, radius: 0 },
+          ],
+          shot: true,
+          leak: true,
+        });
+      },
+      render() {
+        renderedFrames.push(buffer.peek());
+        buffer.clear();
+      },
+    });
+    loop.tick(FIXED_STEP_SECONDS * 2);
+
+    expect(updateCount).toBe(2);
+    expect(renderedFrames).toHaveLength(1);
+    const [frame] = renderedFrames;
+    expect(frame.hitEvents).toHaveLength(3);
+    expect(frame.hitEvents[0]).toMatchObject({ towerType: 'huchu', position: { x: 1, y: 1 } });
+    expect(frame.cueTypes).toEqual(['shot', 'hit', 'leak']);
+    expect(frame.hitEvents.map((event) => effectForHit(event)?.kind)).toEqual([
+      'aqua-splash', 'fire-burst', 'arrow-impact',
+    ]);
+
+    loop.tick(0);
+    expect(renderedFrames[1]).toEqual({ hitEvents: [], cueTypes: [] });
+    buffer.recordStep({ hitEvents: firstStep, shot: true, leak: false });
+    buffer.reset();
+    expect(buffer.peek()).toEqual({ hitEvents: [], cueTypes: [] });
   });
 });
 
@@ -61,6 +147,72 @@ describe('SoundEngine', () => {
     await sound.unlock();
 
     expect(context.resume).toHaveBeenCalledOnce();
+  });
+
+  it('drops suspended play cues while sharing one in-flight gesture resume', async () => {
+    let state: AudioContextState = 'suspended';
+    let resolveResume: (() => void) | undefined;
+    const resumeDone = new Promise<void>((resolve) => { resolveResume = resolve; });
+    const context = fakeAudioContext();
+    Object.defineProperty(context, 'state', { get: () => state });
+    vi.mocked(context.resume).mockImplementation(() => resumeDone);
+    const sound = new SoundEngine(() => context);
+
+    const firstUnlock = sound.unlock();
+    const secondUnlock = sound.unlock();
+    sound.play('hit');
+
+    expect(context.resume).toHaveBeenCalledOnce();
+    expect(context.createOscillator).not.toHaveBeenCalled();
+    state = 'running';
+    resolveResume?.();
+    await Promise.all([firstUnlock, secondUnlock]);
+    expect(context.createOscillator).not.toHaveBeenCalled();
+
+    sound.play('hit');
+    expect(context.createOscillator).toHaveBeenCalledOnce();
+  });
+
+  it('resets a rejected resume so a later gesture can retry', async () => {
+    const context = fakeAudioContext();
+    Object.defineProperty(context, 'state', { value: 'suspended' });
+    vi.mocked(context.resume)
+      .mockRejectedValueOnce(new Error('gesture expired'))
+      .mockResolvedValueOnce(undefined);
+    const sound = new SoundEngine(() => context);
+
+    await sound.unlock();
+    await sound.unlock();
+
+    expect(context.resume).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps a new context resume shared when an old destroyed context resolves later', async () => {
+    let resolveFirst: (() => void) | undefined;
+    let resolveSecond: (() => void) | undefined;
+    const firstResume = new Promise<void>((resolve) => { resolveFirst = resolve; });
+    const secondResume = new Promise<void>((resolve) => { resolveSecond = resolve; });
+    const first = fakeAudioContext();
+    const second = fakeAudioContext();
+    Object.defineProperty(first, 'state', { value: 'suspended' });
+    Object.defineProperty(second, 'state', { value: 'suspended' });
+    vi.mocked(first.resume).mockImplementation(() => firstResume);
+    vi.mocked(second.resume).mockImplementation(() => secondResume);
+    const factory = vi.fn()
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(second);
+    const sound = new SoundEngine(factory);
+
+    const oldUnlock = sound.unlock();
+    await sound.destroy();
+    const newUnlock = sound.unlock();
+    resolveFirst?.();
+    await oldUnlock;
+    const sharedNewUnlock = sound.unlock();
+
+    expect(second.resume).toHaveBeenCalledOnce();
+    resolveSecond?.();
+    await Promise.all([newUnlock, sharedNewUnlock]);
   });
 });
 

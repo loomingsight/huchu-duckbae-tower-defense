@@ -59,7 +59,7 @@ Blender 원본은 다음 경로에 보존합니다.
 
 ## 개발 전용 deterministic clock
 
-Playwright는 개발 서버의 `?debug-clock=1`에서만 `window.__HUCHU_DEV_CLOCK__`을 사용합니다. 이 훅은 임의 상태를 쓰지 않고 실제 animation callback의 시간만 전진시키며, phase·경과 시간·웨이브·적 수·기지 HP·골드·pending frame 수를 읽습니다. `import.meta.env.DEV` 분기이므로 production build에는 포함되지 않습니다.
+Playwright는 개발 서버의 `?debug-clock=1`에서만 `window.__HUCHU_DEV_CLOCK__`을 사용합니다. 이 훅은 임의 상태를 쓰지 않고 실제 animation callback의 시간만 전진시키며, phase·경과 시간·웨이브·적 수·최대 path 진행도·피해를 입은 적 수·기지 HP·골드·pending frame 수를 읽습니다. `import.meta.env.DEV` 분기이므로 production build에는 포함되지 않습니다.
 
 ## 연기한 결정
 

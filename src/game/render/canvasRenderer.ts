@@ -17,6 +17,7 @@ import {
   type FloatingGold,
 } from './drawEffects';
 import { drawMap } from './drawMap';
+import type { RuntimeEffect } from './effects';
 import {
   computeCanvasLayout,
   type CanvasLayout,
@@ -40,6 +41,7 @@ export type RenderOptions = {
   readonly paused?: boolean;
   readonly timeSeconds?: number;
   readonly floatingGold?: readonly FloatingGold[];
+  readonly effects?: readonly RuntimeEffect[];
 };
 
 export type CanvasRenderer = {
@@ -100,9 +102,10 @@ export function createCanvasRenderer(
       range: options.selectedRange,
     });
     const timeSeconds = Number.isFinite(options.timeSeconds) ? options.timeSeconds ?? 0 : 0;
-    drawGroundEffects(context, layout, snapshot, timeSeconds);
+    const effects = options.effects ?? [];
+    drawGroundEffects(context, layout, snapshot, timeSeconds, effects);
     drawEntities(context, layout, snapshot, assets);
-    drawForegroundEffects(context, layout, snapshot, options.floatingGold ?? []);
+    drawForegroundEffects(context, layout, snapshot, options.floatingGold ?? [], effects);
     if (options.paused === true) drawPauseOverlay(context, layout);
     context.restore();
 

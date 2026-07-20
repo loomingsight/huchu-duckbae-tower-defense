@@ -65,6 +65,7 @@ function browserAudioContext(): AudioContextLike | null {
 export class SoundEngine {
   private context: AudioContextLike | null = null;
   private muted = false;
+  private resumePromise: Promise<void> | null = null;
 
   constructor(private readonly factory: () => AudioContextLike | null = browserAudioContext) {}
 
@@ -76,12 +77,25 @@ export class SoundEngine {
         this.context = null;
       }
     }
-    if (this.context?.state === 'suspended') {
-      try {
-        await this.context.resume();
-      } catch {
-        // Browsers may reject resume when the gesture is no longer active.
+    const context = this.context;
+    if (context?.state === 'suspended') {
+      if (this.resumePromise !== null) {
+        await this.resumePromise;
+        return;
       }
+      let resumeAttempt: Promise<void>;
+      try {
+        resumeAttempt = Promise.resolve(context.resume());
+      } catch {
+        return;
+      }
+      const tracked = resumeAttempt
+        .catch(() => undefined)
+        .finally(() => {
+          if (this.resumePromise === tracked) this.resumePromise = null;
+        });
+      this.resumePromise = tracked;
+      await tracked;
     }
   }
 
@@ -92,12 +106,6 @@ export class SoundEngine {
   play(cue: SoundCue): void {
     const context = this.context;
     if (context === null || this.muted) return;
-    if (context.state === 'suspended') {
-      void context.resume().then(() => {
-        if (!this.muted && this.context === context) this.emit(context, cue);
-      }).catch(() => undefined);
-      return;
-    }
     if (context.state !== 'running') return;
     this.emit(context, cue);
   }
@@ -105,6 +113,7 @@ export class SoundEngine {
   async destroy(): Promise<void> {
     const context = this.context;
     this.context = null;
+    this.resumePromise = null;
     if (context === null || context.state === 'closed') return;
     try {
       await context.close();

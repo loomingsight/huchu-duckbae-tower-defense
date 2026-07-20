@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { createCanvasRenderer, type GameSnapshot } from '../../src/game/render/canvasRenderer';
 import { drawEntities } from '../../src/game/render/drawEntities';
+import { effectsForHits } from '../../src/game/render/effects';
 import { computeCanvasLayout } from '../../src/game/render/layout';
 import { worldToScreen } from '../../src/game/render/drawMap';
 import {
@@ -94,6 +95,7 @@ describe('renderer layer order', () => {
     renderer.render(state, {
       timeSeconds: 0.25,
       floatingGold: [{ position: { x: 2.5, y: 2.5 }, value: 5, ageSeconds: 0.1 }],
+      effects: effectsForHits(state.hitEvents),
     });
 
     const slowAura = calls.findIndex((call) => (
@@ -117,6 +119,22 @@ describe('renderer layer order', () => {
     expect(hp).toBeLessThan(projectile);
     expect(projectile).toBeLessThan(hit);
     expect(hit).toBeLessThan(gold);
+  });
+
+  it('does not respawn snapshot hit events without an explicit retained effect list', () => {
+    const { context, calls } = createRecordingContext();
+    const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
+    const state = snapshot({
+      hitEvents: [
+        { kind: 'hit', towerType: 'huchu', position: { x: 2.5, y: 2.5 }, radius: 1.25 },
+      ],
+    });
+
+    renderer.render(state);
+
+    expect(calls.some((call) => (
+      call.method === 'arc' && call.fillStyle === 'rgba(73, 211, 235, 0.2)'
+    ))).toBe(false);
   });
 });
 

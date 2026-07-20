@@ -17,6 +17,58 @@ export type RuntimeEffect =
   | (PositionedEffect & Readonly<{ kind: 'slow-pulse' }>)
   | (PositionedEffect & Readonly<{ kind: 'gold-pop'; value: number }>);
 
+export type FrameCue = 'shot' | 'hit' | 'leak';
+
+export type FrameEventBatch = Readonly<{
+  hitEvents: readonly Readonly<GameHitEvent>[];
+  cueTypes: readonly FrameCue[];
+}>;
+
+export type FrameEventBuffer = Readonly<{
+  recordStep(step: Readonly<{
+    hitEvents: readonly Readonly<GameHitEvent>[];
+    shot: boolean;
+    leak: boolean;
+  }>): void;
+  peek(): FrameEventBatch;
+  clear(): void;
+  reset(): void;
+}>;
+
+export function createFrameEventBuffer(): FrameEventBuffer {
+  let hitEvents: GameHitEvent[] = [];
+  const cueTypes = new Set<FrameCue>();
+
+  function clear(): void {
+    hitEvents = [];
+    cueTypes.clear();
+  }
+
+  return {
+    recordStep(step) {
+      if (step.shot) cueTypes.add('shot');
+      if (step.hitEvents.length > 0) cueTypes.add('hit');
+      if (step.leak) cueTypes.add('leak');
+      for (const event of step.hitEvents) {
+        hitEvents.push({
+          kind: 'hit',
+          towerType: event.towerType,
+          position: { ...event.position },
+          radius: event.radius,
+        });
+      }
+    },
+    peek() {
+      return {
+        hitEvents: hitEvents.map((event) => ({ ...event, position: { ...event.position } })),
+        cueTypes: [...cueTypes],
+      };
+    },
+    clear,
+    reset: clear,
+  };
+}
+
 export function updateEffects<T extends TimedEffect>(
   effects: readonly T[],
   deltaSeconds: number,
@@ -43,6 +95,13 @@ export function effectForHit(event: Readonly<GameHitEvent>): RuntimeEffect | nul
     return { kind: 'fire-burst', position, age: 0, duration: 0.34 };
   }
   return { kind: 'arrow-impact', position, age: 0, duration: 0.22 };
+}
+
+export function effectsForHits(events: readonly Readonly<GameHitEvent>[]): RuntimeEffect[] {
+  return events.flatMap((event) => {
+    const effect = effectForHit(event);
+    return effect === null ? [] : [effect];
+  });
 }
 
 export function createGoldPop(position: Readonly<Vec2>, value: number): RuntimeEffect | null {
