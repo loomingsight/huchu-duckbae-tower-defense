@@ -1,0 +1,61 @@
+:root {
+  color: #f8f5e9;
+  background: #21362c;
+  font-family: system-ui, sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100dvh;
+  margin: 0;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.loading-shell {
+  display: grid;
+  min-height: 100dvh;
+  place-content: center;
+  gap: 0.75rem;
+  padding: 2rem;
+  text-align: center;
+}
+
+.loading-shell__eyebrow {
+  margin: 0;
+  color: #8ed4a0;
+  font-size: 0.875rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.loading-shell h1,
+.loading-shell p {
+  margin: 0;
+}
+
+.loading-shell__button {
+  min-width: 11rem;
+  min-height: 2.75rem;
+  margin: 0.75rem auto 0;
+  border: 0;
+  border-radius: 0.75rem;
+  color: inherit;
+  background: #375a45;
+}
+
+/* Restrict touch gesture changes to interactive game controls, never the page. */
+.game-control {
+  touch-action: manipulation;
+}
