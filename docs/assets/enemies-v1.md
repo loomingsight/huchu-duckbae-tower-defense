@@ -37,12 +37,12 @@ Golem에는 visor나 circuit pattern을 사용하지 않았고, Minotaur에는 g
 
 | 방향 | Root Z yaw |
 | --- | ---: |
-| `ne` | `45°` |
-| `se` | `135°` |
-| `sw` | `225°` |
-| `nw` | `315°` |
+| `ne` | `315°` |
+| `se` | `225°` |
+| `sw` | `135°` |
+| `nw` | `45°` |
 
-각 방향을 렌더한 뒤 root yaw를 `0°`로 복원해 `.blend`를 저장했다.
+local `+Y` forward를 positive Z yaw로 회전했을 때 world forward는 `(-sin(yaw), cos(yaw))`다. 따라서 위 mapping은 각각 `NE=(+X,+Y)`, `SE=(+X,-Y)`, `SW=(-X,-Y)`, `NW=(-X,+Y)`를 만든다. 각 방향을 렌더한 뒤 root yaw를 `0°`로 복원해 `.blend`를 저장했다.
 
 ## 출력 경로
 

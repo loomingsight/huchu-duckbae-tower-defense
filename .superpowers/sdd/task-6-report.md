@@ -99,7 +99,7 @@ Blender 내부에서 각 collection의 mesh bounding box와 object transform을 
 - target: `(0, 0, 1.75)`
 - ortho scale: `5.25`
 - lights: `EnemyV1_Key`, `EnemyV1_Fill`, `EnemyV1_Rim`
-- root-only yaw: `ne=45°`, `se=135°`, `sw=225°`, `nw=315°`
+- root-only yaw: `ne=315°`, `se=225°`, `sw=135°`, `nw=45°`
 - film: transparent
 - Blender image 검사: full 20개와 mobile 20개 모두 RGBA 4-channel, 투명 pixel과 불투명 pixel이 함께 존재
 
@@ -166,3 +166,65 @@ tsc -b && vite build
 - contact sheet full/mobile을 모두 시각 확인함
 - `.blend1` 자동 백업은 stage하지 않고 `/tmp/huchu-defense-task6-enemies-voxel-v1.blend1`로 이동함
 - 기존 untracked `.playwright-cli/`, `.superpowers/`의 다른 파일, `output/`은 변경 또는 stage하지 않음
+
+## Review 수정: direction handedness와 manifest 계약
+
+후속 review에서 local `+Y` forward와 positive Z yaw에 대한 direction handedness 오류가 확인됐다. Blender의 회전 규칙에서 local forward의 world XY는 `(-sin(yaw), cos(yaw))`이므로 기존 mapping은 각 파일명의 좌우 방향을 반대로 연결하고 있었다.
+
+수정 mapping과 검증된 world-forward vector:
+
+| 방향 | Root Z yaw | World forward XY |
+| --- | ---: | --- |
+| `ne` | `315°` | `(0.707107, 0.707107)` |
+| `se` | `225°` | `(0.707107, -0.707107)` |
+| `sw` | `135°` | `(-0.707107, -0.707107)` |
+| `nw` | `45°` | `(-0.707107, 0.707107)` |
+
+문서만 바꾸지 않고 Blender MCP에서 변경되지 않은 모델, 카메라, 조명으로 5종 × 4방향의 256 RGBA와 96 RGBA 파일 40개를 기존 정확한 파일명에 모두 재렌더했다. 두 contact sheet도 수정 픽셀로 Blender에서 다시 만들었다. 모든 root에는 `render_yaw_mapping=ne=315,se=225,sw=135,nw=45` metadata를 기록했고 저장 전 yaw를 `0`으로 복원했다.
+
+강화된 manifest test는 모든 type/direction의 exact suffix와 20개 URL uniqueness를 검사한다. 현재 구현이 이미 정확한 URL을 가리키고 있었으므로 mutation 방식으로 `slime.ne`를 잠시 `slime.se`에 중복 연결해 RED를 증명한 뒤 즉시 원복했다.
+
+Mutation RED:
+
+```text
+npm test -- tests/game/spriteManifest.test.ts
+Test Files 1 failed (1)
+Tests 2 failed (2)
+expected .../mobile/slime/slime-se-96-v1.png to match .../mobile/slime/slime-ne-96-v1.png
+expected 19 to be 20
+```
+
+원복 후 GREEN:
+
+```text
+npm test -- tests/game/spriteManifest.test.ts
+Test Files 1 passed (1)
+Tests 2 passed (2)
+```
+
+후속 full/build:
+
+```text
+npm test
+Test Files 12 passed (12)
+Tests 66 passed (66)
+
+npm run build
+tsc -b && vite build
+✓ built in 79ms
+```
+
+Blender 후속 검증 결과:
+
+- corrected yaw mapping과 4개 world-forward quadrant: OK
+- 5개 root yaw `0`, location `0`, scale `1`: OK
+- Body/VFX parent 관계: OK
+- full 20개 + mobile 20개, RGBA alpha: OK
+- alpha crop: 모든 방향에서 canvas edge에 닿지 않음
+- 최소 alpha margin: full `10 px`, mobile `3 px`
+- 이전 commit의 반대방향 파일과 decoded RGBA swap 비교 40건: mismatch `0`, maximum pixel difference `0.0`; 새 `ne←기존 nw`, `se←기존 sw`, `sw←기존 se`, `nw←기존 ne`로 픽셀을 실제 재배치했고 모델 디자인은 변하지 않음
+- 공통 camera `EnemyV1_Ortho_Camera`, location `(6.5, -8.5, 6.25)`, ortho scale `5.25`: 유지
+- 공통 lights `EnemyV1_Key`, `EnemyV1_Fill`, `EnemyV1_Rim`: 유지
+- review 재저장 때 생긴 `.blend1` 자동 백업은 stage하지 않고 `/tmp/huchu-defense-task6-handedness-fix.blend1`로 이동
+
+수정 contact sheet를 full/mobile 원본 크기로 다시 확인했다. 열 순서 `ne/se/sw/nw`가 각 enemy에서 side/front/opposite-side/back으로 일관되게 순환하고, Fairy wings, Orc club, Golem front cracks, Minotaur face/horns의 좌우·정면·후면 단서가 두 해상도에서 서로 맞는다. alpha 경계 손실과 crop은 보이지 않았다.
