@@ -10,6 +10,9 @@ describe('project scaffold', () => {
       dev: 'vite',
       build: 'tsc -b && vite build',
       test: 'vitest run',
+      'test:watch': 'vitest',
+      'test:e2e': 'playwright test --pass-with-no-tests tests/e2e',
+      check: 'npm run test && npm run build',
     });
     expect(html).toContain('id="app"');
   });
