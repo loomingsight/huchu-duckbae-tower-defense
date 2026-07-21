@@ -17,12 +17,16 @@ describe('computeCanvasLayout', () => {
 
     expect(layout.showOrientationPrompt).toBe(false);
     expect(layout.gameArea).toEqual({ x: 0, y: 0, width: 844, height: 390 });
-    expect(layout.mapArea.width / layout.gameArea.width).toBeCloseTo(0.92);
-    expect(layout.mapArea.height / layout.gameArea.height).toBeCloseTo(0.76);
+    expect(layout.mapArea.width).toBeLessThanOrEqual(844 * 0.96);
+    expect(layout.mapArea.height).toBeLessThanOrEqual(390 * 0.90);
     expect(layout.projection.centerX).toBeCloseTo(422);
     expect(layout.projection.topY).toBeCloseTo(layout.mapArea.y);
-    expect(layout.projection.farScale).toBe(0.75);
-    expect(layout.projection.nearScale).toBe(1.1);
+    expect(layout.projection.farScale).toBe(0.88);
+    expect(layout.projection.nearScale).toBe(1.05);
+    expect(layout.projection.rowStep)
+      .toBeCloseTo(layout.projection.baseCellWidth * 0.965);
+    expect(layout.tileWidth).toBeCloseTo(layout.projection.baseCellWidth);
+    expect(layout.tileHeight).toBeCloseTo(layout.projection.rowStep);
     expect(layout.mapArea.x).toBeGreaterThanOrEqual(layout.gameArea.x);
     expect(layout.mapArea.y).toBeGreaterThanOrEqual(layout.gameArea.y);
     expect(layout.mapArea.x + layout.mapArea.width).toBeLessThanOrEqual(844);

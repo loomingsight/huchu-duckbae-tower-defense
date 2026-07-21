@@ -14,11 +14,35 @@ import {
 describe('perspective projection', () => {
   const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 2 });
 
+  function aspectAtRow(
+    candidate: ReturnType<typeof computeCanvasLayout>,
+    row: number,
+  ): number {
+    const left = projectWorldPoint(candidate, { x: 10, y: row });
+    const right = projectWorldPoint(candidate, { x: 11, y: row });
+    return (right.x - left.x) / candidate.projection.rowStep;
+  }
+
+  function expectPixelAlignedAspect(actual: number, expected: number): void {
+    expect(Math.abs(actual - expected)).toBeLessThanOrEqual(0.012);
+  }
+
   it('uses the approved far, near, and character scale values', () => {
-    expect(perspectiveScaleAt(layout, 0)).toBeCloseTo(0.75);
-    expect(perspectiveScaleAt(layout, GRID_HEIGHT)).toBeCloseTo(1.1);
-    expect(visualScaleAt(layout, 0)).toBeCloseTo(0.9375);
-    expect(visualScaleAt(layout, GRID_HEIGHT)).toBeCloseTo(1.375);
+    expect(perspectiveScaleAt(layout, 0)).toBeCloseTo(0.88);
+    expect(perspectiveScaleAt(layout, GRID_HEIGHT)).toBeCloseTo(1.05);
+    expect(visualScaleAt(layout, 0)).toBeCloseTo(1.1);
+    expect(visualScaleAt(layout, GRID_HEIGHT)).toBeCloseTo(1.3125);
+  });
+
+  it.each([
+    { viewport: { width: 844, height: 390, dpr: 1 } },
+    { viewport: { width: 1280, height: 720, dpr: 1 } },
+  ])('keeps projected tiles visually square in $viewport', ({ viewport }) => {
+    const candidate = computeCanvasLayout(viewport);
+
+    expectPixelAlignedAspect(aspectAtRow(candidate, 0), 0.88 / 0.965);
+    expectPixelAlignedAspect(aspectAtRow(candidate, GRID_HEIGHT / 2), 1);
+    expectPixelAlignedAspect(aspectAtRow(candidate, GRID_HEIGHT), 1.05 / 0.965);
   });
 
   it('keeps the entrance left of the snack chest', () => {

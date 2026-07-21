@@ -1,13 +1,11 @@
 import { GRID_HEIGHT, GRID_WIDTH } from '../config';
 
 const MAX_DEVICE_PIXEL_RATIO = 2;
-const TILE_HEIGHT_RATIO = 0.44;
-const MAP_WIDTH_RATIO = 0.92;
-const MAP_HEIGHT_RATIO = 0.76;
-const MAP_TOP_RATIO = 0.1;
-const MAP_BOTTOM_PADDING = 6;
-const FAR_SCALE = 0.75;
-const NEAR_SCALE = 1.1;
+const MAP_WIDTH_RATIO = 0.96;
+const MAP_HEIGHT_RATIO = 0.90;
+const FAR_SCALE = 0.88;
+const NEAR_SCALE = 1.05;
+const MID_SCALE = (FAR_SCALE + NEAR_SCALE) / 2;
 
 export type Viewport = {
   width: number;
@@ -56,27 +54,19 @@ export function computeCanvasLayout(viewport: Viewport): CanvasLayout {
   const dpr = Math.min(MAX_DEVICE_PIXEL_RATIO, Math.max(1, requestedDpr));
   const gameArea = { x: 0, y: 0, width, height };
 
-  const dimensionSum = GRID_WIDTH + GRID_HEIGHT;
-  const horizontalVisualUnit = Math.max(Number.EPSILON, (width - 12) * 2 / dimensionSum);
-  const visualTopPadding = Math.max(8, height * MAP_TOP_RATIO);
-  const visualAvailableHeight = Math.max(
+  const maxMapWidth = Math.max(Number.EPSILON, width * MAP_WIDTH_RATIO);
+  const maxMapHeight = Math.max(Number.EPSILON, height * MAP_HEIGHT_RATIO);
+  const widthLimitedCell = maxMapWidth / (GRID_WIDTH * NEAR_SCALE);
+  const heightLimitedCell = maxMapHeight / (GRID_HEIGHT * MID_SCALE);
+  const baseCellWidth = Math.max(
     Number.EPSILON,
-    height - visualTopPadding - MAP_BOTTOM_PADDING,
+    Math.min(widthLimitedCell, heightLimitedCell),
   );
-  const verticalVisualUnit = visualAvailableHeight * 2 / (dimensionSum * TILE_HEIGHT_RATIO);
-  const tileWidth = Math.max(
-    Number.EPSILON,
-    Math.min(horizontalVisualUnit, verticalVisualUnit),
-  );
-  const tileHeight = tileWidth * TILE_HEIGHT_RATIO;
-
-  const mapWidth = width * MAP_WIDTH_RATIO;
-  const mapHeight = height * MAP_HEIGHT_RATIO;
+  const rowStep = baseCellWidth * MID_SCALE;
+  const mapWidth = baseCellWidth * GRID_WIDTH * NEAR_SCALE;
+  const mapHeight = rowStep * GRID_HEIGHT;
   const centerX = width / 2;
-  const preferredTop = Math.max(8, height * MAP_TOP_RATIO);
-  const topY = Math.max(0, Math.min(preferredTop, height - mapHeight));
-  const baseCellWidth = mapWidth / (GRID_WIDTH * NEAR_SCALE);
-  const rowStep = mapHeight / GRID_HEIGHT;
+  const topY = Math.max(0, (height - mapHeight) / 2);
   const mapArea = {
     x: centerX - mapWidth / 2,
     y: topY,
@@ -96,8 +86,8 @@ export function computeCanvasLayout(viewport: Viewport): CanvasLayout {
       farScale: FAR_SCALE,
       nearScale: NEAR_SCALE,
     },
-    tileWidth,
-    tileHeight,
+    tileWidth: baseCellWidth,
+    tileHeight: rowStep,
     cellSize: baseCellWidth,
     dpr,
     backingWidth: Math.max(1, Math.round(width * dpr)),
