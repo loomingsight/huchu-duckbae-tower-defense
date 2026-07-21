@@ -157,54 +157,20 @@ Run: `npx vitest run tests/game/placement.test.ts tests/game/effects.test.ts tes
 
 Expected: focused suites 전부 통과.
 
-- [ ] **Step 8: 커밋**
+- [x] **Step 8: 커밋**
 
 ```bash
 git add src/app/GameApp.ts src/game/simulation/createGame.ts src/game/simulation/placeTower.ts src/game/render/effects.ts tests/game/placement.test.ts tests/game/effects.test.ts tests/game/renderer.test.ts tests/game/targeting.test.ts
 git commit -m "feat: repeat slow tower pulse"
 ```
 
-### Task 3: 새 경제에 맞춘 결정적 모바일 플레이 검증
+### Task 3: E2E 실행 제외 결정 반영
 
-**Files:**
-- Modify: `e2e/game.spec.ts`
-- Modify: `tests/app/gameRuntime.test.ts` (필요한 경우)
-- Modify: `tests/game/renderer.test.ts` (fixture만 필요한 경우)
+2026-07-21 사용자 지시에 따라 이번 변경은 정책 수치와 반복 VFX 로직 수정으로 분류하고 E2E 실행을 제외한다. RED 확인 중 기존 E2E가 새 시작 골드와 고급 타워 잠금 정책에서 실패하는 것까지만 확인했으며, 작업 중 작성한 미검증 구매 시나리오는 모두 되돌렸다.
 
-**Interfaces:**
-- Preserves: 844×390 landscape mobile viewport
-- Verifies: 시작 시 고급 타워 비활성, 기본 타워 우선 배치, 후반 고급 타워 해금, 최종 승리와 재시작
-
-- [ ] **Step 1: 새 경제 계약으로 E2E를 먼저 갱신**
-
-첫 화살 타워 설치 후 골드를 `220G`, 재시작 후 골드를 `320G`로 기대한다. 시작 직후 덕배와 후추 버튼이 disabled인지 검사하고, 기존 후추 선배치 승리 시나리오는 기본 타워 2~3개로 시작하도록 바꾼다.
-
-- [ ] **Step 2: RED 확인**
-
-Run: `npx playwright test e2e/game.spec.ts`
-
-Expected: 현재 구현 또는 기존 고급 타워 우선 구매 전략에서는 새 assertion/승리 조건이 실패한다.
-
-- [ ] **Step 3: 결정적 구매 전략 구현**
-
-알려진 buildable cell을 순회하며 초기에는 화살·슬로우 타워를 배치한다. 이후 짧은 고정 시간 단위로 진행하면서 실제 HUD 골드가 비용 이상일 때만 덕배, 후추 순서의 보강 타워를 설치한다. `disabled` 버튼 클릭을 우회하거나 게임 상태를 직접 조작하지 않는다.
-
-- [ ] **Step 4: 승리 가능성과 파동 시각 검증**
-
-최종 phase가 `victory`, 보스 처치가 true인지 확인한다. 설치 후 3초 이상 진행한 슬로우 타워 주변의 보라색 파동은 단위/renderer 테스트로 결정적으로 보증하고, E2E 스크린샷은 결과 화면과 주요 플레이 상태를 갱신한다.
-
-- [ ] **Step 5: GREEN 확인**
-
-Run: `npx playwright test e2e/game.spec.ts`
-
-Expected: 모바일 E2E 전부 통과.
-
-- [ ] **Step 6: 커밋**
-
-```bash
-git add e2e/game.spec.ts tests/app/gameRuntime.test.ts tests/game/renderer.test.ts
-git commit -m "test: verify balanced stage progression"
-```
+- [x] **Step 1: E2E 실행 중단**
+- [x] **Step 2: 미검증 `e2e/game.spec.ts` 변경 제거**
+- [x] **Step 3: 단위 테스트, 타입 검사, production build로 검증 범위 한정**
 
 ### Task 4: 전체 검증, main 통합, Pages 배포
 
@@ -212,15 +178,11 @@ git commit -m "test: verify balanced stage progression"
 - Verify: `dist/index.html`
 - Verify: `.github/workflows/deploy-pages.yml`
 
-- [ ] **Step 1: 전체 로컬 검증**
+- [x] **Step 1: 전체 로컬 검증**
 
 Run: `npm run check`
 
 Expected: 모든 Vitest 테스트와 production build 통과.
-
-Run: `npm run test:e2e`
-
-Expected: 모든 Playwright 테스트 통과.
 
 - [ ] **Step 2: 빌드 base와 변경 범위 검증**
 
@@ -251,5 +213,6 @@ Expected: conclusion `success`.
 - 슬로우 타워가 설치 직후와 게임 시간 `3.0초` 간격으로 `0.6초` 동안 보라색 파동을 반복한다.
 - 일시정지 중 phase가 멈추고, 2배속에서는 게임 시간 기준으로 빨라지며, 재시작에는 schedule이 남지 않는다.
 - 시작 골드 `320G`, 덕배 `420G`, 후추 `560G`, 적 보상 `8/10/15/28/150G`가 적용된다.
-- 시작 직후 고급 타워 버튼은 비활성이고 기본 타워에서 고급 타워로 진행해 결정적으로 승리할 수 있다.
-- 단위 테스트, production build, 모바일 E2E, GitHub Actions와 공개 리소스 검증이 모두 통과한다.
+- 시작 직후 고급 타워 버튼은 비활성이다.
+- 단위 테스트, 타입 검사, production build, GitHub Actions와 공개 리소스 검증이 모두 통과한다.
+- 모바일 E2E와 실제 승리 난이도 검증은 이번 배포에서 사용자 결정으로 제외하며 후속 플레이 피드백에서 조정한다.
