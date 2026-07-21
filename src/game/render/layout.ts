@@ -35,7 +35,6 @@ export type CanvasLayout = {
   viewport: Readonly<{ width: number; height: number }>;
   gameArea: Readonly<CanvasRect>;
   mapArea: Readonly<CanvasRect>;
-  mapOrigin: Readonly<{ x: number; y: number }>;
   projection: PerspectiveProjection;
   tileWidth: number;
   tileHeight: number;
@@ -89,7 +88,6 @@ export function computeCanvasLayout(viewport: Viewport): CanvasLayout {
     viewport: { width, height },
     gameArea,
     mapArea,
-    mapOrigin: { x: centerX, y: topY },
     projection: {
       centerX,
       topY,
