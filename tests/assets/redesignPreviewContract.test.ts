@@ -167,6 +167,17 @@ const expectedIdFramePairs = [
 ];
 
 describe('3D redesign preview contract', () => {
+  it('builds dynamic elemental flight silhouettes with looping trace state', () => {
+    const source = readFileSync('tools/blender/redesign_preview.py', 'utf8');
+
+    expect(source).toContain('"FireInnerFlame"');
+    expect(source).toContain('f"FireTongue{index}"');
+    expect(source).toContain('f"WaterStream{index}"');
+    expect(source).toContain('"WaterCrest"');
+    expect(source).toContain('_fireball_state(0.0) != _fireball_state(1.0)');
+    expect(source).toContain('_waterball_state(0.0) != _waterball_state(1.0)');
+  });
+
   it('builds the snack chest without a tile base and faces it toward the camera', () => {
     const source = readFileSync('tools/blender/redesign_preview.py', 'utf8');
     const match = source.match(

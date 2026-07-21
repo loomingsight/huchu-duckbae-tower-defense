@@ -116,7 +116,7 @@ function drawProjectiles(
         ctx,
         assets.vfx.fireball,
         animationFrame,
-        visualUnit * 1.55,
+        visualUnit * 2.325,
         center,
       )) {
         ctx.fillStyle = '#ff7a2f';
@@ -129,7 +129,7 @@ function drawProjectiles(
         ctx,
         assets.vfx.waterball,
         animationFrame,
-        visualUnit * 1.7,
+        visualUnit * 3.4,
         center,
       )) {
         ctx.fillStyle = '#5be3f1';

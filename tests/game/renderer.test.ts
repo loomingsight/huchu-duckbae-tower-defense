@@ -236,6 +236,34 @@ describe('renderer layer order', () => {
     expect(widths[1]).toBeGreaterThan(widths[0]);
   });
 
+  it.each([
+    ['deokbae', 'vfx-fireball', 2.325],
+    ['huchu', 'vfx-waterball', 3.4],
+  ] as const)('renders %s projectile at the approved elemental scale', (towerType, tag, factor) => {
+    const { context, calls } = createRecordingContext();
+    const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
+    const position = { x: 2.5, y: 2.5 };
+
+    renderer.render(snapshot({
+      projectiles: [{
+        id: 1,
+        towerType,
+        position,
+        targetId: 1,
+        damage: 20,
+        speed: 5,
+        splash: 1,
+      }],
+    }), { timeSeconds: 0.25 });
+
+    const draw = calls.find((call) => call.method === 'drawImage' && imageTag(call) === tag);
+    const expectedSize = renderer.getLayout().tileWidth
+      * visualScaleAt(renderer.getLayout(), position.y)
+      * factor;
+    expect(draw?.args[7]).toBeCloseTo(expectedSize);
+    expect(draw?.args[8]).toBeCloseTo(expectedSize);
+  });
+
   it('crops entity, motion, and projectile sprites from 256px source frames', () => {
     const { context, calls } = createRecordingContext();
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());

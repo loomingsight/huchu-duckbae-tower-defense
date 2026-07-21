@@ -4087,26 +4087,35 @@ def build_arrow(yaw_radians: float) -> bpy.types.Object:
 def _fireball_state(progress: float) -> tuple[tuple[float, ...], ...]:
     phase = (progress % 1.0) * math.tau
     state: list[tuple[float, ...]] = []
-    for index in range(4):
-        angle = phase + (0.65, 2.40, 4.05, 5.25)[index]
-        x = -0.34 - index * 0.23
-        y = math.cos(angle) * (0.08 + index * 0.018) + (0.025 if index == 1 else 0.0)
-        z = math.sin(angle) * (0.11 + index * 0.012) + (0.035 if index == 2 else 0.0)
-        size = 0.20 - index * 0.027
+    for index, offset in enumerate((0.30, 1.55, 2.75, 4.10, 5.35)):
+        angle = phase + offset
+        x = -0.30 - index * 0.20 + math.sin(angle * 0.70) * 0.035
+        y = math.cos(angle) * (0.075 + index * 0.014)
+        z = math.sin(angle) * (0.10 + index * 0.015) + (0.025 if index % 2 else 0.0)
+        size = 0.19 - index * 0.021
         state.append((x, y, z, size, angle))
     return tuple(state)
 
 
 def build_fireball(progress: float) -> list[bpy.types.Object]:
-    core = _vfx_material("FireCore", (1.0, 0.25, 0.025, 1.0), 0.24, 0.0, 0.65)
-    shell = _vfx_material("FireShell", (1.0, 0.68, 0.08, 0.88), 0.30, 0.0, 0.35)
-    ember = _vfx_material("FireEmber", (1.0, 0.80, 0.16, 0.82), 0.38, 0.0, 0.40)
+    core = _vfx_material("FireCore", (0.96, 0.08, 0.012, 1.0), 0.22, 0.0, 0.85)
+    inner = _vfx_material("FireInner", (1.0, 0.88, 0.12, 1.0), 0.16, 0.0, 1.10)
+    shell = _vfx_material("FireShell", (1.0, 0.38, 0.025, 0.92), 0.26, 0.0, 0.58)
+    ember = _vfx_material("FireEmber", (1.0, 0.72, 0.08, 0.86), 0.32, 0.0, 0.52)
     objects = [
-        _vfx_add_ico_sphere("FireCore", VFX_ANCHOR, (0.38, 0.34, 0.38), core, subdivisions=2),
+        _vfx_add_ico_sphere("FireCore", VFX_ANCHOR, (0.42, 0.36, 0.42), core, subdivisions=2),
+        _vfx_add_ico_sphere(
+            "FireInnerFlame",
+            (VFX_ANCHOR[0] + 0.12, VFX_ANCHOR[1] - 0.035, VFX_ANCHOR[2] + 0.08),
+            (0.24, 0.20, 0.27),
+            inner,
+            rotation=(0.08, -0.16, 0.20),
+            subdivisions=2,
+        ),
         _vfx_add_ico_sphere(
             "FireShell",
-            (VFX_ANCHOR[0] - 0.08, VFX_ANCHOR[1] + 0.04, VFX_ANCHOR[2] + 0.06),
-            (0.28, 0.25, 0.26),
+            (VFX_ANCHOR[0] - 0.10, VFX_ANCHOR[1] + 0.05, VFX_ANCHOR[2] + 0.04),
+            (0.33, 0.29, 0.31),
             shell,
             rotation=(0.18, -0.12, 0.24),
             subdivisions=1,
@@ -4114,65 +4123,102 @@ def build_fireball(progress: float) -> list[bpy.types.Object]:
     ]
     for index, (x, y, z, size, angle) in enumerate(_fireball_state(progress)):
         objects.append(
-            _vfx_add_ico_sphere(
-                f"FireTail{index}",
+            _vfx_add_cone(
+                f"FireTongue{index}",
                 (VFX_ANCHOR[0] + x, VFX_ANCHOR[1] + y, VFX_ANCHOR[2] + z),
-                (size * 1.30, size * 0.70, size * 0.82),
+                size * (0.62 + index * 0.025),
+                size * (2.55 + index * 0.18),
                 ember if index % 2 else shell,
-                rotation=(angle, 0.16 * index, 0.08 * index),
-                subdivisions=1,
+                rotation=(angle * 0.055, -math.pi / 2.0, angle * 0.11),
             )
         )
+        if index >= 2:
+            objects.append(
+                _vfx_add_ico_sphere(
+                    f"FireEmber{index}",
+                    (
+                        VFX_ANCHOR[0] + x - 0.18,
+                        VFX_ANCHOR[1] - y * 0.65,
+                        VFX_ANCHOR[2] + z + 0.06,
+                    ),
+                    (size * 0.44, size * 0.34, size * 0.48),
+                    inner if index % 2 else ember,
+                    rotation=(angle, 0.0, -angle * 0.30),
+                    subdivisions=1,
+                )
+            )
     return objects
 
 
 def _waterball_state(progress: float) -> tuple[tuple[float, ...], ...]:
     phase = (progress % 1.0) * math.tau
-    highlight = (
-        math.cos(phase) * 0.36,
-        math.sin(phase) * 0.30,
-        math.sin(phase + math.pi / 4.0) * 0.20,
+    crest = (
+        math.cos(phase) * 0.34,
+        math.sin(phase) * 0.28,
+        math.sin(phase + math.pi / 4.0) * 0.22,
         phase,
     )
-    drops: list[tuple[float, ...]] = [highlight]
-    for index, offset in enumerate((0.35, 2.45, 4.70)):
+    streams: list[tuple[float, ...]] = [crest]
+    for index, offset in enumerate((0.40, 2.35, 4.55)):
         angle = phase + offset
-        radius = 0.50 + index * 0.08
-        drops.append(
+        streams.append(
             (
-                math.cos(angle) * radius,
-                math.sin(angle) * (0.32 + index * 0.035),
-                math.sin(angle * 1.25) * 0.24,
+                -0.36 - index * 0.24 + math.cos(angle) * 0.045,
+                math.sin(angle) * (0.10 + index * 0.018),
+                math.cos(angle * 1.15) * (0.11 + index * 0.015),
                 angle,
             )
         )
-    return tuple(drops)
+    return tuple(streams)
 
 
 def build_waterball(progress: float) -> list[bpy.types.Object]:
-    water = _vfx_material("WaterCore", (0.035, 0.48, 0.82, 0.95), 0.18, 0.05)
-    highlight = _vfx_material("WaterHighlight", (0.58, 0.94, 1.0, 0.90), 0.12, 0.0, 0.12)
+    deep_water = _vfx_material("WaterCore", (0.018, 0.26, 0.72, 0.97), 0.14, 0.06, 0.10)
+    water = _vfx_material("WaterStream", (0.02, 0.58, 0.92, 0.90), 0.16, 0.02, 0.14)
+    highlight = _vfx_material("WaterHighlight", (0.60, 0.96, 1.0, 0.94), 0.10, 0.0, 0.22)
     objects = [
-        _vfx_add_ico_sphere("WaterCore", VFX_ANCHOR, (0.42, 0.38, 0.43), water, subdivisions=2),
+        _vfx_add_ico_sphere("WaterCore", VFX_ANCHOR, (0.46, 0.41, 0.47), deep_water, subdivisions=2),
+        _vfx_add_ico_sphere(
+            "WaterShell",
+            (VFX_ANCHOR[0] - 0.05, VFX_ANCHOR[1] + 0.03, VFX_ANCHOR[2] + 0.02),
+            (0.34, 0.31, 0.35),
+            water,
+            rotation=(0.12, -0.10, 0.18),
+            subdivisions=1,
+        ),
     ]
     states = _waterball_state(progress)
     hx, hy, hz, hangle = states[0]
     objects.append(
         _vfx_add_ico_sphere(
-            "WaterHighlight",
+            "WaterCrest",
             (VFX_ANCHOR[0] + hx, VFX_ANCHOR[1] + hy, VFX_ANCHOR[2] + hz),
-            (0.12, 0.08, 0.09),
+            (0.22, 0.075, 0.115),
             highlight,
-            rotation=(hangle, 0.0, hangle * 0.5),
+            rotation=(hangle * 0.35, hangle, hangle * 0.55),
             subdivisions=1,
         )
     )
     for index, (x, y, z, angle) in enumerate(states[1:]):
         objects.append(
             _vfx_add_ico_sphere(
-                f"WaterDrop{index}",
+                f"WaterStream{index}",
                 (VFX_ANCHOR[0] + x, VFX_ANCHOR[1] + y, VFX_ANCHOR[2] + z),
-                (0.085 + index * 0.012, 0.07, 0.14 + index * 0.015),
+                (0.30 - index * 0.035, 0.085 + index * 0.008, 0.105 + index * 0.010),
+                water if index % 2 else highlight,
+                rotation=(angle * 0.12, angle * 0.05, angle * 0.18),
+                subdivisions=1,
+            )
+        )
+        objects.append(
+            _vfx_add_ico_sphere(
+                f"WaterDrop{index}",
+                (
+                    VFX_ANCHOR[0] + x - 0.18,
+                    VFX_ANCHOR[1] - y * 1.35,
+                    VFX_ANCHOR[2] + z + 0.10 + index * 0.025,
+                ),
+                (0.07 + index * 0.01, 0.055 + index * 0.006, 0.12 + index * 0.014),
                 highlight,
                 rotation=(angle * 0.35, angle, 0.0),
                 subdivisions=1,
