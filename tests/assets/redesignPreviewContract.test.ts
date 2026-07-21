@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { access, mkdir, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { tmpdir } from 'node:os';
@@ -166,6 +167,26 @@ const expectedIdFramePairs = [
 ];
 
 describe('3D redesign preview contract', () => {
+  it('builds the snack chest without a tile base and faces it toward the camera', () => {
+    const source = readFileSync('tools/blender/redesign_preview.py', 'utf8');
+    const match = source.match(
+      /def build_snack_chest\(\) -> None:\n([\s\S]*?)\n\nMAP_BUILDERS =/,
+    );
+
+    expect(match).not.toBeNull();
+    const body = match?.[1] ?? '';
+    expect(body).not.toContain('tile_base()');
+    expect(body).toContain(
+      '_transform_active_asset(CHEST_FRONT_YAW, CHEST_GROUND_OFFSET)',
+    );
+    expect(source).toContain('CHEST_FRONT_YAW = math.atan2(');
+    expect(source).toContain('CHEST_GROUND_OFFSET = -0.26');
+    expect(source).toContain(
+      'is_chest = relative_path.endswith("snack-chest.png")',
+    );
+    expect(source).toContain('if not is_chest:');
+  });
+
   it('defines the exact approval-set assets once', () => {
     expect(PREVIEW_ASSETS.map((asset) => asset.id)).toEqual(expectedIds);
     expect(PREVIEW_ASSETS.map((asset) => [asset.id, asset.frames]))

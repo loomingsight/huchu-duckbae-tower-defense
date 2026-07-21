@@ -46,6 +46,11 @@ CAMERA_SPEC = {
     "target": (0.0, 0.0, 0.6),
     "ortho_scale": 5.6,
 }
+CHEST_FRONT_YAW = math.atan2(
+    float(CAMERA_SPEC["location"][1]),
+    float(CAMERA_SPEC["location"][0]),
+) + math.pi / 2
+CHEST_GROUND_OFFSET = -0.26
 CAMERA_DATA_SPEC = {
     "lens": 50.0,
     "sensor_fit": "AUTO",
@@ -1697,8 +1702,16 @@ def add_bone(
             _move_to_active_collection(knob)
 
 
+def _transform_active_asset(yaw: float, z_offset: float) -> None:
+    if _ACTIVE_ASSET_COLLECTION is None:
+        raise AssertionError("No active asset collection for transform")
+    transform = Matrix.Translation((0.0, 0.0, z_offset)) @ Matrix.Rotation(yaw, 4, "Z")
+    for obj in _ACTIVE_ASSET_COLLECTION.objects:
+        if obj.type == "MESH":
+            obj.matrix_world = transform @ obj.matrix_world
+
+
 def build_snack_chest() -> None:
-    tile_base()
     wood = make_material("M_Wood", COLORS["wood"])
     wood_light = make_material("M_WoodLight", COLORS["wood_light"])
     gold = make_material("M_Gold", COLORS["gold"], 0.35)
@@ -1711,6 +1724,7 @@ def build_snack_chest() -> None:
     add_bone("Asset_BoneB", (0.28, -0.24, 1.29), rotation=(0.0, 0.0, -0.45), scale=0.15)
     biscuit = _add_cylinder("Asset_SnackBiscuit", (0.0, -0.40, 1.36), (0.20, 0.20, 0.065), snack)
     biscuit.rotation_euler.z = math.radians(22)
+    _transform_active_asset(CHEST_FRONT_YAW, CHEST_GROUND_OFFSET)
 
 
 MAP_BUILDERS = {
@@ -1748,9 +1762,15 @@ def _world_bounds(objects: list[bpy.types.Object]) -> tuple[Vector, Vector]:
 def _assert_asset_geometry(relative_path: str, collection: bpy.types.Collection) -> None:
     meshes = [obj for obj in collection.all_objects if obj.type == "MESH"]
     minimum, maximum = _world_bounds(meshes)
+    is_chest = relative_path.endswith("snack-chest.png")
     tile = next((obj for obj in meshes if obj.name.startswith("Asset_TileBase")), None)
-    if tile is None or any(abs(actual - expected) > 1e-5 for actual, expected in zip(tile.dimensions, (3.2, 3.2, 0.36))):
-        raise AssertionError(f"{relative_path} must have a 3.2 x 3.2 x 0.36 tile")
+    if not is_chest:
+        if tile is None or any(abs(actual - expected) > 1e-5 for actual, expected in zip(tile.dimensions, (3.2, 3.2, 0.36))):
+            raise AssertionError(f"{relative_path} must have a 3.2 x 3.2 x 0.36 tile")
+    elif tile is not None:
+        raise AssertionError("Snack chest must not include a tile base")
+    elif abs(minimum.z) > 1e-5:
+        raise AssertionError(f"Snack chest is not grounded: minimum z={minimum.z}")
     if minimum.x < -1.601 or maximum.x > 1.601 or minimum.y < -1.601 or maximum.y > 1.601:
         raise AssertionError(f"{relative_path} exceeds one tile footprint: {minimum} {maximum}")
     if "road" in relative_path or relative_path.endswith("entry.png"):
@@ -1759,7 +1779,7 @@ def _assert_asset_geometry(relative_path: str, collection: bpy.types.Collection)
             raise AssertionError(f"{relative_path} is missing road geometry")
         if any(min(obj.dimensions.x, obj.dimensions.y) < 1.2199 for obj in road_parts):
             raise AssertionError(f"{relative_path} road width is not 1.22")
-    if relative_path.endswith("snack-chest.png"):
+    if is_chest:
         names = {obj.name for obj in meshes}
         if not any(name.startswith("Asset_Bone") for name in names):
             raise AssertionError("Snack chest is missing a bone")
