@@ -38,4 +38,16 @@ describe('perspective map rendering', () => {
     ))).toBe(true);
     expect(calls.some((call) => call.method === 'ellipse')).toBe(false);
   });
+
+  it('renders every available placement cell with a blue projected guide', () => {
+    const { context, calls } = createRecordingContext();
+    const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
+    drawMap(context, layout, createTestAssets(), {
+      buildableCells: [{ col: 1, row: 1 }, { col: 2, row: 1 }],
+    });
+
+    expect(calls.filter((call) => (
+      call.method === 'fill' && call.fillStyle === 'rgba(54, 145, 255, 0.28)'
+    ))).toHaveLength(2);
+  });
 });

@@ -12,6 +12,7 @@ import {
 import { createGame } from '../game/simulation/createGame';
 import { placeTower, validateTowerPlacement } from '../game/simulation/placeTower';
 import { updateGame as updateSimulation } from '../game/simulation/updateGame';
+import { STAGE_1 } from '../game/map/stage1';
 import { TOWER_CATALOG, TOWER_TYPES, type TowerType } from '../game/towers/towerCatalog';
 import { STAGE_1_WAVES } from '../game/waves/stage1Waves';
 import { calculateGameScore } from '../game/scoring';
@@ -299,7 +300,13 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       const selectedRange = snapshot.selectedTower === null || snapshot.selectedCell === null
         ? undefined
         : TOWER_CATALOG[snapshot.selectedTower].range;
+      const placementGuideCells = snapshot.selectedTower !== null
+        && snapshot.phase === 'playing'
+        && !snapshot.portraitBlocked
+        ? STAGE_1.buildableCells(snapshot.game.towers.map((tower) => tower.cell))
+        : undefined;
       renderer.render(snapshot.game, {
+        placementGuideCells,
         selectedCell: snapshot.selectedCell,
         selectedRange,
         selectedValid: placementValidation?.ok,

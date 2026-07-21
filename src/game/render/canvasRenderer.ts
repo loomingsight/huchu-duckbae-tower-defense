@@ -37,6 +37,7 @@ export type GameSnapshot = {
 };
 
 export type RenderOptions = {
+  readonly placementGuideCells?: readonly Readonly<Cell>[];
   readonly selectedCell?: Readonly<Cell> | null;
   readonly selectedRange?: number;
   readonly selectedValid?: boolean;
@@ -101,6 +102,7 @@ export function createCanvasRenderer(
     );
     context.clip();
     drawMap(context, layout, assets, {
+      buildableCells: options.placementGuideCells,
       cell: options.selectedCell,
       range: options.selectedRange,
       valid: options.selectedValid,

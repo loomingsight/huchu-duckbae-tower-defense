@@ -60,10 +60,22 @@ function isBuildableCell(cell: Cell, occupiedCells: readonly Cell[]): boolean {
   return !occupiedCells.some((occupied) => occupied.col === cell.col && occupied.row === cell.row);
 }
 
+function buildableCells(occupiedCells: readonly Cell[]): Cell[] {
+  const cells: Cell[] = [];
+  for (let row = 0; row < GRID_HEIGHT; row += 1) {
+    for (let col = 0; col < GRID_WIDTH; col += 1) {
+      const cell = { col, row };
+      if (isBuildableCell(cell, occupiedCells)) cells.push(cell);
+    }
+  }
+  return cells;
+}
+
 export const STAGE_1 = {
   width: GRID_WIDTH,
   height: GRID_HEIGHT,
   pathCells,
   isRoadAdjacentCell,
   isBuildableCell,
+  buildableCells,
 };

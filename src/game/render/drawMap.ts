@@ -25,9 +25,11 @@ const COLORS = {
   invalidEdge: '#ff8b82',
   range: 'rgba(76, 214, 222, 0.13)',
   rangeEdge: 'rgba(94, 228, 232, 0.62)',
+  placementGuide: 'rgba(54, 145, 255, 0.28)',
 } as const;
 
 export type MapSelection = {
+  buildableCells?: readonly Readonly<Cell>[];
   cell?: Readonly<Cell> | null;
   range?: number;
   valid?: boolean;
@@ -86,6 +88,26 @@ function drawCell(
   ctx.strokeStyle = COLORS.grid;
   ctx.lineWidth = Math.max(0.5, 1 / layout.dpr);
   ctx.stroke();
+}
+
+function drawPlacementGuide(
+  ctx: CanvasRenderingContext2D,
+  layout: CanvasLayout,
+  cells: readonly Readonly<Cell>[],
+): void {
+  for (const cell of cells) {
+    if (
+      !Number.isInteger(cell.col)
+      || !Number.isInteger(cell.row)
+      || cell.col < 0
+      || cell.col >= STAGE_1.width
+      || cell.row < 0
+      || cell.row >= STAGE_1.height
+      || !traceCell(ctx, layout, cell)
+    ) continue;
+    ctx.fillStyle = COLORS.placementGuide;
+    ctx.fill();
+  }
 }
 
 function drawLandmark(
@@ -168,6 +190,7 @@ export function drawMap(
     }
   }
 
+  drawPlacementGuide(ctx, layout, selection.buildableCells ?? []);
   const chest = STAGE_1.pathCells[STAGE_1.pathCells.length - 1];
   drawLandmark(ctx, layout, assets.map.snackChest, chest, 2.05, 0.86);
   drawSelection(ctx, layout, selection);

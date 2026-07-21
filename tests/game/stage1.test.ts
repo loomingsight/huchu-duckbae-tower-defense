@@ -39,4 +39,15 @@ describe('stage 1', () => {
     expect(STAGE_1.isBuildableCell({ col: 1, row: Number.NaN }, [])).toBe(false);
     expect(STAGE_1.isBuildableCell({ col: Number.POSITIVE_INFINITY, row: 1 }, [])).toBe(false);
   });
+
+  it('lists every currently buildable cell while excluding occupied cells', () => {
+    const occupied = [{ col: 1, row: 1 }];
+    const expected = Array.from({ length: STAGE_1.height }, (_, row) => (
+      Array.from({ length: STAGE_1.width }, (__, col) => ({ col, row }))
+    )).flat().filter((cell) => STAGE_1.isBuildableCell(cell, occupied));
+
+    expect(STAGE_1.buildableCells(occupied)).toEqual(expected);
+    expect(STAGE_1.buildableCells(occupied)).not.toContainEqual(occupied[0]);
+    expect(STAGE_1.buildableCells([])).toContainEqual({ col: 1, row: 1 });
+  });
 });

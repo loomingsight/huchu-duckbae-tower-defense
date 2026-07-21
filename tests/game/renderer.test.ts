@@ -147,6 +147,19 @@ describe('entity depth rendering', () => {
 });
 
 describe('renderer layer order', () => {
+  it('forwards placement guide cells to the map layer', () => {
+    const { context, calls } = createRecordingContext();
+    const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
+
+    renderer.render(snapshot(), {
+      placementGuideCells: [{ col: 1, row: 1 }, { col: 2, row: 1 }],
+    });
+
+    expect(calls.filter((call) => (
+      call.method === 'fill' && call.fillStyle === 'rgba(54, 145, 255, 0.28)'
+    ))).toHaveLength(2);
+  });
+
   it('renders near projectiles larger than far projectiles', () => {
     const { context, calls } = createRecordingContext();
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
