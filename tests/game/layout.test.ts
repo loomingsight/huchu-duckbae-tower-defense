@@ -12,13 +12,14 @@ describe('computeCanvasLayout', () => {
     expect(layout.gameArea.y + layout.gameArea.height / 2).toBeCloseTo(844 / 2);
   });
 
-  it('fits the full perspective board inside a 844 by 390 landscape viewport', () => {
+  it('maximizes the full perspective board inside an 844 by 390 landscape viewport', () => {
     const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
 
     expect(layout.showOrientationPrompt).toBe(false);
     expect(layout.gameArea).toEqual({ x: 0, y: 0, width: 844, height: 390 });
-    expect(layout.mapArea.width).toBeLessThanOrEqual(844 * 0.96);
-    expect(layout.mapArea.height).toBeLessThanOrEqual(390 * 0.90);
+    expect(layout.mapArea.width).toBeLessThanOrEqual(844 * 0.99);
+    expect(layout.mapArea.width).toBeGreaterThan(844 * 0.98);
+    expect(layout.mapArea.height).toBeCloseTo(390 * 0.98);
     expect(layout.projection.centerX).toBeCloseTo(422);
     expect(layout.projection.topY).toBeCloseTo(layout.mapArea.y);
     expect(layout.projection.farScale).toBe(0.88);

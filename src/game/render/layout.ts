@@ -1,8 +1,8 @@
 import { GRID_HEIGHT, GRID_WIDTH } from '../config';
 
 const MAX_DEVICE_PIXEL_RATIO = 2;
-const MAP_WIDTH_RATIO = 0.96;
-const MAP_HEIGHT_RATIO = 0.90;
+const MAP_WIDTH_RATIO = 0.99;
+const MAP_HEIGHT_RATIO = 0.98;
 const FAR_SCALE = 0.88;
 const NEAR_SCALE = 1.05;
 const MID_SCALE = (FAR_SCALE + NEAR_SCALE) / 2;
