@@ -15,7 +15,7 @@ describe('perspective map rendering', () => {
     expect(calls.some((call) => call.method === 'fill' && call.fillStyle === '#e4c99f')).toBe(true);
     expect(calls.some((call) => call.method === 'fill' && call.fillStyle === '#2f6247')).toBe(true);
     const tags = calls.filter((call) => call.method === 'drawImage').map(imageTag);
-    expect(tags).toContain('map-entry');
+    expect(tags).not.toContain('map-entry');
     expect(tags).toContain('map-snack-chest');
     expect(tags).not.toContain('map-grass');
     expect(tags.some((tag) => tag?.startsWith('map-road-') === true)).toBe(false);

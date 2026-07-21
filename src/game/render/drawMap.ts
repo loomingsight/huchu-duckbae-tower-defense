@@ -168,9 +168,7 @@ export function drawMap(
     }
   }
 
-  const entrance = STAGE_1.pathCells[0];
   const chest = STAGE_1.pathCells[STAGE_1.pathCells.length - 1];
-  drawLandmark(ctx, layout, assets.map.entry, entrance, 2.15, 0.8);
-  drawLandmark(ctx, layout, assets.map.snackChest, chest, 2.35, 0.81);
+  drawLandmark(ctx, layout, assets.map.snackChest, chest, 2.05, 0.86);
   drawSelection(ctx, layout, selection);
 }
