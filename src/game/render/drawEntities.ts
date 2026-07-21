@@ -189,7 +189,7 @@ function drawTowerBody(
   alpha: number,
 ): void {
   const ground = projectWorldPoint(layout, { x: cell.col + 0.5, y: cell.row + 1 });
-  const size = layout.tileWidth * 2.6 * visualScaleAt(layout, cell.row + 0.5);
+  const size = layout.tileWidth * 2.0 * visualScaleAt(layout, cell.row + 0.5);
   ctx.save();
   ctx.translate(ground.x, ground.y);
   ctx.globalAlpha = alpha;
@@ -217,17 +217,19 @@ function drawEnemyBody(
   const motion = enemy.type === 'orc'
     ? MOTION_SPRITES.orc
     : enemy.type === 'fairy' ? MOTION_SPRITES.fairy : null;
-  const phase = timeSeconds * (motion?.fps ?? 7) + enemy.id * 0.37;
-  const frame = motion === null ? 0 : Math.floor(phase) % motion.frames;
+  const framePhase = timeSeconds * (motion?.fps ?? 7) + enemy.id * 0.37;
+  const bobPhase = timeSeconds * (motion?.fps ?? 7) * 0.5 + enemy.id * 0.37;
+  const frame = motion === null ? 0 : Math.floor(framePhase) % motion.frames;
   const sprite = motion === null
     ? assets.enemies[enemy.type].se
     : assets.motion[enemy.type as 'orc' | 'fairy'];
   const depthScale = visualScaleAt(layout, position.y);
-  const bounce = Math.sin(phase * Math.PI * 2)
+  const wave = Math.sin(bobPhase * Math.PI * 2);
+  const bounce = wave
     * layout.tileHeight
     * depthScale
     * (enemy.type === 'fairy' ? 0.22 : 0.09);
-  const squash = enemy.type === 'slime' ? 1 + Math.sin(phase * Math.PI * 2) * 0.08 : 1;
+  const squash = enemy.type === 'slime' ? 1 + wave * 0.08 : 1;
   const center = projectWorldPoint(layout, position);
 
   ctx.save();
@@ -241,6 +243,7 @@ function drawEnemyBody(
     layout.tileWidth * ENEMY_SIZES[enemy.type] * depthScale,
     ENEMY_COLORS[enemy.type],
     enemy.type.slice(0, 1).toUpperCase(),
+    enemy.type === 'orc' ? 0.60 : 0.76,
   );
   ctx.restore();
 }

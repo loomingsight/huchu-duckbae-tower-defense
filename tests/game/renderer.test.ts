@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { enemyPosition } from '../../src/game/combat/targeting';
 import { createCanvasRenderer, type GameSnapshot } from '../../src/game/render/canvasRenderer';
 import { drawEntities } from '../../src/game/render/drawEntities';
 import { effectsForHits } from '../../src/game/render/effects';
@@ -98,7 +99,7 @@ describe('entity depth rendering', () => {
     const translateCall = calls.find((call) => call.method === 'translate');
     const drawCall = calls.find((call) => imageTag(call) === tag);
     const scale = visualScaleAt(layout, 1.5);
-    const spriteSize = layout.tileWidth * 2.6 * scale;
+    const spriteSize = layout.tileWidth * 2.0 * scale;
     const visibleBaseY = Number(translateCall?.args[1])
       + Number(drawCall?.args[6])
       + spriteSize * groundAnchorY;
@@ -143,6 +144,65 @@ describe('entity depth rendering', () => {
       .map((call) => Number(call.args[7]));
     expect(widths).toHaveLength(2);
     expect(widths[1]).toBeGreaterThan(widths[0]);
+  });
+
+  it('keeps walk frames at full speed while enemy bobbing runs at half speed', () => {
+    const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
+    const enemy = {
+      id: 0,
+      type: 'orc' as const,
+      hp: 110,
+      maxHp: 110,
+      progress: 0,
+      speedMultiplier: 1,
+      rewarded: false,
+      lastHitAtSeconds: null,
+    };
+    const position = enemyPosition(enemy);
+    expect(position).toBeDefined();
+
+    const originRecording = createRecordingContext();
+    drawEntities(originRecording.context, layout, snapshot({ enemies: [enemy] }), createTestAssets(), {
+      timeSeconds: 0,
+    });
+    const originY = Number(originRecording.calls.find((call) => call.method === 'translate')?.args[1]);
+
+    const bobTime = 1 / 32;
+    const bobRecording = createRecordingContext();
+    drawEntities(bobRecording.context, layout, snapshot({ enemies: [enemy] }), createTestAssets(), {
+      timeSeconds: bobTime,
+    });
+    const bobY = Number(bobRecording.calls.find((call) => call.method === 'translate')?.args[1]);
+    const expectedBounce = Math.sin((bobTime * 8 * 0.5) * Math.PI * 2)
+      * layout.tileHeight
+      * visualScaleAt(layout, position?.y ?? 0)
+      * 0.09;
+    expect(bobY).toBeCloseTo(originY - expectedBounce);
+
+    const frameRecording = createRecordingContext();
+    drawEntities(frameRecording.context, layout, snapshot({ enemies: [enemy] }), createTestAssets(), {
+      timeSeconds: 1 / 8,
+    });
+    const frameDraw = frameRecording.calls.find((call) => (
+      call.method === 'drawImage' && imageTag(call) === 'motion-orc'
+    ));
+    expect(frameDraw?.args[1]).toBe(256);
+  });
+
+  it('grounds only the orc lower while preserving the default enemy anchor', () => {
+    const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
+    const { context, calls } = createRecordingContext();
+    drawEntities(context, layout, snapshot({
+      enemies: [
+        { id: 1, type: 'slime', hp: 42, maxHp: 42, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 2, type: 'orc', hp: 110, maxHp: 110, progress: 11, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+      ],
+    }), createTestAssets(), { timeSeconds: 0 });
+
+    const slimeDraw = calls.find((call) => call.method === 'drawImage' && imageTag(call) === 'enemy-slime-se');
+    const orcDraw = calls.find((call) => call.method === 'drawImage' && imageTag(call) === 'motion-orc');
+    expect(slimeDraw?.args[6]).toBeCloseTo(-Number(slimeDraw?.args[8]) * 0.76);
+    expect(orcDraw?.args[6]).toBeCloseTo(-Number(orcDraw?.args[8]) * 0.60);
   });
 });
 
