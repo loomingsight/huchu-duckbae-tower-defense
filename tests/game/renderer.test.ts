@@ -147,6 +147,22 @@ describe('entity depth rendering', () => {
 });
 
 describe('renderer layer order', () => {
+  it('renders near projectiles larger than far projectiles', () => {
+    const { context, calls } = createRecordingContext();
+    const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
+    renderer.render(snapshot({
+      projectiles: [
+        { id: 1, towerType: 'huchu', position: { x: 2.5, y: 0.5 }, targetId: 1, damage: 72, speed: 5, splash: 1.25 },
+        { id: 2, towerType: 'huchu', position: { x: 2.5, y: 8.5 }, targetId: 1, damage: 72, speed: 5, splash: 1.25 },
+      ],
+    }), { timeSeconds: 0.25 });
+    const widths = calls
+      .filter((call) => imageTag(call) === 'vfx-waterball')
+      .map((call) => Number(call.args[7]));
+    expect(widths).toHaveLength(2);
+    expect(widths[1]).toBeGreaterThan(widths[0]);
+  });
+
   it('draws entity bodies and HP without a tower drop shadow, then foreground combat effects', () => {
     const { context, calls } = createRecordingContext();
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());

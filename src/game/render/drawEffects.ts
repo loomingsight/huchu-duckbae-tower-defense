@@ -6,9 +6,15 @@ import type {
 } from '../simulation/createGame';
 import type { Vec2 } from '../types';
 import type { GameAssets, LoadedSprite } from './assetLoader';
-import { isRenderablePoint, worldToScreen } from './drawMap';
 import type { RuntimeEffect } from './effects';
 import type { CanvasLayout } from './layout';
+import {
+  isRenderableWorldPoint,
+  projectWorldPoint,
+  projectWorldRing,
+  visualScaleAt,
+  type ScreenPoint,
+} from './projection';
 import { drawSpriteFrame } from './spriteSheet';
 
 export type FloatingGold = {
@@ -39,8 +45,8 @@ function projectileFrame(
   const target = snapshot.enemies.find((enemy) => enemy.id === projectile.targetId);
   const targetPosition = target === undefined ? undefined : enemyPosition(target);
   if (targetPosition === undefined) return 0;
-  const current = worldToScreen(layout, projectile.position);
-  const destination = worldToScreen(layout, targetPosition);
+  const current = projectWorldPoint(layout, projectile.position);
+  const destination = projectWorldPoint(layout, targetPosition);
   return arrowFrameForScreenVector({
     x: destination.x - current.x,
     y: destination.y - current.y,
@@ -62,6 +68,25 @@ function drawCenteredFrame(
   });
 }
 
+function visualUnitAt(layout: CanvasLayout, position: Readonly<Vec2>): number {
+  return layout.tileWidth * visualScaleAt(layout, position.y);
+}
+
+function tracePoints(
+  ctx: CanvasRenderingContext2D,
+  points: readonly ScreenPoint[],
+): boolean {
+  if (
+    points.length === 0
+    || points.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y))
+  ) return false;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (const point of points.slice(1)) ctx.lineTo(point.x, point.y);
+  ctx.closePath();
+  return true;
+}
+
 function drawProjectiles(
   ctx: CanvasRenderingContext2D,
   layout: CanvasLayout,
@@ -70,15 +95,16 @@ function drawProjectiles(
   timeSeconds: number,
 ): void {
   for (const projectile of snapshot.projectiles) {
-    if (!isRenderablePoint(layout, projectile.position)) continue;
-    const center = worldToScreen(layout, projectile.position);
+    if (!isRenderableWorldPoint(layout, projectile.position)) continue;
+    const center = projectWorldPoint(layout, projectile.position);
+    const visualUnit = visualUnitAt(layout, projectile.position);
     const animationFrame = Math.floor(timeSeconds * 12 + projectile.id * 0.73) % 4;
     if (projectile.towerType === 'arrow') {
       if (!drawCenteredFrame(
         ctx,
         assets.vfx.arrow,
         projectileFrame(projectile, snapshot, layout),
-        layout.tileWidth * 1.55,
+        visualUnit * 1.55,
         center,
       )) {
         ctx.fillStyle = '#f8d377';
@@ -89,12 +115,12 @@ function drawProjectiles(
         ctx,
         assets.vfx.fireball,
         animationFrame,
-        layout.tileWidth * 1.55,
+        visualUnit * 1.55,
         center,
       )) {
         ctx.fillStyle = '#ff7a2f';
         ctx.beginPath();
-        ctx.arc(center.x, center.y, layout.tileWidth * 0.12, 0, Math.PI * 2);
+        ctx.arc(center.x, center.y, visualUnit * 0.12, 0, Math.PI * 2);
         ctx.fill();
       }
     } else if (projectile.towerType === 'huchu') {
@@ -102,12 +128,12 @@ function drawProjectiles(
         ctx,
         assets.vfx.waterball,
         animationFrame,
-        layout.tileWidth * 1.7,
+        visualUnit * 1.7,
         center,
       )) {
         ctx.fillStyle = '#5be3f1';
         ctx.beginPath();
-        ctx.arc(center.x, center.y, layout.tileWidth * 0.14, 0, Math.PI * 2);
+        ctx.arc(center.x, center.y, visualUnit * 0.14, 0, Math.PI * 2);
         ctx.fill();
       }
     }
@@ -124,24 +150,25 @@ function drawRuntimeEffect(
   effect: RuntimeEffect,
   assets: GameAssets,
 ): void {
-  if (!isRenderablePoint(layout, effect.position)) return;
-  const center = worldToScreen(layout, effect.position);
+  if (!isRenderableWorldPoint(layout, effect.position)) return;
+  const center = projectWorldPoint(layout, effect.position);
+  const visualUnit = visualUnitAt(layout, effect.position);
   const progress = effectProgress(effect);
   let image: LoadedSprite = null;
   let frames = 1;
-  let size = layout.tileWidth * 2;
+  let size = visualUnit * 2;
   if (effect.kind === 'arrow-impact') {
     image = assets.vfx.arrowImpact;
     frames = 4;
-    size = layout.tileWidth * 1.75;
+    size = visualUnit * 1.75;
   } else if (effect.kind === 'fire-burst') {
     image = assets.vfx.fireBurst;
     frames = 8;
-    size = layout.tileWidth * (2.25 + progress * 0.65);
+    size = visualUnit * (2.25 + progress * 0.65);
   } else if (effect.kind === 'aqua-splash') {
     image = assets.vfx.aquaBurst;
     frames = 8;
-    size = layout.tileWidth * (2.45 + progress * 0.85);
+    size = visualUnit * (2.45 + progress * 0.85);
   }
 
   if (image !== null) {
@@ -158,8 +185,8 @@ function drawRuntimeEffect(
     ctx.fillStyle = '#ffe27a';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `900 ${Math.max(11, layout.tileWidth * 0.28)}px system-ui, sans-serif`;
-    ctx.fillText(`+${Math.round(effect.value)}`, center.x, center.y - progress * layout.tileWidth);
+    ctx.font = `900 ${Math.max(11, visualUnit * 0.28)}px system-ui, sans-serif`;
+    ctx.fillText(`+${Math.round(effect.value)}`, center.x, center.y - progress * visualUnit);
     ctx.globalAlpha = 1;
   }
 }
@@ -170,21 +197,14 @@ function drawSlowPulses(
   effects: readonly RuntimeEffect[],
 ): void {
   for (const effect of effects) {
-    if (effect.kind !== 'slow-pulse' || !isRenderablePoint(layout, effect.position)) continue;
-    const center = worldToScreen(layout, effect.position);
+    if (effect.kind !== 'slow-pulse' || !isRenderableWorldPoint(layout, effect.position)) continue;
     const progress = effectProgress(effect);
+    if (!tracePoints(
+      ctx,
+      projectWorldRing(layout, effect.position, 0.35 + progress * 0.8),
+    )) continue;
     ctx.strokeStyle = `rgba(170, 132, 255, ${1 - progress})`;
     ctx.lineWidth = Math.max(1.5, 2 / layout.dpr);
-    ctx.beginPath();
-    ctx.ellipse(
-      center.x,
-      center.y,
-      layout.tileWidth * (0.35 + progress * 0.8),
-      layout.tileHeight * (0.35 + progress * 0.8),
-      0,
-      0,
-      Math.PI * 2,
-    );
     ctx.stroke();
   }
 }
@@ -196,19 +216,20 @@ function drawFloatingGold(
 ): void {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `900 ${Math.max(11, layout.tileWidth * 0.28)}px system-ui, sans-serif`;
   for (const pop of gold) {
     if (
-      !isRenderablePoint(layout, pop.position)
+      !isRenderableWorldPoint(layout, pop.position)
       || !Number.isFinite(pop.value)
       || !Number.isFinite(pop.ageSeconds)
       || pop.ageSeconds >= 0.9
     ) continue;
-    const center = worldToScreen(layout, pop.position);
+    const center = projectWorldPoint(layout, pop.position);
+    const visualUnit = visualUnitAt(layout, pop.position);
     const age = Math.max(0, pop.ageSeconds);
     ctx.globalAlpha = Math.max(0, 1 - age / 0.9);
     ctx.fillStyle = '#ffe27a';
-    ctx.fillText(`+${Math.max(0, Math.round(pop.value))}`, center.x, center.y - age * layout.tileWidth);
+    ctx.font = `900 ${Math.max(11, visualUnit * 0.28)}px system-ui, sans-serif`;
+    ctx.fillText(`+${Math.max(0, Math.round(pop.value))}`, center.x, center.y - age * visualUnit);
   }
   ctx.globalAlpha = 1;
 }

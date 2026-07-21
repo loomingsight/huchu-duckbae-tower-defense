@@ -12,11 +12,6 @@ import {
 } from './projection';
 import { drawSpriteFrame } from './spriteSheet';
 
-export {
-  isRenderableWorldPoint as isRenderablePoint,
-  projectWorldPoint as worldToScreen,
-} from './projection';
-
 const COLORS = {
   ground: '#17382f',
   grass: '#4f8c65',
