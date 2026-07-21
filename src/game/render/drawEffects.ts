@@ -15,6 +15,7 @@ import {
   visualScaleAt,
   type ScreenPoint,
 } from './projection';
+import { SPRITE_FRAME_SIZES } from './spriteManifest';
 import { drawSpriteFrame } from './spriteSheet';
 
 export type FloatingGold = {
@@ -60,7 +61,7 @@ function drawCenteredFrame(
   size: number,
   center: Readonly<Vec2>,
 ): boolean {
-  return drawSpriteFrame(ctx, image, frame, 128, {
+  return drawSpriteFrame(ctx, image, frame, SPRITE_FRAME_SIZES.vfx, {
     x: center.x - size / 2,
     y: center.y - size / 2,
     width: size,

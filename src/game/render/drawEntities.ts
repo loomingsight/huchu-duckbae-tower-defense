@@ -10,7 +10,11 @@ import {
   projectWorldPoint,
   visualScaleAt,
 } from './projection';
-import { MOTION_SPRITES, type SpriteDirection } from './spriteManifest';
+import {
+  MOTION_SPRITES,
+  SPRITE_FRAME_SIZES,
+  type SpriteDirection,
+} from './spriteManifest';
 import { drawSpriteFrame } from './spriteSheet';
 
 export type RenderEntitiesSnapshot = {
@@ -193,7 +197,7 @@ function drawTowerBody(
     ctx,
     sprite,
     0,
-    128,
+    SPRITE_FRAME_SIZES.tower,
     size,
     TOWER_COLORS[type],
     TOWER_LABELS[type],
@@ -233,7 +237,7 @@ function drawEnemyBody(
     ctx,
     sprite,
     frame,
-    motion === null ? 96 : 128,
+    motion === null ? SPRITE_FRAME_SIZES.enemy : SPRITE_FRAME_SIZES.motion,
     layout.tileWidth * ENEMY_SIZES[enemy.type] * depthScale,
     ENEMY_COLORS[enemy.type],
     enemy.type.slice(0, 1).toUpperCase(),

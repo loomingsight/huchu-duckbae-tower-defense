@@ -11,7 +11,8 @@ class MixedResultImage {
   set src(value: string) {
     this.url = value;
     queueMicrotask(() => {
-      const failed = value.includes('/towers/huchu-se.png') || value.includes('slime-ne-96');
+      const failed = value.includes('/towers/huchu-se.png')
+        || value.includes('/enemies-v1/slime/slime-se-v1.png');
       if (failed) this.onerror?.(new Event('error'));
       else this.onload?.(new Event('load'));
     });
@@ -30,8 +31,7 @@ describe('loadGameAssets', () => {
 
     expect(assets.towers.huchu).toBeNull();
     expect(assets.towers.deokbae).toBeInstanceOf(MixedResultImage);
-    expect(assets.enemies.slime.ne).toBeNull();
-    expect(assets.enemies.slime.se).toBeInstanceOf(MixedResultImage);
+    expect(Object.values(assets.enemies.slime).every((image) => image === null)).toBe(true);
     expect(assets.enemies.fairy.ne).toBeInstanceOf(MixedResultImage);
     expect(assets.map.grass).toBeInstanceOf(MixedResultImage);
     expect(assets.motion.orc).toBeInstanceOf(MixedResultImage);

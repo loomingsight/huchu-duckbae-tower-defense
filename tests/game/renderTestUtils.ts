@@ -13,8 +13,8 @@ export type TaggedImage = {
   readonly naturalHeight: number;
 };
 
-export function taggedImage(tag: string, naturalWidth = 128): HTMLImageElement {
-  return { tag, naturalWidth, naturalHeight: 128 } as unknown as HTMLImageElement;
+export function taggedImage(tag: string, naturalWidth = 256, naturalHeight = 256): HTMLImageElement {
+  return { tag, naturalWidth, naturalHeight } as unknown as HTMLImageElement;
 }
 
 export function createTestAssets(): GameAssets {
@@ -27,15 +27,15 @@ export function createTestAssets(): GameAssets {
 
   return {
     map: {
-      grass: taggedImage('map-grass'),
-      roadHorizontal: taggedImage('map-road-horizontal'),
-      roadVertical: taggedImage('map-road-vertical'),
-      roadNorthEast: taggedImage('map-road-ne'),
-      roadEastSouth: taggedImage('map-road-es'),
-      roadSouthWest: taggedImage('map-road-sw'),
-      roadWestNorth: taggedImage('map-road-wn'),
-      entry: taggedImage('map-entry'),
-      snackChest: taggedImage('map-snack-chest'),
+      grass: taggedImage('map-grass', 128, 128),
+      roadHorizontal: taggedImage('map-road-horizontal', 128, 128),
+      roadVertical: taggedImage('map-road-vertical', 128, 128),
+      roadNorthEast: taggedImage('map-road-ne', 128, 128),
+      roadEastSouth: taggedImage('map-road-es', 128, 128),
+      roadSouthWest: taggedImage('map-road-sw', 128, 128),
+      roadWestNorth: taggedImage('map-road-wn', 128, 128),
+      entry: taggedImage('map-entry', 128, 128),
+      snackChest: taggedImage('map-snack-chest', 128, 128),
     },
     towers: {
       arrow: directions('tower-arrow'),
@@ -51,16 +51,16 @@ export function createTestAssets(): GameAssets {
       minotaur: directions('enemy-minotaur'),
     },
     motion: {
-      orc: taggedImage('motion-orc', 128 * 6),
-      fairy: taggedImage('motion-fairy', 128 * 8),
+      orc: taggedImage('motion-orc', 256 * 6),
+      fairy: taggedImage('motion-fairy', 256 * 8),
     },
     vfx: {
-      arrow: taggedImage('vfx-arrow', 128 * 8),
-      fireball: taggedImage('vfx-fireball', 128 * 4),
-      waterball: taggedImage('vfx-waterball', 128 * 4),
-      arrowImpact: taggedImage('vfx-arrow-impact', 128 * 4),
-      fireBurst: taggedImage('vfx-fire-burst', 128 * 8),
-      aquaBurst: taggedImage('vfx-aqua-burst', 128 * 8),
+      arrow: taggedImage('vfx-arrow', 256 * 8),
+      fireball: taggedImage('vfx-fireball', 256 * 4),
+      waterball: taggedImage('vfx-waterball', 256 * 4),
+      arrowImpact: taggedImage('vfx-arrow-impact', 256 * 4),
+      fireBurst: taggedImage('vfx-fire-burst', 256 * 8),
+      aquaBurst: taggedImage('vfx-aqua-burst', 256 * 8),
     },
   };
 }

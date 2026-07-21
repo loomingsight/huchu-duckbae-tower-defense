@@ -176,6 +176,29 @@ describe('renderer layer order', () => {
     expect(widths[1]).toBeGreaterThan(widths[0]);
   });
 
+  it('crops entity, motion, and projectile sprites from 256px source frames', () => {
+    const { context, calls } = createRecordingContext();
+    const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
+    renderer.render(snapshot({
+      towers: [
+        { id: 1, type: 'slow', cell: { col: 1, row: 1 }, position: { x: 1.5, y: 1.5 }, cooldownRemaining: 0 },
+      ],
+      enemies: [
+        { id: 1, type: 'slime', hp: 42, maxHp: 42, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 2, type: 'orc', hp: 110, maxHp: 110, progress: 11, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+      ],
+      projectiles: [
+        { id: 1, towerType: 'huchu', position: { x: 2.5, y: 2.5 }, targetId: 1, damage: 72, speed: 5, splash: 1.25 },
+      ],
+    }), { timeSeconds: 0.25 });
+
+    for (const tag of ['tower-slow', 'enemy-slime-se', 'motion-orc', 'vfx-waterball']) {
+      const draw = calls.find((call) => call.method === 'drawImage' && imageTag(call) === tag);
+      expect(draw?.args[3]).toBe(256);
+      expect(draw?.args[4]).toBe(256);
+    }
+  });
+
   it('draws entity bodies and HP without a tower drop shadow, then foreground combat effects', () => {
     const { context, calls } = createRecordingContext();
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
