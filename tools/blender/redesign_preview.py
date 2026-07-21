@@ -41,10 +41,30 @@ CAMERA_SPEC = {
     "target": (0.0, 0.0, 0.6),
     "ortho_scale": 5.6,
 }
+CAMERA_DATA_SPEC = {
+    "lens": 50.0,
+    "sensor_fit": "AUTO",
+    "sensor_width": 36.0,
+    "sensor_height": 24.0,
+    "clip_start": 0.1,
+    "clip_end": 1000.0,
+    "shift_x": 0.0,
+    "shift_y": 0.0,
+}
 LIGHT_SPECS = {
     "TD_Key": ((4.5, -4.5, 8.0), 1050.0, 5.0),
     "TD_Fill": ((-4.5, -2.0, 5.0), 500.0, 4.0),
     "TD_Rim": ((2.0, 5.0, 7.0), 750.0, 3.0),
+}
+LIGHT_DATA_SPEC = {
+    "color": (1.0, 1.0, 1.0),
+    "normalize": True,
+    "exposure": 0.0,
+    "diffuse_factor": 1.0,
+    "specular_factor": 1.0,
+    "transmission_factor": 1.0,
+    "volume_factor": 1.0,
+    "use_shadow": True,
 }
 
 SOURCE_BLEND_NAMES = (
@@ -268,9 +288,334 @@ def _rounded(values: object) -> tuple[float, ...]:
     return tuple(round(float(value), 7) for value in values)  # type: ignore[arg-type]
 
 
+def _rounded_matrix(matrix: object) -> tuple[tuple[float, ...], ...]:
+    return tuple(
+        tuple(round(float(matrix[row][column]), 7) for column in range(4))  # type: ignore[index]
+        for row in range(4)
+    )
+
+
+def _setting_value(value: object) -> object:
+    if isinstance(value, float):
+        return round(value, 7)
+    if isinstance(value, (str, int, bool)) or value is None:
+        return value
+    if hasattr(value, "__iter__"):
+        return tuple(_setting_value(item) for item in value)  # type: ignore[union-attr]
+    return repr(value)
+
+
+def _data_settings_signature(data: object, names: tuple[str, ...]) -> dict[str, object]:
+    settings: dict[str, object] = {}
+    for name in names:
+        try:
+            value = getattr(data, name)
+        except (AttributeError, ReferenceError):
+            continue
+        settings[name] = _stable_rna_value(value)
+    return settings
+
+
+def _signature_digest(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _stable_rna_value(value: object) -> object:
+    if isinstance(value, bpy.types.ID):
+        return {"id_type": value.__class__.__name__, "name": value.name}
+    if isinstance(value, float):
+        return round(value, 7)
+    if isinstance(value, (str, int, bool)) or value is None:
+        return value
+    if all(hasattr(value, channel) for channel in ("r", "g", "b")):
+        return tuple(
+            round(float(getattr(value, channel)), 7)
+            for channel in ("r", "g", "b")
+        )
+    to_tuple = getattr(value, "to_tuple", None)
+    if callable(to_tuple):
+        return tuple(_stable_rna_value(item) for item in to_tuple())
+    if isinstance(value, set):
+        return sorted(_stable_rna_value(item) for item in value)  # type: ignore[type-var]
+    if hasattr(value, "__iter__"):
+        try:
+            return tuple(_stable_rna_value(item) for item in value)  # type: ignore[union-attr]
+        except (ReferenceError, TypeError):
+            pass
+    if hasattr(value, "bl_rna"):
+        name = getattr(value, "name", None)
+        return {
+            "rna_type": value.__class__.__name__,
+            "name": name if isinstance(name, str) else None,
+        }
+    return value.__class__.__name__
+
+
+def _rna_settings_signature(block: object) -> dict[str, object]:
+    ignored = {
+        "rna_type",
+        "name",
+        "type",
+        "execution_time",
+        "persistent_uid",
+        "is_active",
+        "is_override_data",
+        "show_expanded",
+        "use_pin_to_last",
+    }
+    settings: dict[str, object] = {}
+    for prop in block.bl_rna.properties:  # type: ignore[attr-defined]
+        if (
+            prop.identifier in ignored
+            or prop.type == "COLLECTION"
+            or prop.is_readonly
+        ):
+            continue
+        try:
+            settings[prop.identifier] = _stable_rna_value(
+                getattr(block, prop.identifier)
+            )
+        except (AttributeError, ReferenceError, RuntimeError, TypeError, ValueError):
+            continue
+    return dict(sorted(settings.items()))
+
+
+def _socket_signature(socket: object) -> dict[str, object]:
+    result: dict[str, object] = {
+        "name": socket.name,  # type: ignore[attr-defined]
+        "identifier": socket.identifier,  # type: ignore[attr-defined]
+        "enabled": bool(socket.enabled),  # type: ignore[attr-defined]
+        "hide": bool(socket.hide),  # type: ignore[attr-defined]
+        "is_linked": bool(socket.is_linked),  # type: ignore[attr-defined]
+    }
+    try:
+        result["default"] = _stable_rna_value(socket.default_value)  # type: ignore[attr-defined]
+    except (AttributeError, ReferenceError, TypeError, ValueError):
+        pass
+    return result
+
+
+def _node_tree_digest(node_tree: object | None) -> str | None:
+    if node_tree is None:
+        return None
+    nodes = []
+    for node in sorted(node_tree.nodes, key=lambda item: item.name):  # type: ignore[attr-defined]
+        nodes.append(
+            {
+                "name": node.name,
+                "type": node.type,
+                "bl_idname": node.bl_idname,
+                "label": node.label,
+                "mute": bool(node.mute),
+                "hide": bool(node.hide),
+                "settings": _rna_settings_signature(node),
+                "inputs": [_socket_signature(socket) for socket in node.inputs],
+                "outputs": [_socket_signature(socket) for socket in node.outputs],
+            }
+        )
+    links = sorted(
+        (
+            link.from_node.name,
+            link.from_socket.identifier,
+            link.from_socket.name,
+            link.to_node.name,
+            link.to_socket.identifier,
+            link.to_socket.name,
+            bool(link.is_muted),
+        )
+        for link in node_tree.links  # type: ignore[attr-defined]
+    )
+    return _signature_digest({"nodes": nodes, "links": links})
+
+
+def _mesh_geometry_digest(mesh: bpy.types.Mesh) -> str:
+    def attribute_value(element: object) -> object:
+        for name in ("value", "vector", "color", "byte_color", "uv"):
+            try:
+                return _stable_rna_value(getattr(element, name))
+            except (AttributeError, ReferenceError, TypeError, ValueError):
+                continue
+        return element.__class__.__name__
+
+    return _signature_digest(
+        {
+            "vertices": [_rounded(vertex.co) for vertex in mesh.vertices],
+            "edges": [tuple(int(index) for index in edge.vertices) for edge in mesh.edges],
+            "polygons": [
+                {
+                    "vertices": tuple(int(index) for index in polygon.vertices),
+                    "material_index": int(polygon.material_index),
+                    "use_smooth": bool(polygon.use_smooth),
+                }
+                for polygon in mesh.polygons
+            ],
+            "attributes": [
+                {
+                    "name": attribute.name,
+                    "data_type": attribute.data_type,
+                    "domain": attribute.domain,
+                    "data": [attribute_value(element) for element in attribute.data],
+                }
+                for attribute in sorted(mesh.attributes, key=lambda item: item.name)
+            ],
+            "uv_layers": [
+                {
+                    "name": layer.name,
+                    "active": bool(layer.active),
+                    "active_render": bool(layer.active_render),
+                    "data": [attribute_value(element) for element in layer.data],
+                }
+                for layer in mesh.uv_layers
+            ],
+        }
+    )
+
+
+def _curve_geometry_digest(curve: bpy.types.Curve) -> str:
+    splines: list[dict[str, object]] = []
+    for spline in curve.splines:
+        payload: dict[str, object] = {
+            "type": spline.type,
+            "settings": _data_settings_signature(
+                spline,
+                (
+                    "material_index",
+                    "use_cyclic_u",
+                    "use_cyclic_v",
+                    "resolution_u",
+                    "resolution_v",
+                    "order_u",
+                    "order_v",
+                    "use_endpoint_u",
+                    "use_endpoint_v",
+                    "use_bezier_u",
+                    "use_bezier_v",
+                    "tilt_interpolation",
+                    "radius_interpolation",
+                ),
+            ),
+        }
+        if spline.type == "BEZIER":
+            payload["points"] = [
+                {
+                    "co": _rounded(point.co),
+                    "handle_left": _rounded(point.handle_left),
+                    "handle_right": _rounded(point.handle_right),
+                    "handle_left_type": point.handle_left_type,
+                    "handle_right_type": point.handle_right_type,
+                    "radius": round(float(point.radius), 7),
+                    "tilt": round(float(point.tilt), 7),
+                    "weight_softbody": round(float(point.weight_softbody), 7),
+                }
+                for point in spline.bezier_points
+            ]
+        else:
+            payload["points"] = [
+                {
+                    "co": _rounded(point.co),
+                    "radius": round(float(point.radius), 7),
+                    "tilt": round(float(point.tilt), 7),
+                    "weight": round(float(point.weight), 7),
+                    "weight_softbody": round(float(point.weight_softbody), 7),
+                }
+                for point in spline.points
+            ]
+        splines.append(payload)
+    return _signature_digest(
+        {
+            "settings": _data_settings_signature(
+                curve,
+                (
+                    "dimensions",
+                    "resolution_u",
+                    "render_resolution_u",
+                    "resolution_v",
+                    "render_resolution_v",
+                    "fill_mode",
+                    "offset",
+                    "extrude",
+                    "bevel_mode",
+                    "bevel_depth",
+                    "bevel_resolution",
+                    "bevel_factor_start",
+                    "bevel_factor_end",
+                    "bevel_factor_mapping_start",
+                    "bevel_factor_mapping_end",
+                    "taper_radius_mode",
+                    "twist_mode",
+                    "twist_smooth",
+                    "use_fill_caps",
+                    "bevel_object",
+                    "taper_object",
+                ),
+            ),
+            "splines": splines,
+        }
+    )
+
+
+def _rna_block_digest(blocks: object) -> str:
+    return _signature_digest(
+        [
+            {
+                "name": block.name,
+                "type": block.type,
+                "props": _custom_properties(block),
+                "settings": _rna_settings_signature(block),
+            }
+            for block in blocks  # type: ignore[union-attr]
+        ]
+    )
+
+
+def _dependency_id_signature(block: bpy.types.ID) -> dict[str, object]:
+    signature: dict[str, object] = {
+        "type": block.__class__.__name__,
+        "name": block.name,
+        "library": block.library.filepath if block.library is not None else None,
+    }
+    for name in ("filepath", "filepath_raw", "source"):
+        try:
+            signature[name] = _stable_rna_value(getattr(block, name))
+        except (AttributeError, ReferenceError, TypeError, ValueError):
+            continue
+    if isinstance(block, bpy.types.Image):
+        signature.update(
+            alpha_mode=block.alpha_mode,
+            colorspace=block.colorspace_settings.name,
+            packed_size=block.packed_file.size if block.packed_file is not None else None,
+            size=tuple(int(value) for value in block.size),
+        )
+    if isinstance(block, bpy.types.NodeTree):
+        signature["node_tree_digest"] = _node_tree_digest(block)
+    return signature
+
+
+def _reachable_dependency_digest(objects: object) -> str:
+    dependencies = sorted(
+        (
+            _dependency_id_signature(block)
+            for block in _tower_dependency_blocks(list(objects), [])  # type: ignore[arg-type]
+            if isinstance(block, bpy.types.ID)
+        ),
+        key=lambda item: (item["type"], item["name"], item["library"] or ""),
+    )
+    return _signature_digest(dependencies)
+
+
 def _custom_properties(block: object) -> dict[str, object]:
     result: dict[str, object] = {}
-    for key, value in block.items():  # type: ignore[attr-defined]
+    try:
+        items = block.items()  # type: ignore[attr-defined]
+    except (AttributeError, TypeError):
+        items = ()
+    for key, value in items:
         if isinstance(value, (str, int, float, bool)) or value is None:
             result[str(key)] = value
         elif hasattr(value, "__iter__"):
@@ -302,6 +647,7 @@ def _material_signature(material: bpy.types.Material) -> dict[str, object]:
         "diffuse": _rounded(material.diffuse_color),
         "use_nodes": bool(material.use_nodes),
         "shader": shader,
+        "node_tree_digest": _node_tree_digest(material.node_tree if material.use_nodes else None),
     }
 
 
@@ -319,40 +665,186 @@ def _object_signature(obj: bpy.types.Object) -> dict[str, object]:
                 vertices=len(data.vertices),
                 edges=len(data.edges),
                 polygons=len(data.polygons),
+                geometry_digest=_mesh_geometry_digest(data),
+            )
+        elif obj.type == "CURVE":
+            data_signature.update(
+                splines=len(data.splines),
+                geometry_digest=_curve_geometry_digest(data),
             )
         elif obj.type == "CAMERA":
-            data_signature.update(type=data.type, ortho_scale=round(float(data.ortho_scale), 7))
+            data_signature.update(
+                type=data.type,
+                ortho_scale=round(float(data.ortho_scale), 7),
+                dof=_data_settings_signature(
+                    data.dof,
+                    (
+                        "use_dof",
+                        "focus_object",
+                        "focus_distance",
+                        "aperture_fstop",
+                        "aperture_blades",
+                        "aperture_rotation",
+                        "aperture_ratio",
+                    ),
+                ),
+                settings=_data_settings_signature(
+                    data,
+                    (
+                        "lens",
+                        "sensor_fit",
+                        "sensor_width",
+                        "sensor_height",
+                        "clip_start",
+                        "clip_end",
+                        "shift_x",
+                        "shift_y",
+                        "display_size",
+                        "show_limits",
+                        "show_mist",
+                        "show_name",
+                        "show_passepartout",
+                        "passepartout_alpha",
+                    ),
+                ),
+            )
         elif obj.type == "LIGHT":
             data_signature.update(
                 type=data.type,
                 energy=round(float(data.energy), 7),
                 shape=data.shape,
                 size=round(float(data.size), 7),
+                settings=_data_settings_signature(
+                    data,
+                    (
+                        "color",
+                        "normalize",
+                        "exposure",
+                        "diffuse_factor",
+                        "specular_factor",
+                        "transmission_factor",
+                        "volume_factor",
+                        "use_shadow",
+                        "size_y",
+                        "spread",
+                    ),
+                ),
             )
     return {
         "name": obj.name,
         "type": obj.type,
         "props": _custom_properties(obj),
         "collections": sorted(collection.name for collection in obj.users_collection),
+        "parent": obj.parent.name if obj.parent is not None else None,
+        "parent_type": obj.parent_type,
+        "parent_bone": obj.parent_bone,
+        "matrix_parent_inverse": _rounded_matrix(obj.matrix_parent_inverse),
+        "matrix_world": _rounded_matrix(obj.matrix_world),
+        "matrix_basis": _rounded_matrix(obj.matrix_basis),
+        "rotation_mode": obj.rotation_mode,
         "location": _rounded(obj.location),
         "rotation": _rounded(obj.rotation_euler),
         "scale": _rounded(obj.scale),
+        "delta_location": _rounded(obj.delta_location),
+        "delta_rotation_euler": _rounded(obj.delta_rotation_euler),
+        "delta_rotation_quaternion": _rounded(obj.delta_rotation_quaternion),
+        "delta_scale": _rounded(obj.delta_scale),
         "hide_render": bool(obj.hide_render),
         "hide_viewport": bool(obj.hide_viewport),
+        "modifier_digest": _rna_block_digest(obj.modifiers),
+        "constraint_digest": _rna_block_digest(obj.constraints),
         "data": data_signature,
         "materials": [
-            _material_signature(slot.material) if slot.material is not None else None
+            {
+                "link": slot.link,
+                "material": _material_signature(slot.material)
+                if slot.material is not None
+                else None,
+            }
             for slot in obj.material_slots
         ],
     }
+
+
+def _collection_scene_names(collection: bpy.types.Collection) -> list[str]:
+    def contains(root: bpy.types.Collection) -> bool:
+        return root is collection or any(contains(child) for child in root.children)
+
+    return sorted(scene.name for scene in bpy.data.scenes if contains(scene.collection))
+
+
+def _collection_direct_scene_names(collection: bpy.types.Collection) -> list[str]:
+    return sorted(
+        scene.name
+        for scene in bpy.data.scenes
+        if any(child is collection for child in scene.collection.children)
+    )
+
+
+def _collection_layer_signatures(collection: bpy.types.Collection) -> list[dict[str, object]]:
+    result: list[dict[str, object]] = []
+
+    def visit(
+        scene: bpy.types.Scene,
+        view_layer: bpy.types.ViewLayer,
+        layer: bpy.types.LayerCollection,
+        path: tuple[str, ...],
+    ) -> None:
+        current = (*path, layer.collection.name)
+        if layer.collection is collection:
+            result.append(
+                {
+                    "scene": scene.name,
+                    "view_layer": view_layer.name,
+                    "path": current,
+                    "exclude": bool(layer.exclude),
+                }
+            )
+        for child in layer.children:
+            visit(scene, view_layer, child, current)
+
+    for scene in sorted(bpy.data.scenes, key=lambda item: item.name):
+        for view_layer in sorted(scene.view_layers, key=lambda item: item.name):
+            visit(scene, view_layer, view_layer.layer_collection, ())
+    return sorted(
+        result,
+        key=lambda item: (item["scene"], item["view_layer"], item["path"]),
+    )
+
+
+def _assert_canonical_layer_collection(
+    scene: bpy.types.Scene,
+    collection: bpy.types.Collection,
+    path: tuple[str, ...],
+) -> None:
+    expected = [
+        {
+            "scene": scene.name,
+            "view_layer": view_layer.name,
+            "path": (scene.collection.name, *path),
+            "exclude": False,
+        }
+        for view_layer in sorted(scene.view_layers, key=lambda item: item.name)
+    ]
+    if _collection_layer_signatures(collection) != expected:
+        raise AssertionError(f"Collection layer path/exclude mismatch: {collection.name}")
 
 
 def _collection_signature(collection: bpy.types.Collection) -> dict[str, object]:
     return {
         "name": collection.name,
         "props": _custom_properties(collection),
+        "parents": sorted(
+            parent.name
+            for parent in bpy.data.collections
+            if collection.name in {child.name for child in parent.children}
+        ),
+        "users_scene": _collection_scene_names(collection),
+        "direct_scene_roots": _collection_direct_scene_names(collection),
+        "layer_collections": _collection_layer_signatures(collection),
         "hide_render": bool(collection.hide_render),
         "hide_viewport": bool(collection.hide_viewport),
+        "dependency_digest": _reachable_dependency_digest(collection.objects),
         "objects": {
             obj.name: _object_signature(obj)
             for obj in sorted(collection.objects, key=lambda item: item.name)
@@ -490,6 +982,54 @@ def _unlink_rig_from_other_parents(scene: bpy.types.Scene, rig: bpy.types.Collec
     _link_child(scene.collection, rig)
 
 
+def _normalize_rig_object_extras(obj: bpy.types.Object) -> None:
+    obj.parent = None
+    obj.parent_type = "OBJECT"
+    obj.parent_bone = ""
+    obj.matrix_parent_inverse = Matrix.Identity(4)
+    obj.delta_location = (0.0, 0.0, 0.0)
+    obj.delta_rotation_euler = (0.0, 0.0, 0.0)
+    obj.delta_rotation_quaternion = (1.0, 0.0, 0.0, 0.0)
+    obj.delta_scale = (1.0, 1.0, 1.0)
+    for constraint in list(obj.constraints):
+        obj.constraints.remove(constraint)
+    obj.hide_render = False
+    obj.hide_viewport = False
+
+
+def _settings_match(data: object, expected: dict[str, object]) -> bool:
+    return all(
+        _stable_rna_value(getattr(data, name)) == _stable_rna_value(value)
+        for name, value in expected.items()
+    )
+
+
+def _rig_object_transform_is_exact(
+    obj: bpy.types.Object,
+    location: tuple[float, float, float],
+) -> bool:
+    rotation = (Vector(CAMERA_SPEC["target"]) - Vector(location)).to_track_quat("-Z", "Y")
+    expected_world = Matrix.Translation(Vector(location)) @ rotation.to_matrix().to_4x4()
+    return (
+        obj.parent is None
+        and obj.parent_type == "OBJECT"
+        and obj.parent_bone == ""
+        and _rounded_matrix(obj.matrix_parent_inverse) == _rounded_matrix(Matrix.Identity(4))
+        and obj.rotation_mode == "XYZ"
+        and (obj.location - Vector(location)).length <= 1e-6
+        and _rotation_matches(obj, location)
+        and (obj.scale - Vector((1.0, 1.0, 1.0))).length <= 1e-6
+        and obj.delta_location.length <= 1e-6
+        and obj.delta_rotation_euler.to_quaternion().angle <= 1e-6
+        and obj.delta_rotation_quaternion.angle <= 1e-6
+        and (obj.delta_scale - Vector((1.0, 1.0, 1.0))).length <= 1e-6
+        and len(obj.constraints) == 0
+        and _matrix_max_delta(obj.matrix_world, expected_world) <= 1e-6
+        and not obj.hide_render
+        and not obj.hide_viewport
+    )
+
+
 def _normalize_rig(scene: bpy.types.Scene, rig: bpy.types.Collection) -> None:
     _tag(rig, "common")
     _unlink_rig_from_other_parents(scene, rig)
@@ -512,11 +1052,15 @@ def _normalize_rig(scene: bpy.types.Scene, rig: bpy.types.Collection) -> None:
                 linked.objects.unlink(obj)
         if rig not in obj.users_collection:
             rig.objects.link(obj)
+        _normalize_rig_object_extras(obj)
         obj.scale = (1.0, 1.0, 1.0)
         obj.rotation_mode = "XYZ"
     camera.location = CAMERA_SPEC["location"]
     camera.data.type = "ORTHO"
     camera.data.ortho_scale = float(CAMERA_SPEC["ortho_scale"])
+    for setting, value in CAMERA_DATA_SPEC.items():
+        setattr(camera.data, setting, value)
+    camera.data.dof.use_dof = False
     look_at(camera, CAMERA_SPEC["target"])
     scene.camera = camera
     for name, (location, energy, size) in LIGHT_SPECS.items():
@@ -526,7 +1070,10 @@ def _normalize_rig(scene: bpy.types.Scene, rig: bpy.types.Collection) -> None:
         light.data.energy = energy
         light.data.shape = "DISK"
         light.data.size = size
+        for setting, value in LIGHT_DATA_SPEC.items():
+            setattr(light.data, setting, value)
         look_at(light, CAMERA_SPEC["target"])
+    bpy.context.view_layer.update()
 
 
 def _rotation_matches(obj: bpy.types.Object, location: tuple[float, float, float]) -> bool:
@@ -557,13 +1104,15 @@ def _assert_rig_exact(scene: bpy.types.Scene, rig: bpy.types.Collection) -> None
     }
     if linked_scenes != {scene} or rig.name not in {child.name for child in scene.collection.children}:
         raise AssertionError("Common rig scene link mismatch")
+    _assert_canonical_layer_collection(scene, rig, (rig.name,))
     camera = objects[str(CAMERA_SPEC["name"])]
     if scene.camera is not camera:
         raise AssertionError("Preview scene camera link mismatch")
     if set(camera.users_collection) != {rig}:
         raise AssertionError("Preview camera collection link mismatch")
     if (
-        camera.get("td_preview_owner") != OWNER
+        not _rig_object_transform_is_exact(camera, CAMERA_SPEC["location"])
+        or camera.get("td_preview_owner") != OWNER
         or camera.get("td_preview_group") != "common"
         or camera.data.get("td_preview_owner") != OWNER
         or camera.data.get("td_preview_group") != "common"
@@ -571,15 +1120,15 @@ def _assert_rig_exact(scene: bpy.types.Scene, rig: bpy.types.Collection) -> None
         or camera.data.users != 1
         or camera.data.type != "ORTHO"
         or abs(camera.data.ortho_scale - float(CAMERA_SPEC["ortho_scale"])) > 1e-6
-        or (camera.location - Vector(CAMERA_SPEC["location"])).length > 1e-6
-        or not _rotation_matches(camera, CAMERA_SPEC["location"])
-        or (camera.scale - Vector((1.0, 1.0, 1.0))).length > 1e-6
+        or not _settings_match(camera.data, CAMERA_DATA_SPEC)
+        or camera.data.dof.use_dof
     ):
         raise AssertionError("Preview camera is not exactly normalized")
     for name, (location, energy, size) in LIGHT_SPECS.items():
         light = objects[name]
         if (
-            set(light.users_collection) != {rig}
+            not _rig_object_transform_is_exact(light, location)
+            or set(light.users_collection) != {rig}
             or light.get("td_preview_owner") != OWNER
             or light.get("td_preview_group") != "common"
             or light.data.get("td_preview_owner") != OWNER
@@ -590,11 +1139,328 @@ def _assert_rig_exact(scene: bpy.types.Scene, rig: bpy.types.Collection) -> None
             or abs(light.data.energy - energy) > 1e-6
             or light.data.shape != "DISK"
             or abs(light.data.size - size) > 1e-6
-            or (light.location - Vector(location)).length > 1e-6
-            or not _rotation_matches(light, location)
-            or (light.scale - Vector((1.0, 1.0, 1.0))).length > 1e-6
+            or not _settings_match(light.data, LIGHT_DATA_SPEC)
         ):
             raise AssertionError(f"Preview light is not exactly normalized: {name}")
+
+
+def _scene_preservation_signature(scene: bpy.types.Scene) -> dict[str, object]:
+    def layer_collection_signature(
+        layer: bpy.types.LayerCollection,
+    ) -> dict[str, object] | None:
+        if layer.collection.name == MOTION_GROUP_NAME:
+            return None
+        children = [
+            signature
+            for child in sorted(layer.children, key=lambda item: item.collection.name)
+            if (signature := layer_collection_signature(child)) is not None
+        ]
+        return {
+            "collection": layer.collection.name,
+            "exclude": bool(layer.exclude),
+            "hide_viewport": bool(layer.hide_viewport),
+            "holdout": bool(layer.holdout),
+            "indirect_only": bool(layer.indirect_only),
+            "children": children,
+        }
+
+    render = scene.render
+    image = render.image_settings
+    view = scene.view_settings
+    return {
+        "name": scene.name,
+        "props": _custom_properties(scene),
+        "camera": scene.camera.name if scene.camera is not None else None,
+        "direct_collections": sorted(
+            child.name
+            for child in scene.collection.children
+            if child.name != MOTION_GROUP_NAME
+        ),
+        "view_layers": {
+            view_layer.name: layer_collection_signature(view_layer.layer_collection)
+            for view_layer in sorted(scene.view_layers, key=lambda item: item.name)
+        },
+        "render": {
+            "engine": scene.render.engine,
+            "filepath": render.filepath,
+            "film_transparent": bool(render.film_transparent),
+            "resolution_x": int(render.resolution_x),
+            "resolution_y": int(render.resolution_y),
+            "resolution_percentage": int(render.resolution_percentage),
+            "pixel_aspect_x": round(float(render.pixel_aspect_x), 7),
+            "pixel_aspect_y": round(float(render.pixel_aspect_y), 7),
+            "image_file_format": image.file_format,
+            "image_color_mode": image.color_mode,
+            "image_color_depth": image.color_depth,
+        },
+        "view": {
+            "view_transform": view.view_transform,
+            "look": view.look,
+            "exposure": round(float(view.exposure), 7),
+            "gamma": round(float(view.gamma), 7),
+        },
+    }
+
+
+def _assert_real_preview_blend(path: Path) -> None:
+    try:
+        mode = path.stat(follow_symlinks=False).st_mode
+    except FileNotFoundError as error:
+        raise AssertionError(f"Motion requires an existing preview blend: {path}") from error
+    if not stat.S_ISREG(mode):
+        raise AssertionError(f"Preview blend is not a real regular file: {path}")
+
+
+def _assert_motion_blend_or_recovery_ready(
+    output_root: Path = OUTPUT,
+    blend_output: Path = BLEND_OUTPUT,
+) -> None:
+    try:
+        _assert_real_preview_blend(blend_output)
+        return
+    except AssertionError:
+        if blend_output.exists() or blend_output.is_symlink():
+            raise
+    recovery_journals = [
+        _journal_path(output_root, group)
+        for group in ("map", "tower", "motion")
+    ]
+    if not any(path.is_file() and not path.is_symlink() for path in recovery_journals):
+        _assert_real_preview_blend(blend_output)
+
+
+def _assert_active_blend_path(path: Path) -> None:
+    if not bpy.data.filepath:
+        raise AssertionError(f"Blender has no active path after file operation: {path}")
+    active = Path(bpy.data.filepath)
+    if (
+        not active.is_absolute()
+        or active.absolute() != path.absolute()
+        or active.resolve(strict=False) != path.resolve(strict=False)
+    ):
+        raise AssertionError(
+            f"Blender active path mismatch: expected={path} actual={bpy.data.filepath}"
+        )
+
+
+def _open_mainfile_exact(path: Path) -> None:
+    _assert_real_preview_blend(path)
+    result = bpy.ops.wm.open_mainfile(filepath=str(path), load_ui=False)
+    if set(result) != {"FINISHED"}:
+        raise AssertionError(f"Blender did not open preview blend: {result}")
+    _assert_active_blend_path(path)
+    if bpy.data.is_dirty:
+        raise AssertionError(f"Preview blend opened dirty: {path}")
+
+
+def _save_mainfile_exact(path: Path) -> None:
+    result = bpy.ops.wm.save_as_mainfile(filepath=str(path), check_existing=False)
+    if set(result) != {"FINISHED"}:
+        raise AssertionError(f"Blender did not save preview candidate: {result}")
+    _assert_real_preview_blend(path)
+    _assert_active_blend_path(path)
+    if bpy.data.is_dirty:
+        raise AssertionError(f"Preview candidate remained dirty after save: {path}")
+
+
+def _assert_prerequisite_group_manifest(
+    scene: bpy.types.Scene,
+    group_name: str,
+    owner_group: str,
+    assets: object,
+    collection_namer: object,
+) -> bpy.types.Collection:
+    groups = [collection for collection in bpy.data.collections if collection.name == group_name]
+    if len(groups) != 1:
+        raise AssertionError(
+            f"Motion requires exactly one prior {owner_group} group, found {len(groups)}"
+        )
+    group = groups[0]
+    if (
+        group.get("td_preview_owner") != OWNER
+        or group.get("td_preview_group") != owner_group
+        or group.objects
+    ):
+        raise AssertionError(f"Prior {owner_group} group identity is invalid")
+    if (
+        group.name not in {collection.name for collection in scene.collection.children}
+        or set(_collection_scene_names(group)) != {scene.name}
+        or _collection_direct_scene_names(group) != [scene.name]
+        or any(
+            group.name in {child.name for child in parent.children}
+            for parent in bpy.data.collections
+        )
+    ):
+        raise AssertionError(f"Prior {owner_group} group scene link is invalid")
+    _assert_canonical_layer_collection(scene, group, (group.name,))
+    expected = {
+        collection_namer(relative_path): relative_path  # type: ignore[operator]
+        for relative_path in assets  # type: ignore[union-attr]
+    }
+    children = {collection.name: collection for collection in group.children}
+    if len(group.children) != len(expected) or set(children) != set(expected):
+        raise AssertionError(
+            f"Prior {owner_group} asset collection manifest mismatch: "
+            f"expected={sorted(expected)} actual={sorted(children)}"
+        )
+    for name, relative_path in expected.items():
+        collection = children[name]
+        parents = {
+            parent
+            for parent in bpy.data.collections
+            if collection.name in {child.name for child in parent.children}
+        }
+        if (
+            collection.get("td_preview_owner") != OWNER
+            or collection.get("td_preview_group") != owner_group
+            or collection.get("td_preview_asset") != relative_path
+            or parents != {group}
+            or set(_collection_scene_names(collection)) != {scene.name}
+            or _collection_direct_scene_names(collection)
+        ):
+            raise AssertionError(
+                f"Prior {owner_group} asset collection identity/link mismatch: {name}"
+            )
+        _assert_canonical_layer_collection(
+            scene,
+            collection,
+            (group.name, collection.name),
+        )
+    return group
+
+
+def _assert_motion_prerequisites(
+    scene: bpy.types.Scene,
+    expected_state: dict[str, object] | None = None,
+    *,
+    validate_content: bool = True,
+) -> dict[str, object]:
+    matching_scenes = [candidate for candidate in bpy.data.scenes if candidate.name == SCENE_NAME]
+    if matching_scenes != [scene]:
+        raise AssertionError(
+            f"Motion requires exactly one existing {SCENE_NAME} scene, found {len(matching_scenes)}"
+        )
+    if scene.get("td_preview_owner") != OWNER or scene.get("td_preview_group") != "common":
+        raise AssertionError("Motion prerequisite scene ownership mismatch")
+    map_group = _assert_prerequisite_group_manifest(
+        scene,
+        GROUP_NAME,
+        "map",
+        MAP_BUILDERS,
+        _asset_collection_name,
+    )
+    tower_group = _assert_prerequisite_group_manifest(
+        scene,
+        TOWER_GROUP_NAME,
+        "tower",
+        TOWER_ASSETS,
+        _tower_asset_collection_name,
+    )
+    rigs = [
+        collection
+        for collection in bpy.data.collections
+        if collection.name == RIG_COLLECTION_NAME
+    ]
+    if len(rigs) != 1:
+        raise AssertionError(f"Motion requires exactly one shared rig, found {len(rigs)}")
+    rig = rigs[0]
+    _assert_rig_exact(scene, rig)
+    _assert_only_td_rig(scene, tower_group)
+    if validate_content:
+        map_collections = {
+            collection.get("td_preview_asset"): collection
+            for collection in map_group.children
+        }
+        tower_collections = {
+            collection.get("td_preview_asset"): collection
+            for collection in tower_group.children
+        }
+        for relative_path in MAP_BUILDERS:
+            _assert_asset_geometry(relative_path, map_collections[relative_path])
+        for relative_path in TOWER_ASSETS:
+            collection = tower_collections[relative_path]
+            _assert_tower_asset_geometry(relative_path, collection)
+            _assert_tower_component_layout(relative_path, collection)
+            _assert_clean_tower_dependencies(list(collection.all_objects), [collection])
+        _assert_persisted_tower_visibility_audit(tower_group)
+        persisted_character_metrics = tower_group.get("character_metrics")
+        if not isinstance(persisted_character_metrics, str):
+            raise AssertionError("Prior tower character metrics are missing")
+        try:
+            character_metrics = json.loads(persisted_character_metrics)
+        except json.JSONDecodeError as error:
+            raise AssertionError("Prior tower character metrics are invalid JSON") from error
+        if set(character_metrics) != {"huchu", "deokbae"}:
+            raise AssertionError("Prior tower character metric manifest is incomplete")
+        _assert_owned_data_integrity()
+    current: dict[str, object] = {
+        "map": _collection_signature(map_group),
+        "tower": _collection_signature(tower_group),
+        "rig": _collection_signature(rig),
+        "scene": _scene_preservation_signature(scene),
+    }
+    if expected_state is not None and current != expected_state:
+        def first_difference(expected: object, actual: object, path: str) -> str:
+            if type(expected) is not type(actual):
+                return f"{path} type expected={type(expected).__name__} actual={type(actual).__name__}"
+            if isinstance(expected, dict):
+                expected_keys = set(expected)
+                actual_keys = set(actual)  # type: ignore[arg-type]
+                if expected_keys != actual_keys:
+                    return (
+                        f"{path} keys expected={sorted(expected_keys)} "
+                        f"actual={sorted(actual_keys)}"
+                    )
+                for key in sorted(expected_keys):
+                    if expected[key] != actual[key]:  # type: ignore[index]
+                        return first_difference(
+                            expected[key],
+                            actual[key],  # type: ignore[index]
+                            f"{path}.{key}",
+                        )
+            elif isinstance(expected, (list, tuple)):
+                if len(expected) != len(actual):  # type: ignore[arg-type]
+                    return f"{path} length expected={len(expected)} actual={len(actual)}"  # type: ignore[arg-type]
+                for index, value in enumerate(expected):
+                    if value != actual[index]:  # type: ignore[index]
+                        return first_difference(
+                            value,
+                            actual[index],  # type: ignore[index]
+                            f"{path}[{index}]",
+                        )
+            return f"{path} expected={expected!r} actual={actual!r}"
+
+        raise AssertionError(
+            "Required map/tower/rig preservation signature changed: "
+            + first_difference(expected_state, current, "state")
+        )
+    return current
+
+
+def _assert_candidate_render_filepath(scene: bpy.types.Scene) -> None:
+    raw = scene.render.filepath
+    if not raw:
+        return
+    blender_relative = raw.startswith("//")
+    inspected = raw[2:] if blender_relative else raw
+    normalized = inspected.replace("\\", "/")
+    parts = tuple(part for part in normalized.split("/") if part)
+    escaped_blender_relative = False
+    if blender_relative:
+        resolved = Path(bpy.path.abspath(raw)).resolve(strict=False)
+        try:
+            resolved.relative_to(REPO.resolve())
+        except ValueError:
+            escaped_blender_relative = True
+    if (
+        (not blender_relative and Path(raw).is_absolute())
+        or escaped_blender_relative
+        or any(
+            part in ("..", ".frames") or part.startswith(".staging-")
+            for part in parts
+        )
+    ):
+        raise AssertionError(f"Candidate retains a temporary render filepath: {raw}")
 
 
 def ensure_preview_rig(scene: bpy.types.Scene) -> bpy.types.Collection:
@@ -2301,6 +3167,8 @@ def render_animation_sheet(
     temp = frame_root / slug
     if temp.exists():
         raise AssertionError(f"Motion frame temp already exists: {temp}")
+    scene = bpy.context.scene
+    render_filepath = scene.render.filepath
     master_frames: list[Path] = []
     mobile_frames: list[Path] = []
     try:
@@ -2327,7 +3195,10 @@ def render_animation_sheet(
             "mobile": _validate_animation_png(mobile, MOBILE_SIZE, frame_count),
         }
     finally:
-        _remove_motion_frame_temp(temp, frame_root)
+        try:
+            scene.render.filepath = render_filepath
+        finally:
+            _remove_motion_frame_temp(temp, frame_root)
 
 
 def _clear_motion_asset_objects(collection: bpy.types.Collection) -> None:
@@ -2638,6 +3509,7 @@ def _assert_motion_group_clean(group: bpy.types.Collection) -> None:
 def render_motion_group(scene: bpy.types.Scene) -> dict[str, object]:
     group = _prepare_motion_group(scene)
     preserved_visibility = _snapshot_preview_render_visibility()
+    preserved_render_filepath = scene.render.filepath
     metrics: dict[str, object] = {}
     visibility_audit: dict[str, list[str]] = {}
     try:
@@ -2676,7 +3548,10 @@ def render_motion_group(scene: bpy.types.Scene) -> dict[str, object]:
                     _clear_motion_asset_objects(collection)
         _assert_motion_group_clean(group)
     finally:
-        _restore_preview_render_visibility(preserved_visibility)
+        try:
+            _restore_preview_render_visibility(preserved_visibility)
+        finally:
+            scene.render.filepath = preserved_render_filepath
     final_visibility = _snapshot_preview_render_visibility()
     if any(final_visibility.get(name) != hidden for name, hidden in preserved_visibility.items()):
         raise AssertionError("Previously persisted render visibility changed after motion renders")
@@ -2685,6 +3560,8 @@ def render_motion_group(scene: bpy.types.Scene) -> dict[str, object]:
         for collection in (group, *group.children)
     ):
         raise AssertionError("Motion collection visibility did not restore to visible")
+    if scene.render.filepath != preserved_render_filepath:
+        raise AssertionError("Motion rendering changed the preserved render filepath")
     group["render_visibility_audit"] = json.dumps(visibility_audit, sort_keys=True)
     group["motion_metrics"] = json.dumps(metrics, sort_keys=True)
     return {
@@ -2870,11 +3747,13 @@ def _validate_candidate(
 ) -> dict[str, object]:
     if group_name not in ("map", "tower", "motion"):
         raise AssertionError(f"Unsupported candidate group: {group_name}")
-    bpy.ops.wm.open_mainfile(filepath=str(candidate), load_ui=False)
+    _open_mainfile_exact(candidate)
     scenes = [scene for scene in bpy.data.scenes if scene.name == SCENE_NAME]
     if len(scenes) != 1:
         raise AssertionError(f"Expected one {SCENE_NAME}, found {len(scenes)}")
     scene = scenes[0]
+    if group_name == "motion":
+        _assert_candidate_render_filepath(scene)
     rigs = [collection for collection in bpy.data.collections if collection.name == RIG_COLLECTION_NAME]
     if group_name == "map":
         active_group_name = GROUP_NAME
@@ -2901,9 +3780,12 @@ def _validate_candidate(
     expected_names = {collection_namer(path) for path in builders}
     if len(asset_collections) != len(builders) or {collection.name for collection in asset_collections} != expected_names:
         raise AssertionError(f"{group_name} per-asset collection persistence mismatch")
-    current_preserved_state = _snapshot_preserved_groups(active_group_name)
-    if current_preserved_state != preserved_state:
-        raise AssertionError("Previously completed preview group state changed")
+    if group_name == "motion":
+        _assert_motion_prerequisites(scene, preserved_state)
+    else:
+        current_preserved_state = _snapshot_preserved_groups(active_group_name)
+        if current_preserved_state != preserved_state:
+            raise AssertionError("Previously completed preview group state changed")
     owned_names: set[str] = set()
     owned_data_names: set[tuple[str, str]] = set()
     for obj in bpy.data.objects:
@@ -3585,6 +4467,8 @@ def render_group(group: str) -> None:
         "post_self_test_ok",
     ]:
         raise AssertionError("render_group lifecycle order is invalid")
+    if group == "motion":
+        _assert_motion_blend_or_recovery_ready()
     _assert_preflight_snapshot(
         _PREFLIGHT_SNAPSHOT,
         "render_start",
@@ -3604,21 +4488,31 @@ def render_group(group: str) -> None:
             require_initial_path=True,
         )
         preserved_output_hashes = _snapshot_preserved_output_groups(group)
+        if group == "motion":
+            _assert_real_preview_blend(BLEND_OUTPUT)
         if BLEND_OUTPUT.exists():
-            if BLEND_OUTPUT.name in SOURCE_BLEND_NAMES:
+            protected_sources = {
+                (REPO / "assets/blender" / name).resolve()
+                for name in SOURCE_BLEND_NAMES
+            }
+            if BLEND_OUTPUT.resolve() in protected_sources:
                 raise AssertionError("Target blend overlaps protected source allow-list")
-            bpy.ops.wm.open_mainfile(filepath=str(BLEND_OUTPUT), load_ui=False)
-            if bpy.data.is_dirty:
-                raise AssertionError("Target preview blend opened dirty")
-        scene = _preview_scene()
-        if group == "map":
-            active_group_name = GROUP_NAME
-        elif group == "tower":
-            active_group_name = TOWER_GROUP_NAME
+            _open_mainfile_exact(BLEND_OUTPUT)
+        if group == "motion":
+            scenes = [scene for scene in bpy.data.scenes if scene.name == SCENE_NAME]
+            if len(scenes) != 1:
+                raise AssertionError(
+                    f"Motion requires exactly one existing {SCENE_NAME} scene, found {len(scenes)}"
+                )
+            scene = scenes[0]
+            _assert_candidate_render_filepath(scene)
+            _EXPECTED_PRESERVED_STATE = _assert_motion_prerequisites(scene)
+            bpy.context.window.scene = scene
         else:
-            active_group_name = MOTION_GROUP_NAME
-        _EXPECTED_PRESERVED_STATE = _snapshot_preserved_groups(active_group_name)
-        ensure_preview_rig(scene)
+            scene = _preview_scene()
+            active_group_name = GROUP_NAME if group == "map" else TOWER_GROUP_NAME
+            _EXPECTED_PRESERVED_STATE = _snapshot_preserved_groups(active_group_name)
+            ensure_preview_rig(scene)
         paths = _derive_publish_paths(run_id, OUTPUT, BLEND_OUTPUT, group)
         staging_root = paths["staging_root"]
         candidate = paths["candidate"]
@@ -3637,7 +4531,7 @@ def render_group(group: str) -> None:
             if _source_hashes() != source_hashes_before:
                 raise AssertionError("Protected source blend hash changed during render")
             bpy.context.preferences.filepaths.save_version = 0
-            bpy.ops.wm.save_as_mainfile(filepath=str(candidate), check_existing=False)
+            _save_mainfile_exact(candidate)
             persistence = _validate_candidate(candidate, _EXPECTED_PRESERVED_STATE, group)
             if _source_hashes() != source_hashes_before:
                 raise AssertionError("Protected source blend hash changed during candidate validation")
@@ -3860,6 +4754,44 @@ def _test_publish_recovery_phases() -> None:
                 _assert_marker(output / variant / "map", expected)
             if blend.read_bytes() != expected_blend:
                 raise AssertionError(f"{phase} recovery produced a mixed blend")
+    with tempfile.TemporaryDirectory(prefix="td-preview-missing-final-") as temporary:
+        sandbox = Path(temporary)
+        output = sandbox / "assets/renders/redesign-preview-v1"
+        blend = sandbox / "assets/blender/td-redesign-preview-v1.blend"
+        run_id = "MissingFinal123"
+        paths = _derive_publish_paths(run_id, output, blend)
+        for variant in ("master", "mobile"):
+            _write_marker_tree(output / variant / "map", "old")
+            _write_marker_tree(paths["staging_root"] / variant / "map", "new")
+        blend.parent.mkdir(parents=True, exist_ok=True)
+        blend.write_bytes(b"old-blend")
+        paths["candidate"].write_bytes(b"new-blend")
+        record = _create_publish_record(
+            paths["staging_root"],
+            paths["candidate"],
+            run_id,
+            output,
+            blend,
+            {"source": "stable"},
+        )
+        _write_journal_atomic(record, output)
+        paths["backup_root"].mkdir(parents=True, exist_ok=False)
+        _promote_maps(record, output, blend)
+        record["phase"] = "maps_promoted"
+        _write_journal_atomic(record, output)
+        os.replace(blend, _backup_component_path(paths, "blend"))
+        if blend.exists():
+            raise AssertionError("Review crash fixture did not remove the final blend")
+        _assert_motion_blend_or_recovery_ready(output, blend)
+        _recover_stale_publish_at(
+            output,
+            blend,
+            current_source_hashes=lambda: {"source": "stable"},
+        )
+        for variant in ("master", "mobile"):
+            _assert_marker(output / variant / "map", "old")
+        if blend.read_bytes() != b"old-blend":
+            raise AssertionError("Missing-final crash recovery did not restore the blend")
     with tempfile.TemporaryDirectory(prefix="td-preview-fresh-") as temporary:
         sandbox = Path(temporary)
         output = sandbox / "assets/renders/redesign-preview-v1"
@@ -4001,13 +4933,16 @@ def _test_rig_normalization_and_owned_orphans() -> None:
     camera = rig.objects["TD_Preview_Camera"]
     camera.location = (1.0, 2.0, 3.0)
     camera.rotation_euler = (0.1, 0.2, 0.3)
+    camera.delta_location = (2.0, 0.0, 0.0)
     camera.data.type = "PERSP"
+    camera.data.clip_end = 1.0
     for obj in rig.objects:
         if obj.type == "LIGHT":
             obj.location = (9.0, 9.0, 9.0)
             obj.data.energy = 1.0
             obj.data.shape = "SQUARE"
             obj.data.size = 0.5
+            obj.data.color = (1.0, 0.0, 0.0)
     ensure_preview_rig(scene)
     _assert_rig_exact(scene, rig)
     for collection_name, factory in (
@@ -4642,6 +5577,438 @@ def _test_motion_sheet_packing_and_validation() -> None:
         )
 
 
+def _test_motion_prerequisite_file_gate() -> None:
+    with tempfile.TemporaryDirectory(prefix="td-preview-motion-prerequisite-") as temporary:
+        root = Path(temporary)
+        missing = root / "missing.blend"
+        _expect_assertion(
+            "missing motion prerequisite blend",
+            lambda: _assert_real_preview_blend(missing),
+        )
+        _expect_assertion(
+            "missing motion prerequisite blend without recovery journal",
+            lambda: _assert_motion_blend_or_recovery_ready(root, missing),
+        )
+        recovery_journal = _journal_path(root, "motion")
+        recovery_journal.write_text("{}", encoding="utf-8")
+        _assert_motion_blend_or_recovery_ready(root, missing)
+        directory = root / "directory.blend"
+        directory.mkdir()
+        _expect_assertion(
+            "directory motion prerequisite blend",
+            lambda: _assert_real_preview_blend(directory),
+        )
+        regular = root / "regular.blend"
+        regular.write_bytes(b"review blend sentinel")
+        _assert_real_preview_blend(regular)
+        symlink = root / "symlink.blend"
+        symlink.symlink_to(regular)
+        _expect_assertion(
+            "symlink motion prerequisite blend",
+            lambda: _assert_real_preview_blend(symlink),
+        )
+
+
+def _review_prerequisite_group(
+    scene: bpy.types.Scene,
+    name: str,
+    group_name: str,
+    assets: object,
+    collection_namer: object,
+) -> bpy.types.Collection:
+    group = bpy.data.collections.new(name)
+    _tag(group, group_name)
+    scene.collection.children.link(group)
+    for relative_path in assets:  # type: ignore[union-attr]
+        collection = bpy.data.collections.new(collection_namer(relative_path))  # type: ignore[operator]
+        _tag(collection, group_name)
+        collection["td_preview_asset"] = relative_path
+        group.children.link(collection)
+    return group
+
+
+def _test_motion_prerequisite_scene_and_signatures() -> None:
+    scene = _preview_scene()
+    rig = bpy.data.collections.get(RIG_COLLECTION_NAME)
+    if rig is None:
+        raise AssertionError("Review prerequisite test requires the exact shared rig")
+    map_group = _review_prerequisite_group(
+        scene,
+        GROUP_NAME,
+        "map",
+        MAP_BUILDERS,
+        _asset_collection_name,
+    )
+    tower_group = _review_prerequisite_group(
+        scene,
+        TOWER_GROUP_NAME,
+        "tower",
+        TOWER_ASSETS,
+        _tower_asset_collection_name,
+    )
+    signature_mesh = bpy.data.meshes.new("ReviewPrerequisiteMesh")
+    signature_mesh.from_pydata(
+        [(0.0, 0.0, 0.0), (0.4, 0.0, 0.0), (0.0, 0.4, 0.0)],
+        [],
+        [(0, 1, 2)],
+    )
+    signature_material = bpy.data.materials.new("ReviewPrerequisiteMaterial")
+    signature_material.use_nodes = True
+    signature_image = bpy.data.images.new("ReviewPrerequisiteImage", 2, 2)
+    signature_image.filepath = "//review-prerequisite.png"
+    signature_image_node = signature_material.node_tree.nodes.new("ShaderNodeTexImage")
+    signature_image_node.image = signature_image
+    signature_mesh.materials.append(signature_material)
+    signature_uv = signature_mesh.uv_layers.new(name="ReviewPrerequisiteUV")
+    for index, loop in enumerate(signature_uv.data):
+        loop.uv = (float(index) / 3.0, float(index + 1) / 4.0)
+    signature_mesh.polygons[0].material_index = 1
+    signature_mesh.polygons[0].material_index = 0
+    signature_curve = bpy.data.curves.new("ReviewPrerequisiteCurve", "CURVE")
+    signature_curve.dimensions = "3D"
+    signature_spline = signature_curve.splines.new("POLY")
+    signature_spline.points.add(1)
+    signature_spline.points[0].co = (0.0, 0.0, 0.0, 1.0)
+    signature_spline.points[1].co = (0.0, 0.0, 0.5, 1.0)
+    signature_curve.bevel_depth = 0.03
+    signature_parent = bpy.data.objects.new("ReviewPrerequisiteParent", None)
+    signature_child = bpy.data.objects.new("ReviewPrerequisiteChild", signature_mesh)
+    signature_curve_object = bpy.data.objects.new(
+        "ReviewPrerequisiteCurveObject",
+        signature_curve,
+    )
+    _tag(signature_parent, "map")
+    _tag(signature_child, "map")
+    _tag(signature_curve_object, "tower")
+    map_group.children[0].objects.link(signature_parent)
+    map_group.children[0].objects.link(signature_child)
+    tower_group.children[0].objects.link(signature_curve_object)
+    signature_modifier = signature_child.modifiers.new("ReviewBevel", "BEVEL")
+    signature_modifier.width = 0.05
+    signature_constraint = signature_child.constraints.new("COPY_LOCATION")
+    signature_constraint.target = signature_parent
+    signature_constraint.influence = 0.0
+    signature_parent.location = (0.25, -0.5, 0.75)
+    signature_child.parent = signature_parent
+    signature_child.location = (0.1, 0.2, 0.3)
+    bpy.context.view_layer.update()
+    signature_transform = _snapshot_motion_transforms((signature_parent, signature_child))
+    original_render_filepath = scene.render.filepath
+    temporary_motion_group: bpy.types.Collection | None = None
+    try:
+        before_motion = bpy.data.collections.get(MOTION_GROUP_NAME)
+        snapshot = _assert_motion_prerequisites(scene, validate_content=False)
+        if bpy.data.collections.get(MOTION_GROUP_NAME) is not before_motion:
+            raise AssertionError("Motion prerequisite assertion created the motion group")
+        if set(snapshot) != {"map", "tower", "rig", "scene"}:
+            raise AssertionError("Motion prerequisite snapshot is incomplete")
+        camera_signature = snapshot["rig"]["objects"][str(CAMERA_SPEC["name"])]
+        required_object_fields = {
+            "parent",
+            "parent_type",
+            "parent_bone",
+            "matrix_parent_inverse",
+            "matrix_world",
+            "rotation_mode",
+            "modifier_digest",
+            "constraint_digest",
+        }
+        if not required_object_fields.issubset(camera_signature):
+            raise AssertionError("Preserved object signature omits parent/world identity")
+        required_collection_fields = {
+            "parents",
+            "users_scene",
+            "direct_scene_roots",
+            "layer_collections",
+            "dependency_digest",
+        }
+        if not required_collection_fields.issubset(snapshot["map"]):
+            raise AssertionError("Preserved collection signature omits scene/parent links")
+        if "settings" not in camera_signature["data"]:
+            raise AssertionError("Preserved camera signature omits data settings")
+
+        if before_motion is None:
+            temporary_motion_group = bpy.data.collections.new(MOTION_GROUP_NAME)
+            _tag(temporary_motion_group, "motion")
+            scene.collection.children.link(temporary_motion_group)
+            _assert_motion_prerequisites(scene, snapshot, validate_content=False)
+            scene.collection.children.unlink(temporary_motion_group)
+            bpy.data.collections.remove(temporary_motion_group)
+            temporary_motion_group = None
+
+        original_vertex = signature_mesh.vertices[0].co.copy()
+        signature_mesh.vertices[0].co.x += 0.01
+        _expect_assertion(
+            "preserved mesh vertex drift",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        signature_mesh.vertices[0].co = original_vertex
+        original_material_index = int(signature_mesh.polygons[0].material_index)
+        signature_mesh.polygons[0].material_index = 1
+        _expect_assertion(
+            "preserved mesh material-index drift",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        signature_mesh.polygons[0].material_index = original_material_index
+        try:
+            _assert_motion_prerequisites(scene, snapshot, validate_content=False)
+        except AssertionError as error:
+            raise AssertionError("Mesh vertex/material-index restore drift") from error
+
+        original_uv = signature_uv.data[0].uv.copy()
+        signature_uv.data[0].uv.x += 0.125
+        _expect_assertion(
+            "preserved mesh UV/attribute drift",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        signature_uv.data[0].uv = original_uv
+        try:
+            _assert_motion_prerequisites(scene, snapshot, validate_content=False)
+        except AssertionError as error:
+            raise AssertionError("Mesh UV/attribute restore drift") from error
+
+        signature_modifier.width += 0.02
+        _expect_assertion(
+            "preserved modifier drift",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        signature_modifier.width -= 0.02
+        signature_constraint.target = signature_curve_object
+        _expect_assertion(
+            "preserved constraint dependency drift",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        signature_constraint.target = signature_parent
+
+        signature_image.filepath = "//tampered-prerequisite.png"
+        _expect_assertion(
+            "preserved reachable image filepath drift",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        signature_image.filepath = "//review-prerequisite.png"
+
+        signature_curve.bevel_resolution += 1
+        _expect_assertion(
+            "preserved curve bevel drift",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        signature_curve.bevel_resolution -= 1
+
+        material_links = signature_material.node_tree.links
+        material_link = next(iter(material_links))
+        from_socket = material_link.from_socket
+        to_socket = material_link.to_socket
+        material_links.remove(material_link)
+        _expect_assertion(
+            "preserved material node-link drift",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        material_links.new(from_socket, to_socket)
+
+        signature_child.parent = None
+        bpy.context.view_layer.update()
+        _expect_assertion(
+            "preserved object parent drift",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        _restore_motion_transforms(signature_transform)
+        signature_child.matrix_parent_inverse[0][3] += 0.25
+        bpy.context.view_layer.update()
+        _expect_assertion(
+            "preserved object parent-inverse drift",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        _restore_motion_transforms(signature_transform)
+
+        missing_map_asset = map_group.children[0]
+        map_group.children.unlink(missing_map_asset)
+        _expect_assertion(
+            "missing prior map asset collection",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        map_group.children.link(missing_map_asset)
+
+        scene.collection.children.link(missing_map_asset)
+        _expect_assertion(
+            "duplicate direct scene-root asset link",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        scene.collection.children.unlink(missing_map_asset)
+
+        def find_layer_collection(
+            layer: bpy.types.LayerCollection,
+            collection: bpy.types.Collection,
+        ) -> bpy.types.LayerCollection | None:
+            if layer.collection is collection:
+                return layer
+            return next(
+                (
+                    found
+                    for child in layer.children
+                    if (found := find_layer_collection(child, collection)) is not None
+                ),
+                None,
+            )
+
+        map_layer = find_layer_collection(
+            scene.view_layers[0].layer_collection,
+            map_group,
+        )
+        if map_layer is None:
+            raise AssertionError("Review fixture is missing the map LayerCollection")
+        map_layer.exclude = True
+        _expect_assertion(
+            "excluded prerequisite LayerCollection",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        if not map_layer.exclude:
+            raise AssertionError("Prerequisite assertion repaired LayerCollection exclusion")
+        map_layer.exclude = False
+
+        scene.render.filepath = "renders/review-drift.png"
+        _expect_assertion(
+            "safe relative render filepath drift",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        scene.render.filepath = original_render_filepath
+
+        scene.collection.children.unlink(tower_group)
+        _expect_assertion(
+            "missing prior tower group scene link",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        scene.collection.children.link(tower_group)
+
+        scene.collection.children.unlink(rig)
+        _expect_assertion(
+            "missing shared rig scene link",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        scene.collection.children.link(rig)
+
+        camera = rig.objects[str(CAMERA_SPEC["name"])]
+        camera.location.x += 1.0
+        corrupted_location = camera.location.copy()
+        _expect_assertion(
+            "corrupted prerequisite camera transform",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        if (camera.location - corrupted_location).length > 1e-12:
+            raise AssertionError("Motion prerequisite assertion repaired camera corruption")
+        camera.location.x -= 1.0
+        camera.data.lens += 1.0
+        _expect_assertion(
+            "preserved camera data setting drift",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        camera.data.lens -= 1.0
+
+        camera.delta_location.x += 2.0
+        corrupted_delta = camera.delta_location.copy()
+        _expect_assertion(
+            "corrupted prerequisite camera delta transform",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        if (camera.delta_location - corrupted_delta).length > 1e-12:
+            raise AssertionError("Motion prerequisite assertion repaired camera delta corruption")
+        camera.delta_location.x -= 2.0
+        camera.data.clip_end = 1.0
+        _expect_assertion(
+            "corrupted prerequisite camera clipping",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        camera.data.clip_end = CAMERA_DATA_SPEC["clip_end"]
+
+        key = rig.objects["TD_Key"]
+        key.data.energy += 13.0
+        corrupted_energy = float(key.data.energy)
+        _expect_assertion(
+            "corrupted prerequisite light energy",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        if abs(float(key.data.energy) - corrupted_energy) > 1e-12:
+            raise AssertionError("Motion prerequisite assertion repaired light corruption")
+        key.data.energy -= 13.0
+        key.data.color = (1.0, 0.0, 0.0)
+        _expect_assertion(
+            "corrupted prerequisite light color",
+            lambda: _assert_motion_prerequisites(scene, snapshot, validate_content=False),
+        )
+        key.data.color = LIGHT_DATA_SPEC["color"]
+        _assert_motion_prerequisites(scene, snapshot, validate_content=False)
+    finally:
+        scene.render.filepath = original_render_filepath
+        if temporary_motion_group is not None:
+            bpy.data.collections.remove(temporary_motion_group)
+        if rig.name not in {collection.name for collection in scene.collection.children}:
+            scene.collection.children.link(rig)
+        for obj in (signature_curve_object, signature_child, signature_parent):
+            if obj.name in bpy.data.objects:
+                bpy.data.objects.remove(obj, do_unlink=True)
+        for group in (tower_group, map_group):
+            for child in list(group.children):
+                group.children.unlink(child)
+                bpy.data.collections.remove(child)
+            if group.name in {collection.name for collection in scene.collection.children}:
+                scene.collection.children.unlink(group)
+            bpy.data.collections.remove(group)
+        bpy.data.curves.remove(signature_curve)
+        bpy.data.meshes.remove(signature_mesh)
+        bpy.data.materials.remove(signature_material)
+        bpy.data.images.remove(signature_image)
+
+
+def _test_candidate_render_filepath_audit() -> None:
+    scene = bpy.context.scene
+    original = scene.render.filepath
+    try:
+        scene.render.filepath = ""
+        _assert_candidate_render_filepath(scene)
+        scene.render.filepath = "renders/motion/fairy.png"
+        _assert_candidate_render_filepath(scene)
+        for invalid in (
+            "/private/tmp/preview-run/frame.png",
+            "//../../../../private/tmp/preview-run/frame.png",
+            "assets/renders/.staging-motion-Review123/frame.png",
+            "assets/renders/.frames/orc/00.png",
+        ):
+            scene.render.filepath = invalid
+            _expect_assertion(
+                f"candidate render filepath {invalid}",
+                lambda: _assert_candidate_render_filepath(scene),
+            )
+    finally:
+        scene.render.filepath = original
+
+
+def _test_motion_render_filepath_restore() -> None:
+    global _STAGING_ROOT
+    scene = bpy.context.scene
+    original_staging = _STAGING_ROOT
+    original_filepath = scene.render.filepath
+    with tempfile.TemporaryDirectory(prefix="td-preview-motion-filepath-") as temporary:
+        _STAGING_ROOT = Path(temporary)
+        expected = "renders/preserved-preview.png"
+        scene.render.filepath = expected
+
+        def fail_pose(frame: int, count: int) -> None:
+            if frame != 0 or count != 6:
+                raise AssertionError("Unexpected review pose arguments")
+            scene.render.filepath = "/private/tmp/.staging-motion-Review123/.frames/00.png"
+            raise AssertionError("Injected pose failure")
+
+        try:
+            _expect_assertion(
+                "injected motion pose failure",
+                lambda: render_animation_sheet("motion/orc-walk-se.png", 6, fail_pose),
+            )
+            if scene.render.filepath != expected:
+                raise AssertionError("Motion render filepath was not restored after failure")
+        finally:
+            scene.render.filepath = original_filepath
+            _STAGING_ROOT = original_staging
+
+
 def _run_review_self_tests() -> None:
     print("TD_PREVIEW_SELF_TEST_START", flush=True)
     if _LIFECYCLE_EVENTS != ["preflight_ok"]:
@@ -4671,6 +6038,10 @@ def _run_review_self_tests() -> None:
         ("motion_append_failure_cleanup", _test_motion_append_failure_cleanup),
         ("motion_transform_restore", _test_motion_transform_restore),
         ("motion_sheet_packing_validation", _test_motion_sheet_packing_and_validation),
+        ("motion_prerequisite_file_gate", _test_motion_prerequisite_file_gate),
+        ("motion_prerequisite_scene_signatures", _test_motion_prerequisite_scene_and_signatures),
+        ("candidate_render_filepath_audit", _test_candidate_render_filepath_audit),
+        ("motion_render_filepath_restore", _test_motion_render_filepath_restore),
     )
     failures: list[str] = []
     for name, test in tests:
