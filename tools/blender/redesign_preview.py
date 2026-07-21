@@ -1089,6 +1089,13 @@ def _collection_tree_contains(root: bpy.types.Collection, target: bpy.types.Coll
 
 
 def _assert_rig_exact(scene: bpy.types.Scene, rig: bpy.types.Collection) -> None:
+    if (
+        rig.name != RIG_COLLECTION_NAME
+        or bpy.data.collections.get(RIG_COLLECTION_NAME) is not rig
+    ):
+        raise AssertionError("Common rig collection identity mismatch")
+    if rig.children:
+        raise AssertionError("Common rig child collection manifest mismatch")
     required = {str(CAMERA_SPEC["name"]): "CAMERA", **{name: "LIGHT" for name in LIGHT_SPECS}}
     objects = {obj.name: obj for obj in rig.objects}
     if set(objects) != set(required) or any(objects[name].type != kind for name, kind in required.items()):
@@ -1329,6 +1336,87 @@ def _assert_prerequisite_group_manifest(
     return group
 
 
+def _collection_subtree(root: bpy.types.Collection) -> set[bpy.types.Collection]:
+    result = {root}
+    for child in root.children:
+        result.update(_collection_subtree(child))
+    return result
+
+
+def _assert_scene_render_geometry_scope(
+    scene: bpy.types.Scene,
+    map_group: bpy.types.Collection,
+    tower_group: bpy.types.Collection,
+    rig: bpy.types.Collection,
+) -> None:
+    roots: dict[str, bpy.types.Collection] = {
+        "map": map_group,
+        "tower": tower_group,
+    }
+    motion_group = bpy.data.collections.get(MOTION_GROUP_NAME)
+    if motion_group is not None:
+        if (
+            motion_group.get("td_preview_owner") != OWNER
+            or motion_group.get("td_preview_group") != "motion"
+            or motion_group.objects
+            or motion_group.name
+            not in {collection.name for collection in scene.collection.children}
+            or set(_collection_scene_names(motion_group)) != {scene.name}
+            or _collection_direct_scene_names(motion_group) != [scene.name]
+            or any(
+                motion_group.name in {child.name for child in parent.children}
+                for parent in bpy.data.collections
+            )
+        ):
+            raise AssertionError("Existing motion group scene scope is invalid")
+        _assert_canonical_layer_collection(scene, motion_group, (motion_group.name,))
+        roots["motion"] = motion_group
+
+    collections_by_group = {
+        group: _collection_subtree(root)
+        for group, root in roots.items()
+    }
+    for group, collections in collections_by_group.items():
+        invalid = sorted(
+            collection.name
+            for collection in collections
+            if collection.get("td_preview_owner") != OWNER
+            or collection.get("td_preview_group") != group
+        )
+        if invalid:
+            raise AssertionError(
+                f"Foreign collection in allowed {group} subtree: " + ", ".join(invalid)
+            )
+
+    if any(obj.type in RENDER_GEOMETRY_TYPES for obj in rig.all_objects):
+        raise AssertionError("Renderable geometry is not allowed in the exact shared rig")
+
+    for obj in scene.objects:
+        if obj.type not in RENDER_GEOMETRY_TYPES:
+            continue
+        memberships = set(obj.users_collection)
+        matching = [
+            (group, collections)
+            for group, collections in collections_by_group.items()
+            if memberships.intersection(collections)
+        ]
+        if len(matching) != 1 or not memberships.issubset(matching[0][1]):
+            raise AssertionError(
+                f"Renderable geometry is outside one allowed preview subtree: {obj.name}"
+            )
+        group = matching[0][0]
+        if (
+            obj.get("td_preview_owner") != OWNER
+            or obj.get("td_preview_group") != group
+            or obj.data is None
+            or obj.data.get("td_preview_owner") != OWNER
+            or obj.data.get("td_preview_group") != group
+        ):
+            raise AssertionError(
+                f"Renderable geometry ownership mismatches its {group} subtree: {obj.name}"
+            )
+
+
 def _assert_motion_prerequisites(
     scene: bpy.types.Scene,
     expected_state: dict[str, object] | None = None,
@@ -1366,6 +1454,7 @@ def _assert_motion_prerequisites(
     rig = rigs[0]
     _assert_rig_exact(scene, rig)
     _assert_only_td_rig(scene, tower_group)
+    _assert_scene_render_geometry_scope(scene, map_group, tower_group, rig)
     if validate_content:
         map_collections = {
             collection.get("td_preview_asset"): collection
@@ -1630,13 +1719,17 @@ def _visible_meshes(scene: bpy.types.Scene) -> list[bpy.types.Object]:
 
 def render_still(output_path: Path) -> None:
     scene = bpy.context.scene
-    meshes = _visible_meshes(scene)
-    _world_bounds(meshes)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    scene.render.resolution_x = FRAME_SIZE
-    scene.render.resolution_y = FRAME_SIZE
-    scene.render.filepath = str(output_path)
-    bpy.ops.render.render(write_still=True)
+    render_filepath = scene.render.filepath
+    try:
+        meshes = _visible_meshes(scene)
+        _world_bounds(meshes)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        scene.render.resolution_x = FRAME_SIZE
+        scene.render.resolution_y = FRAME_SIZE
+        scene.render.filepath = str(output_path)
+        bpy.ops.render.render(write_still=True)
+    finally:
+        scene.render.filepath = render_filepath
 
 
 def resize_png(source: Path, destination: Path, width: int, height: int) -> None:
@@ -1677,25 +1770,36 @@ def render_map_group(scene: bpy.types.Scene) -> None:
     global _ACTIVE_ASSET_COLLECTION
     group = _prepare_map_group(scene)
     asset_collections: list[bpy.types.Collection] = []
-    for relative_path, builder in MAP_BUILDERS.items():
-        collection = bpy.data.collections.new(_asset_collection_name(relative_path))
-        _tag(collection, "map")
-        collection["td_preview_asset"] = relative_path
-        _link_child(group, collection)
-        asset_collections.append(collection)
-        _ACTIVE_ASSET_COLLECTION = collection
-        builder()
-        if relative_path == "map/entry.png":
-            gold = make_material("M_EntryGold", COLORS["gold"], 0.40)
-            add_box("Asset_EntryPostL", (-0.72, 0.0, 0.72), (0.10, 0.10, 0.55), gold, 0.03)
-            add_box("Asset_EntryPostR", (0.72, 0.0, 0.72), (0.10, 0.10, 0.55), gold, 0.03)
-        _assert_asset_geometry(relative_path, collection)
-        for candidate in asset_collections:
-            candidate.hide_render = candidate is not collection
-        emit_single(relative_path)
-    _ACTIVE_ASSET_COLLECTION = None
-    for collection in asset_collections:
-        collection.hide_render = False
+    visibility_before = _snapshot_preview_render_visibility()
+    try:
+        for relative_path, builder in MAP_BUILDERS.items():
+            collection = bpy.data.collections.new(_asset_collection_name(relative_path))
+            _tag(collection, "map")
+            collection["td_preview_asset"] = relative_path
+            _link_child(group, collection)
+            asset_collections.append(collection)
+            _ACTIVE_ASSET_COLLECTION = collection
+            builder()
+            if relative_path == "map/entry.png":
+                gold = make_material("M_EntryGold", COLORS["gold"], 0.40)
+                add_box("Asset_EntryPostL", (-0.72, 0.0, 0.72), (0.10, 0.10, 0.55), gold, 0.03)
+                add_box("Asset_EntryPostR", (0.72, 0.0, 0.72), (0.10, 0.10, 0.55), gold, 0.03)
+            _assert_asset_geometry(relative_path, collection)
+            _isolate_preview_render_collection(group, collection)
+            _assert_current_only_render_visibility(group, collection)
+            emit_single(relative_path)
+    finally:
+        _ACTIVE_ASSET_COLLECTION = None
+        try:
+            _restore_preview_render_visibility(visibility_before)
+        finally:
+            for collection in asset_collections:
+                collection.hide_render = False
+    if any(
+        bpy.data.collections[name].hide_render != hide_render
+        for name, hide_render in visibility_before.items()
+    ):
+        raise AssertionError("Prior preview visibility changed after map renders")
 
 
 DOG_VFX_WORDS = (
@@ -3752,8 +3856,7 @@ def _validate_candidate(
     if len(scenes) != 1:
         raise AssertionError(f"Expected one {SCENE_NAME}, found {len(scenes)}")
     scene = scenes[0]
-    if group_name == "motion":
-        _assert_candidate_render_filepath(scene)
+    _assert_candidate_render_filepath(scene)
     rigs = [collection for collection in bpy.data.collections if collection.name == RIG_COLLECTION_NAME]
     if group_name == "map":
         active_group_name = GROUP_NAME
@@ -4510,6 +4613,7 @@ def render_group(group: str) -> None:
             bpy.context.window.scene = scene
         else:
             scene = _preview_scene()
+            _assert_candidate_render_filepath(scene)
             active_group_name = GROUP_NAME if group == "map" else TOWER_GROUP_NAME
             _EXPECTED_PRESERVED_STATE = _snapshot_preserved_groups(active_group_name)
             ensure_preview_rig(scene)
@@ -5279,6 +5383,7 @@ def _test_tower_dependency_cleanup_order() -> None:
 
 
 def _test_current_only_render_visibility() -> None:
+    global _ACTIVE_ASSET_COLLECTION
     scene = bpy.context.scene
     map_group = bpy.data.collections.new("TDPreview_Group_review_map_visibility")
     map_asset = bpy.data.collections.new("ReviewMapAssetVisibility")
@@ -5305,6 +5410,45 @@ def _test_current_only_render_visibility() -> None:
             "render-visible non-current preview group",
             lambda: _assert_current_only_render_visibility(tower_group, current),
         )
+        _restore_preview_render_visibility(initial)
+
+        original_builders = globals()["MAP_BUILDERS"]
+        original_emit = globals()["emit_single"]
+        map_audit: list[list[str]] = []
+
+        def audit_map_emit(relative_path: str) -> None:
+            if relative_path != "map/grass.png":
+                raise AssertionError(f"Unexpected review map asset: {relative_path}")
+            generated_group = bpy.data.collections[GROUP_NAME]
+            generated_asset = generated_group.children[0]
+            map_audit.append(
+                _assert_current_only_render_visibility(
+                    generated_group,
+                    generated_asset,
+                )
+            )
+
+        globals()["MAP_BUILDERS"] = {"map/grass.png": tile_base}
+        globals()["emit_single"] = audit_map_emit
+        try:
+            render_map_group(scene)
+            expected_map_audit = [[GROUP_NAME, _asset_collection_name("map/grass.png")]]
+            if map_audit != expected_map_audit:
+                raise AssertionError(f"Map visibility audit is incomplete: {map_audit}")
+            restored = {
+                collection.name: bool(collection.hide_render)
+                for collection in collections
+            }
+            if restored != initial:
+                raise AssertionError("Map render changed prior preview visibility")
+        finally:
+            globals()["MAP_BUILDERS"] = original_builders
+            globals()["emit_single"] = original_emit
+            _ACTIVE_ASSET_COLLECTION = None
+            generated_group = bpy.data.collections.get(GROUP_NAME)
+            if generated_group is not None:
+                _remove_owned_collection(generated_group, "map")
+                _remove_unused_owned_map_data()
     finally:
         _restore_preview_render_visibility(initial)
         restored = {collection.name: bool(collection.hide_render) for collection in collections}
@@ -5679,7 +5823,9 @@ def _test_motion_prerequisite_scene_and_signatures() -> None:
     )
     _tag(signature_parent, "map")
     _tag(signature_child, "map")
+    _tag(signature_mesh, "map")
     _tag(signature_curve_object, "tower")
+    _tag(signature_curve, "tower")
     map_group.children[0].objects.link(signature_parent)
     map_group.children[0].objects.link(signature_child)
     tower_group.children[0].objects.link(signature_curve_object)
@@ -5695,6 +5841,9 @@ def _test_motion_prerequisite_scene_and_signatures() -> None:
     signature_transform = _snapshot_motion_transforms((signature_parent, signature_child))
     original_render_filepath = scene.render.filepath
     temporary_motion_group: bpy.types.Collection | None = None
+    temporary_motion_child: bpy.types.Collection | None = None
+    temporary_motion_objects: list[bpy.types.Object] = []
+    temporary_motion_data: list[object] = []
     try:
         before_motion = bpy.data.collections.get(MOTION_GROUP_NAME)
         snapshot = _assert_motion_prerequisites(scene, validate_content=False)
@@ -5727,12 +5876,128 @@ def _test_motion_prerequisite_scene_and_signatures() -> None:
         if "settings" not in camera_signature["data"]:
             raise AssertionError("Preserved camera signature omits data settings")
 
+        scope_source_hashes = _source_hashes()
+        nested_rig_child = bpy.data.collections.new("ReviewNestedRigChild")
+        nested_rig_mesh = bpy.data.meshes.new("ReviewNestedRigMesh")
+        nested_rig_mesh.from_pydata(
+            [(0.0, 0.0, 0.0), (0.2, 0.0, 0.0), (0.0, 0.2, 0.0)],
+            [],
+            [(0, 1, 2)],
+        )
+        nested_rig_curve = bpy.data.curves.new("ReviewNestedRigCurve", "CURVE")
+        nested_rig_curve.dimensions = "3D"
+        nested_rig_spline = nested_rig_curve.splines.new("POLY")
+        nested_rig_spline.points.add(1)
+        nested_rig_spline.points[0].co = (0.0, 0.0, 0.0, 1.0)
+        nested_rig_spline.points[1].co = (0.0, 0.0, 0.2, 1.0)
+        nested_rig_curve.bevel_depth = 0.01
+        nested_rig_mesh_object = bpy.data.objects.new(
+            "ReviewNestedRigMeshObject",
+            nested_rig_mesh,
+        )
+        nested_rig_curve_object = bpy.data.objects.new(
+            "ReviewNestedRigCurveObject",
+            nested_rig_curve,
+        )
+        try:
+            rig.children.link(nested_rig_child)
+            nested_rig_child.objects.link(nested_rig_mesh_object)
+            nested_rig_child.objects.link(nested_rig_curve_object)
+            if (
+                nested_rig_mesh_object not in list(rig.all_objects)
+                or nested_rig_mesh_object in list(rig.objects)
+            ):
+                raise AssertionError("Nested rig review fixture is not actually nested")
+            _expect_assertion(
+                "nested foreign renderable mesh/curve in the exact shared rig",
+                lambda: _assert_motion_prerequisites(scene, validate_content=False),
+            )
+            _expect_assertion(
+                "candidate exact rig with a nested foreign renderable mesh/curve",
+                lambda: _assert_rig_exact(scene, rig),
+            )
+        finally:
+            bpy.data.objects.remove(nested_rig_curve_object, do_unlink=True)
+            bpy.data.objects.remove(nested_rig_mesh_object, do_unlink=True)
+            bpy.data.curves.remove(nested_rig_curve)
+            bpy.data.meshes.remove(nested_rig_mesh)
+            bpy.data.collections.remove(nested_rig_child)
+        if rig.children:
+            raise AssertionError("Nested rig review fixture was not removed")
+        if _source_hashes() != scope_source_hashes:
+            raise AssertionError("Nested rig rejection changed a protected source blend")
+
+        foreign_scene_collection = bpy.data.collections.new("ReviewForeignSceneGeometry")
+        foreign_scene_mesh = bpy.data.meshes.new("ReviewForeignSceneMesh")
+        foreign_scene_mesh.from_pydata(
+            [(0.0, 0.0, 0.0), (0.2, 0.0, 0.0), (0.0, 0.2, 0.0)],
+            [],
+            [(0, 1, 2)],
+        )
+        foreign_scene_curve = bpy.data.curves.new("ReviewForeignSceneCurve", "CURVE")
+        foreign_scene_curve.dimensions = "3D"
+        foreign_scene_spline = foreign_scene_curve.splines.new("POLY")
+        foreign_scene_spline.points.add(1)
+        foreign_scene_spline.points[0].co = (0.0, 0.0, 0.0, 1.0)
+        foreign_scene_spline.points[1].co = (0.0, 0.0, 0.2, 1.0)
+        foreign_scene_curve.bevel_depth = 0.01
+        foreign_scene_mesh_object = bpy.data.objects.new(
+            "ReviewForeignSceneMeshObject",
+            foreign_scene_mesh,
+        )
+        foreign_scene_curve_object = bpy.data.objects.new(
+            "ReviewForeignSceneCurveObject",
+            foreign_scene_curve,
+        )
+        try:
+            scene.collection.children.link(foreign_scene_collection)
+            foreign_scene_collection.objects.link(foreign_scene_mesh_object)
+            foreign_scene_collection.objects.link(foreign_scene_curve_object)
+            _expect_assertion(
+                "foreign renderable mesh/curve outside preview asset subtrees",
+                lambda: _assert_motion_prerequisites(scene, validate_content=False),
+            )
+        finally:
+            bpy.data.objects.remove(foreign_scene_curve_object, do_unlink=True)
+            bpy.data.objects.remove(foreign_scene_mesh_object, do_unlink=True)
+            bpy.data.curves.remove(foreign_scene_curve)
+            bpy.data.meshes.remove(foreign_scene_mesh)
+            bpy.data.collections.remove(foreign_scene_collection)
+        if _source_hashes() != scope_source_hashes:
+            raise AssertionError("Foreign scene geometry rejection changed a protected source blend")
+
         if before_motion is None:
             temporary_motion_group = bpy.data.collections.new(MOTION_GROUP_NAME)
             _tag(temporary_motion_group, "motion")
             scene.collection.children.link(temporary_motion_group)
+            temporary_motion_child = bpy.data.collections.new(
+                "TDPreview_motion_review_current"
+            )
+            _tag(temporary_motion_child, "motion")
+            temporary_motion_child["td_preview_asset"] = "motion/review-current.png"
+            temporary_motion_group.children.link(temporary_motion_child)
+            current_motion_mesh = bpy.data.meshes.new("ReviewCurrentMotionMesh")
+            current_motion_mesh.from_pydata(
+                [(0.0, 0.0, 0.0), (0.2, 0.0, 0.0), (0.0, 0.2, 0.0)],
+                [],
+                [(0, 1, 2)],
+            )
+            _tag(current_motion_mesh, "motion")
+            current_motion_object = bpy.data.objects.new(
+                "ReviewCurrentMotionObject",
+                current_motion_mesh,
+            )
+            _tag(current_motion_object, "motion")
+            temporary_motion_child.objects.link(current_motion_object)
+            temporary_motion_objects.append(current_motion_object)
+            temporary_motion_data.append(current_motion_mesh)
             _assert_motion_prerequisites(scene, snapshot, validate_content=False)
-            scene.collection.children.unlink(temporary_motion_group)
+            bpy.data.objects.remove(current_motion_object, do_unlink=True)
+            temporary_motion_objects.clear()
+            bpy.data.meshes.remove(current_motion_mesh)
+            temporary_motion_data.clear()
+            bpy.data.collections.remove(temporary_motion_child)
+            temporary_motion_child = None
             bpy.data.collections.remove(temporary_motion_group)
             temporary_motion_group = None
 
@@ -5938,6 +6203,14 @@ def _test_motion_prerequisite_scene_and_signatures() -> None:
         _assert_motion_prerequisites(scene, snapshot, validate_content=False)
     finally:
         scene.render.filepath = original_render_filepath
+        for obj in temporary_motion_objects:
+            if obj.name in bpy.data.objects:
+                bpy.data.objects.remove(obj, do_unlink=True)
+        for data in temporary_motion_data:
+            if isinstance(data, bpy.types.Mesh) and data.name in bpy.data.meshes:
+                bpy.data.meshes.remove(data)
+        if temporary_motion_child is not None:
+            bpy.data.collections.remove(temporary_motion_child)
         if temporary_motion_group is not None:
             bpy.data.collections.remove(temporary_motion_group)
         if rig.name not in {collection.name for collection in scene.collection.children}:
@@ -5962,26 +6235,27 @@ def _test_candidate_render_filepath_audit() -> None:
     scene = bpy.context.scene
     original = scene.render.filepath
     try:
-        scene.render.filepath = ""
-        _assert_candidate_render_filepath(scene)
-        scene.render.filepath = "renders/motion/fairy.png"
-        _assert_candidate_render_filepath(scene)
-        for invalid in (
-            "/private/tmp/preview-run/frame.png",
-            "//../../../../private/tmp/preview-run/frame.png",
-            "assets/renders/.staging-motion-Review123/frame.png",
-            "assets/renders/.frames/orc/00.png",
-        ):
-            scene.render.filepath = invalid
-            _expect_assertion(
-                f"candidate render filepath {invalid}",
-                lambda: _assert_candidate_render_filepath(scene),
-            )
+        for group in ("map", "tower", "motion"):
+            scene.render.filepath = ""
+            _assert_candidate_render_filepath(scene)
+            scene.render.filepath = f"renders/{group}/preview.png"
+            _assert_candidate_render_filepath(scene)
+            for invalid in (
+                "/private/tmp/preview-run/frame.png",
+                "//../../../../private/tmp/preview-run/frame.png",
+                f"assets/renders/.staging-{group}-Review123/frame.png",
+                f"assets/renders/.frames/{group}/00.png",
+            ):
+                scene.render.filepath = invalid
+                _expect_assertion(
+                    f"{group} candidate render filepath {invalid}",
+                    lambda: _assert_candidate_render_filepath(scene),
+                )
     finally:
         scene.render.filepath = original
 
 
-def _test_motion_render_filepath_restore() -> None:
+def _test_render_filepath_restore() -> None:
     global _STAGING_ROOT
     scene = bpy.context.scene
     original_staging = _STAGING_ROOT
@@ -5989,6 +6263,35 @@ def _test_motion_render_filepath_restore() -> None:
     with tempfile.TemporaryDirectory(prefix="td-preview-motion-filepath-") as temporary:
         _STAGING_ROOT = Path(temporary)
         expected = "renders/preserved-preview.png"
+        render_collection = bpy.data.collections.new("ReviewRenderFilepathCollection")
+        render_mesh = bpy.data.meshes.new("ReviewRenderFilepathMesh")
+        render_mesh.from_pydata(
+            [(-0.2, -0.2, 0.0), (0.2, -0.2, 0.0), (0.0, 0.2, 0.0)],
+            [],
+            [(0, 1, 2)],
+        )
+        render_object = bpy.data.objects.new("ReviewRenderFilepathObject", render_mesh)
+        scene.collection.children.link(render_collection)
+        render_collection.objects.link(render_object)
+        preserved_camera = scene.camera
+        failures: list[str] = []
+
+        scene.render.filepath = expected
+        render_still(Path(temporary) / "map" / "grass.png")
+        if scene.render.filepath != expected:
+            failures.append("map render_still success did not restore the filepath")
+
+        scene.render.filepath = expected
+        scene.camera = None
+        try:
+            render_still(Path(temporary) / "towers" / "slow-se.png")
+        except RuntimeError:
+            pass
+        else:
+            failures.append("tower render_still fixture did not raise without a camera")
+        if scene.render.filepath != expected:
+            failures.append("tower render_still failure did not restore the filepath")
+        scene.camera = preserved_camera
         scene.render.filepath = expected
 
         def fail_pose(frame: int, count: int) -> None:
@@ -6004,7 +6307,13 @@ def _test_motion_render_filepath_restore() -> None:
             )
             if scene.render.filepath != expected:
                 raise AssertionError("Motion render filepath was not restored after failure")
+            if failures:
+                raise AssertionError("; ".join(failures))
         finally:
+            scene.camera = preserved_camera
+            bpy.data.objects.remove(render_object, do_unlink=True)
+            bpy.data.meshes.remove(render_mesh)
+            bpy.data.collections.remove(render_collection)
             scene.render.filepath = original_filepath
             _STAGING_ROOT = original_staging
 
@@ -6041,7 +6350,7 @@ def _run_review_self_tests() -> None:
         ("motion_prerequisite_file_gate", _test_motion_prerequisite_file_gate),
         ("motion_prerequisite_scene_signatures", _test_motion_prerequisite_scene_and_signatures),
         ("candidate_render_filepath_audit", _test_candidate_render_filepath_audit),
-        ("motion_render_filepath_restore", _test_motion_render_filepath_restore),
+        ("render_filepath_restore", _test_render_filepath_restore),
     )
     failures: list[str] = []
     for name, test in tests:
