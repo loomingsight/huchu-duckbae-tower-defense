@@ -2,6 +2,8 @@
 
 가로 화면 모바일 브라우저를 위한 20×10 Canvas 타워 디펜스 MVP입니다. 네 종류의 타워로 10개 웨이브를 막고 간식 창고를 지키는 단일 스테이지를 제공합니다.
 
+배포된 게임은 [GitHub Pages](https://loomingsight.github.io/huchu-duckbae/tower-defense/)에서 실행할 수 있습니다.
+
 ## 설치와 실행
 
 Node.js 20.19 이상(또는 22.12 이상)과 npm이 필요합니다.
@@ -28,6 +30,10 @@ npm run test:e2e
 ```bash
 UPDATE_QA_SCREENSHOTS=1 npm run test:e2e
 ```
+
+## 배포
+
+`main` 브랜치에 변경사항을 푸시하면 GitHub Actions가 테스트와 빌드를 실행한 뒤 `/tower-defense/` 하위 경로에 자동 배포합니다.
 
 ## 조작법
 
