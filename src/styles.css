@@ -66,33 +66,46 @@ button {
 
 .game-shell {
   position: relative;
-  display: grid;
+  display: block;
   width: 100%;
   height: 100svh;
   height: 100dvh;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  padding: 0;
+  overflow: hidden;
   background: radial-gradient(circle at 50% 42%, #315444 0, var(--md-sys-color-surface) 72%);
   user-select: none;
 }
 
 .game-hud {
+  position: absolute;
   z-index: 3;
+  top: max(4px, env(safe-area-inset-top));
+  right: max(6px, env(safe-area-inset-right));
+  left: max(6px, env(safe-area-inset-left));
   display: flex;
-  min-height: 52px;
-  align-items: center;
+  min-height: 44px;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
-  padding: 4px 8px;
-  background: color-mix(in srgb, var(--md-sys-color-surface-container) 94%, transparent);
-  box-shadow: var(--md-sys-elevation-1);
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  pointer-events: none;
 }
 
 .game-hud__stats,
 .game-hud__controls {
   display: flex;
+  min-height: 44px;
   align-items: center;
-  gap: 6px;
+  gap: 5px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--md-sys-shape-medium);
+  background: rgba(18, 45, 35, 0.78);
+  box-shadow: var(--md-sys-elevation-1);
+  backdrop-filter: blur(8px);
+  pointer-events: auto;
 }
 
 .game-stat {
@@ -122,7 +135,10 @@ button {
 }
 
 .game-stage {
-  position: relative;
+  position: absolute;
+  z-index: 0;
+  inset: env(safe-area-inset-top) env(safe-area-inset-right)
+    env(safe-area-inset-bottom) env(safe-area-inset-left);
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -148,7 +164,7 @@ button {
   position: absolute;
   z-index: 2;
   left: 50%;
-  bottom: 58px;
+  bottom: calc(max(4px, env(safe-area-inset-bottom)) + 132px);
   max-width: min(90%, 520px);
   min-height: 24px;
   margin: 0;
@@ -166,7 +182,7 @@ button {
   position: absolute;
   z-index: 4;
   left: 50%;
-  bottom: 7px;
+  bottom: calc(max(4px, env(safe-area-inset-bottom)) + 72px);
   display: flex;
   min-height: 48px;
   align-items: center;
@@ -231,14 +247,22 @@ button {
 }
 
 .tower-tray {
+  position: absolute;
   z-index: 3;
+  left: 50%;
+  bottom: max(4px, env(safe-area-inset-bottom));
   display: grid;
+  width: min(620px, calc(100% - 12px - env(safe-area-inset-left) - env(safe-area-inset-right)));
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 5px;
-  min-height: 70px;
-  padding: 5px 7px;
-  background: color-mix(in srgb, var(--md-sys-color-surface-container) 96%, transparent);
-  box-shadow: var(--md-sys-elevation-1);
+  min-height: 62px;
+  padding: 5px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--md-sys-shape-medium);
+  background: rgba(18, 45, 35, 0.82);
+  box-shadow: var(--md-sys-elevation-2);
+  backdrop-filter: blur(8px);
 }
 
 .tower-card {
@@ -464,8 +488,8 @@ button {
 }
 
 @media (max-height: 430px) {
-  .game-hud { min-height: 48px; }
-  .tower-tray { min-height: 62px; }
+  .game-hud { min-height: 44px; }
+  .tower-tray { min-height: 58px; }
   .tower-card__copy small { margin-top: 1px; }
 }
 

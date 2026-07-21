@@ -84,6 +84,37 @@ function captureConsoleErrors(page: Page): string[] {
   return errors;
 }
 
+test('844x390 uses a full-screen board with non-overlapping overlay controls', async ({ page }) => {
+  const consoleErrors = captureConsoleErrors(page);
+  await startGame(page);
+
+  const viewport = page.viewportSize();
+  const stage = await page.locator('.game-stage').boundingBox();
+  const canvas = await page.locator('.game-canvas').boundingBox();
+  const hud = await page.locator('.game-hud').boundingBox();
+  const tray = await page.locator('.tower-tray').boundingBox();
+  if (viewport === null || stage === null || canvas === null || hud === null || tray === null) {
+    throw new Error('Full-map overlay elements must have layout boxes');
+  }
+
+  expect(stage.x).toBeCloseTo(0);
+  expect(stage.y).toBeCloseTo(0);
+  expect(stage.width).toBeCloseTo(viewport.width);
+  expect(stage.height).toBeCloseTo(viewport.height);
+  expect(canvas).toEqual(stage);
+  expect(hud.y).toBeGreaterThanOrEqual(stage.y);
+  expect(tray.y + tray.height).toBeLessThanOrEqual(stage.y + stage.height);
+  expect(hud.y + hud.height).toBeLessThan(tray.y);
+
+  for (const button of await page.locator('.game-control').all()) {
+    if (!(await button.isVisible())) continue;
+    const box = await button.boundingBox();
+    expect(box?.width).toBeGreaterThanOrEqual(44);
+    expect(box?.height).toBeGreaterThanOrEqual(44);
+  }
+  expect(consoleErrors).toEqual([]);
+});
+
 test('844x390 touch flow builds, controls time, and progresses deterministically', async ({ page }, testInfo) => {
   const consoleErrors = captureConsoleErrors(page);
   await startGame(page);
