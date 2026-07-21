@@ -12,26 +12,21 @@ describe('computeCanvasLayout', () => {
     expect(layout.gameArea.y + layout.gameArea.height / 2).toBeCloseTo(844 / 2);
   });
 
-  it('centers a landscape game area and keeps the full 20 by 10 map visible', () => {
+  it('fits the full perspective board inside a 844 by 390 landscape viewport', () => {
     const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
 
     expect(layout.showOrientationPrompt).toBe(false);
     expect(layout.gameArea).toEqual({ x: 0, y: 0, width: 844, height: 390 });
-    expect(layout.gameArea.x + layout.gameArea.width / 2).toBeCloseTo(844 / 2);
-    expect(layout.gameArea.y + layout.gameArea.height / 2).toBeCloseTo(390 / 2);
-    expect(layout.mapArea.width).toBeCloseTo(layout.tileWidth * 15);
-    expect(layout.mapArea.height).toBeCloseTo(layout.tileHeight * 15);
-    expect(layout.tileHeight).toBeCloseTo(layout.tileWidth * 0.44);
-    expect(layout.mapOrigin.x).toBeCloseTo(layout.mapArea.x + layout.tileWidth * 5);
-    expect(layout.mapOrigin.y).toBeCloseTo(layout.mapArea.y);
+    expect(layout.mapArea.width / layout.gameArea.width).toBeCloseTo(0.92);
+    expect(layout.mapArea.height / layout.gameArea.height).toBeCloseTo(0.76);
+    expect(layout.projection.centerX).toBeCloseTo(422);
+    expect(layout.projection.topY).toBeCloseTo(layout.mapArea.y);
+    expect(layout.projection.farScale).toBe(0.75);
+    expect(layout.projection.nearScale).toBe(1.1);
     expect(layout.mapArea.x).toBeGreaterThanOrEqual(layout.gameArea.x);
     expect(layout.mapArea.y).toBeGreaterThanOrEqual(layout.gameArea.y);
-    expect(layout.mapArea.x + layout.mapArea.width).toBeLessThanOrEqual(
-      layout.gameArea.x + layout.gameArea.width,
-    );
-    expect(layout.mapArea.y + layout.mapArea.height).toBeLessThanOrEqual(
-      layout.gameArea.y + layout.gameArea.height,
-    );
+    expect(layout.mapArea.x + layout.mapArea.width).toBeLessThanOrEqual(844);
+    expect(layout.mapArea.y + layout.mapArea.height).toBeLessThanOrEqual(390);
   });
 
   it('caps device pixel ratio at two', () => {
