@@ -1376,6 +1376,13 @@ def _geometry_center(obj: bpy.types.Object) -> Vector:
     return (minimum + maximum) / 2.0
 
 
+def _camera_space_geometry_center(obj: bpy.types.Object) -> Vector:
+    camera = bpy.context.scene.camera
+    if camera is None:
+        raise AssertionError("Preview camera is missing for screen-space geometry assertion")
+    return camera.matrix_world.inverted_safe() @ _geometry_center(obj)
+
+
 def _assert_tower_component_layout(
     relative_path: str,
     collection: bpy.types.Collection,
@@ -1398,11 +1405,23 @@ def _assert_tower_component_layout(
         string = _tower_component(collection, "Arrow_Bow_String")
         if string.type != "CURVE":
             raise AssertionError("Arrow bow string is not CURVE geometry")
-        shaft = _geometry_center(_tower_component(collection, "Arrow_Loaded_Shaft"))
-        head = _geometry_center(_tower_component(collection, "Arrow_Loaded_Head"))
-        fletching = _geometry_center(_tower_component(collection, "Arrow_Fletching_H"))
-        if not (head.y > shaft.y > fletching.y):
-            raise AssertionError("Arrow head/shaft/fletching ordering collapsed")
+        shaft = _camera_space_geometry_center(
+            _tower_component(collection, "Arrow_Loaded_Shaft")
+        )
+        head = _camera_space_geometry_center(
+            _tower_component(collection, "Arrow_Loaded_Head")
+        )
+        fletching = _camera_space_geometry_center(
+            _tower_component(collection, "Arrow_Fletching_H")
+        )
+        if not (
+            head.x > shaft.x > fletching.x
+            and head.y < shaft.y < fletching.y
+        ):
+            raise AssertionError(
+                "Arrow must point screen southeast with aligned "
+                "head/shaft/fletching ordering"
+            )
 
 
 def _object_with_source_suffix(
@@ -1570,6 +1589,11 @@ def _append_tower_asset(
     bpy.context.scene.collection.children.unlink(collection)
     _link_child(group, collection)
     _tag_tower_dependencies(objects, collection)
+    if relative_path == "towers/arrow-se.png":
+        turret = _tower_component(collection, "Arrow_Turret_Yaw")
+        turret.rotation_mode = "XYZ"
+        turret.rotation_euler.z = -math.pi / 2.0
+        bpy.context.view_layer.update()
     _ensure_character_head_vertex_group(collection)
     _assert_clean_tower_dependencies(objects, [collection])
     fit_objects_to_tile(objects)
