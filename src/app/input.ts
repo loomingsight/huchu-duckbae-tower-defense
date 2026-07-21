@@ -36,16 +36,20 @@ export function pointerToWorld(
     || !Number.isFinite(clientRect.height)
     || clientRect.width <= 0
     || clientRect.height <= 0
-    || !Number.isFinite(layout.cellSize)
-    || layout.cellSize <= 0
+    || !Number.isFinite(layout.tileWidth)
+    || layout.tileWidth <= 0
+    || !Number.isFinite(layout.tileHeight)
+    || layout.tileHeight <= 0
   ) {
     return null;
   }
 
   const canvasX = (point.x - clientRect.left) * (layout.viewport.width / clientRect.width);
   const canvasY = (point.y - clientRect.top) * (layout.viewport.height / clientRect.height);
-  const x = (canvasX - layout.mapArea.x) / layout.cellSize;
-  const y = (canvasY - layout.mapArea.y) / layout.cellSize;
+  const projectedX = canvasX - layout.mapOrigin.x;
+  const projectedY = canvasY - layout.mapOrigin.y;
+  const x = projectedX / layout.tileWidth + projectedY / layout.tileHeight;
+  const y = projectedY / layout.tileHeight - projectedX / layout.tileWidth;
   if (
     !Number.isFinite(x)
     || !Number.isFinite(y)

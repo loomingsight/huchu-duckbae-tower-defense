@@ -4,10 +4,10 @@ export type GamePhase = 'loading' | 'ready' | 'playing' | 'paused' | 'victory' |
 export type GameSpeed = 1 | 2;
 
 export const TOWER_CARDS = [
-  { type: 'slow', name: '느림 장판', roleIcon: '🌀', cost: TOWER_CATALOG.slow.cost },
+  { type: 'slow', name: '슬로우 타워', roleIcon: '🌀', cost: TOWER_CATALOG.slow.cost },
   { type: 'arrow', name: '화살 타워', roleIcon: '🏹', cost: TOWER_CATALOG.arrow.cost },
-  { type: 'deokbae', name: '덕배 타워', roleIcon: '🔥', cost: TOWER_CATALOG.deokbae.cost },
-  { type: 'huchu', name: '후추 타워', roleIcon: '💧', cost: TOWER_CATALOG.huchu.cost },
+  { type: 'deokbae', name: '덕배', roleIcon: '🔥', cost: TOWER_CATALOG.deokbae.cost },
+  { type: 'huchu', name: '후추', roleIcon: '💧', cost: TOWER_CATALOG.huchu.cost },
 ] as const;
 
 export type HudViewInput = Readonly<{
@@ -151,10 +151,16 @@ export type HudElements = Readonly<{
   muteButton: HTMLButtonElement;
   towerButtons: Readonly<Record<TowerType, HTMLButtonElement>>;
   placementStatus: HTMLElement;
+  placementActions: HTMLElement;
+  placementName: HTMLElement;
+  placementCost: HTMLElement;
+  placementConfirm: HTMLButtonElement;
+  placementCancel: HTMLButtonElement;
   orientationPrompt: HTMLElement;
   stateOverlay: HTMLElement;
   stateTitle: HTMLElement;
   stateBody: HTMLElement;
+  resultPanel: HTMLElement;
   stateAction: HTMLButtonElement;
 }>;
 
@@ -182,6 +188,11 @@ export function createHud(root: HTMLElement): HudElements {
       <section class="game-stage" aria-label="게임 보드">
         <canvas class="game-canvas" aria-label="20열 10행 타워 배치 게임 보드" tabindex="0"></canvas>
         <p class="placement-status" data-placement-status aria-live="polite"></p>
+        <div class="placement-actions" data-placement-actions role="group" aria-label="타워 배치 확인" hidden>
+          <span class="placement-actions__copy"><strong data-placement-name>타워</strong><small data-placement-cost>0G</small></span>
+          <button class="game-control placement-actions__confirm" data-placement-confirm type="button">배치</button>
+          <button class="game-control placement-actions__cancel" data-placement-cancel type="button">취소</button>
+        </div>
       </section>
       <nav class="tower-tray" aria-label="타워 선택">
         ${TOWER_CARDS.map((card) => `
@@ -201,6 +212,7 @@ export function createHud(root: HTMLElement): HudElements {
           <p class="game-overlay__eyebrow">후추 디펜스</p>
           <h1 id="game-state-title" data-state-title>게임 준비 중</h1>
           <p data-state-body>캐릭터를 불러오고 있어요.</p>
+          <div class="game-result" data-result-panel hidden></div>
           <button class="game-control game-overlay__action" data-state-action type="button" disabled>잠시만요</button>
         </div>
       </section>
@@ -229,12 +241,83 @@ export function createHud(root: HTMLElement): HudElements {
     muteButton: requiredElement(root, '[data-control="mute"]'),
     towerButtons,
     placementStatus: requiredElement(root, '[data-placement-status]'),
+    placementActions: requiredElement(root, '[data-placement-actions]'),
+    placementName: requiredElement(root, '[data-placement-name]'),
+    placementCost: requiredElement(root, '[data-placement-cost]'),
+    placementConfirm: requiredElement(root, '[data-placement-confirm]'),
+    placementCancel: requiredElement(root, '[data-placement-cancel]'),
     orientationPrompt: requiredElement(root, '[data-orientation-prompt]'),
     stateOverlay: requiredElement(root, '[data-state-overlay]'),
     stateTitle: requiredElement(root, '[data-state-title]'),
     stateBody: requiredElement(root, '[data-state-body]'),
+    resultPanel: requiredElement(root, '[data-result-panel]'),
     stateAction: requiredElement(root, '[data-state-action]'),
   };
+}
+
+export type ResultPanelView = Readonly<{
+  score: number;
+  stars: 1 | 2 | 3;
+  newBestScore: boolean;
+  completedWaves: number;
+  defeatedEnemies: number;
+  baseHp: number;
+  bossDefeated: boolean;
+  elapsedText: string;
+  timeBonus: number;
+  bestScore: number;
+  bestClearText: string;
+  totalAttempts: number;
+  totalVictories: number;
+  nextGoalText: string;
+}>;
+
+export function renderResultPanel(
+  elements: HudElements,
+  view: ResultPanelView | null,
+): void {
+  elements.resultPanel.hidden = view === null;
+  if (view === null) {
+    elements.resultPanel.replaceChildren();
+    return;
+  }
+  const stars = `${'★'.repeat(view.stars)}${'☆'.repeat(3 - view.stars)}`;
+  elements.resultPanel.innerHTML = `
+    <div class="game-result__hero">
+      <span class="game-result__stars" aria-label="별 ${view.stars}개">${stars}</span>
+      <strong class="game-result__score">${view.score.toLocaleString('ko-KR')}점</strong>
+      ${view.newBestScore ? '<span class="game-result__badge">새 최고 기록</span>' : ''}
+    </div>
+    <dl class="game-result__breakdown">
+      <div><dt>웨이브</dt><dd>${view.completedWaves}/10</dd></div>
+      <div><dt>처치</dt><dd>${view.defeatedEnemies}</dd></div>
+      <div><dt>남은 체력</dt><dd>${view.baseHp}</dd></div>
+      <div><dt>보스</dt><dd>${view.bossDefeated ? '처치 완료' : '미처리'}</dd></div>
+      <div><dt>시간</dt><dd>${view.elapsedText}</dd></div>
+      <div><dt>시간 보너스</dt><dd>+${view.timeBonus.toLocaleString('ko-KR')}</dd></div>
+    </dl>
+    <div class="game-result__records">
+      <span>최고 ${view.bestScore.toLocaleString('ko-KR')}점</span>
+      <span>최단 ${view.bestClearText}</span>
+      <span>도전 ${view.totalAttempts}회 · 승리 ${view.totalVictories}회</span>
+    </div>
+    <p class="game-result__goal">${view.nextGoalText}</p>
+  `;
+}
+
+export function showPlacementActions(
+  elements: HudElements,
+  type: TowerType | null,
+  visible: boolean,
+): void {
+  const card = type === null ? undefined : TOWER_CARDS.find((candidate) => candidate.type === type);
+  const show = visible && card !== undefined;
+  elements.placementActions.hidden = !show;
+  if (!show || card === undefined) return;
+  elements.placementName.textContent = card.name;
+  elements.placementCost.textContent = `${card.cost}G`;
+  elements.placementConfirm.setAttribute('aria-label', `${card.name} 배치 확정`);
+  elements.placementCancel.setAttribute('aria-label', `${card.name} 배치 취소`);
 }
 
 export function renderHud(
@@ -278,8 +361,8 @@ export function showStateOverlay(
   const content: Partial<Record<GamePhase, { title: string; action: string }>> = {
     loading: { title: '게임 준비 중', action: '잠시만요' },
     ready: { title: '간식 창고를 지켜 주세요', action: '게임 시작' },
-    victory: { title: '간식 창고를 지켰어요!', action: '다시 하기' },
-    defeat: { title: '간식 창고가 비었어요', action: '다시 도전' },
+    victory: { title: '간식 창고를 지켜줘서 고마워요', action: '다시 하기' },
+    defeat: { title: '간식 창고가 다 털려버렸어요', action: '다시 도전' },
   };
   const state = content[phase];
   elements.stateOverlay.hidden = state === undefined;

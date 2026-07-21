@@ -25,6 +25,8 @@ describe('tower combat', () => {
     updateGame(state, 0.2);
 
     expect(state.enemies[0].hp).toBe(24);
+    expect(state.enemies[0].lastHitAtSeconds).toBeCloseTo(0.2);
+    expect(state.enemies[1].lastHitAtSeconds).toBeNull();
     expect(state.enemies[1].hp).toBe(42);
     expect(state.hitEvents).toHaveLength(1);
     expect(state.hitEvents[0]).toMatchObject({ towerType: 'arrow', radius: 0 });

@@ -1,16 +1,21 @@
 import type { EnemyType } from '../enemies/enemyCatalog';
-import type { TowerType } from '../towers/towerCatalog';
 import {
   ENEMY_SPRITES,
+  MAP_SPRITES,
+  MOTION_SPRITES,
   SPRITE_DIRECTIONS,
+  TOWER_SPRITES,
+  VFX_SPRITES,
+  type MapSpriteKey,
   type SpriteDirection,
 } from './spriteManifest';
 
 export type LoadedSprite = HTMLImageElement | null;
 
-type DirectionalSprites = Readonly<Record<SpriteDirection, LoadedSprite>>;
+export type DirectionalSprites = Readonly<Record<SpriteDirection, LoadedSprite>>;
 
 export type GameAssets = {
+  map: Readonly<Record<MapSpriteKey, LoadedSprite>>;
   towers: Readonly<{
     arrow: DirectionalSprites;
     deokbae: LoadedSprite;
@@ -18,22 +23,19 @@ export type GameAssets = {
     slow: LoadedSprite;
   }>;
   enemies: Readonly<Record<EnemyType, DirectionalSprites>>;
+  motion: Readonly<{
+    orc: LoadedSprite;
+    fairy: LoadedSprite;
+  }>;
+  vfx: Readonly<{
+    arrow: LoadedSprite;
+    fireball: LoadedSprite;
+    waterball: LoadedSprite;
+    arrowImpact: LoadedSprite;
+    fireBurst: LoadedSprite;
+    aquaBurst: LoadedSprite;
+  }>;
 };
-
-export const TOWER_SPRITES = {
-  arrow: {
-    ne: new URL('../../../assets/renders/arrow-tower-3d-v1/mobile/arrow-tower-ne-96-v1.png', import.meta.url).href,
-    se: new URL('../../../assets/renders/arrow-tower-3d-v1/mobile/arrow-tower-se-96-v1.png', import.meta.url).href,
-    sw: new URL('../../../assets/renders/arrow-tower-3d-v1/mobile/arrow-tower-sw-96-v1.png', import.meta.url).href,
-    nw: new URL('../../../assets/renders/arrow-tower-3d-v1/mobile/arrow-tower-nw-96-v1.png', import.meta.url).href,
-  },
-  deokbae: new URL('../../../assets/renders/mobile/deokbae-tower-96-final.png', import.meta.url).href,
-  huchu: new URL('../../../assets/renders/mobile/huchu-tower-96-final.png', import.meta.url).href,
-  slow: new URL('../../../assets/renders/slow-tower-3d-v1/mobile/slow-tower-map-96-v1.png', import.meta.url).href,
-} as const satisfies Readonly<
-  Record<Exclude<TowerType, 'arrow'>, string>
-  & { arrow: Readonly<Record<SpriteDirection, string>> }
->;
 
 function loadImage(url: string): Promise<LoadedSprite> {
   if (typeof Image === 'undefined') return Promise.resolve(null);
@@ -57,8 +59,50 @@ async function loadDirections(
 }
 
 export async function loadGameAssets(): Promise<GameAssets> {
-  const [arrow, deokbae, huchu, slow, slime, fairy, orc, golem, minotaur] = await Promise.all([
-    loadDirections(TOWER_SPRITES.arrow),
+  const arrowUrls = {
+    ne: TOWER_SPRITES.arrow,
+    se: TOWER_SPRITES.arrow,
+    sw: TOWER_SPRITES.arrow,
+    nw: TOWER_SPRITES.arrow,
+  } as const;
+  const [
+    grass,
+    roadHorizontal,
+    roadVertical,
+    roadNorthEast,
+    roadEastSouth,
+    roadSouthWest,
+    roadWestNorth,
+    entry,
+    snackChest,
+    arrow,
+    deokbae,
+    huchu,
+    slow,
+    slime,
+    fairy,
+    orc,
+    golem,
+    minotaur,
+    orcMotion,
+    fairyMotion,
+    arrowVfx,
+    fireball,
+    waterball,
+    arrowImpact,
+    fireBurst,
+    aquaBurst,
+  ] = await Promise.all([
+    loadImage(MAP_SPRITES.grass),
+    loadImage(MAP_SPRITES.roadHorizontal),
+    loadImage(MAP_SPRITES.roadVertical),
+    loadImage(MAP_SPRITES.roadNorthEast),
+    loadImage(MAP_SPRITES.roadEastSouth),
+    loadImage(MAP_SPRITES.roadSouthWest),
+    loadImage(MAP_SPRITES.roadWestNorth),
+    loadImage(MAP_SPRITES.entry),
+    loadImage(MAP_SPRITES.snackChest),
+    loadDirections(arrowUrls),
     loadImage(TOWER_SPRITES.deokbae),
     loadImage(TOWER_SPRITES.huchu),
     loadImage(TOWER_SPRITES.slow),
@@ -67,10 +111,31 @@ export async function loadGameAssets(): Promise<GameAssets> {
     loadDirections(ENEMY_SPRITES.orc),
     loadDirections(ENEMY_SPRITES.golem),
     loadDirections(ENEMY_SPRITES.minotaur),
+    loadImage(MOTION_SPRITES.orc.url),
+    loadImage(MOTION_SPRITES.fairy.url),
+    loadImage(VFX_SPRITES.arrow.url),
+    loadImage(VFX_SPRITES.fireball.url),
+    loadImage(VFX_SPRITES.waterball.url),
+    loadImage(VFX_SPRITES.arrowImpact.url),
+    loadImage(VFX_SPRITES.fireBurst.url),
+    loadImage(VFX_SPRITES.aquaBurst.url),
   ]);
 
   return {
+    map: {
+      grass,
+      roadHorizontal,
+      roadVertical,
+      roadNorthEast,
+      roadEastSouth,
+      roadSouthWest,
+      roadWestNorth,
+      entry,
+      snackChest,
+    },
     towers: { arrow, deokbae, huchu, slow },
     enemies: { slime, fairy, orc, golem, minotaur },
+    motion: { orc: orcMotion, fairy: fairyMotion },
+    vfx: { arrow: arrowVfx, fireball, waterball, arrowImpact, fireBurst, aquaBurst },
   };
 }

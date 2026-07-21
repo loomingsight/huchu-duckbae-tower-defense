@@ -8,11 +8,11 @@ import type {
 } from '../simulation/createGame';
 import type { Cell } from '../types';
 import type { GameAssets } from './assetLoader';
-import { drawEntities } from './drawEntities';
+import { drawEntities, type TowerPreview } from './drawEntities';
 import {
+  drawBossPresentation,
   drawForegroundEffects,
   drawGroundEffects,
-  drawOrientationPrompt,
   drawPauseOverlay,
   type FloatingGold,
 } from './drawEffects';
@@ -33,11 +33,14 @@ export type GameSnapshot = {
   readonly projectiles: readonly Readonly<GameProjectile>[];
   readonly hitEvents: readonly Readonly<GameHitEvent>[];
   readonly wave: Readonly<WaveState>;
+  readonly bossSpawnedAtSeconds?: number | null;
 };
 
 export type RenderOptions = {
   readonly selectedCell?: Readonly<Cell> | null;
   readonly selectedRange?: number;
+  readonly selectedValid?: boolean;
+  readonly previewTower?: TowerPreview | null;
   readonly paused?: boolean;
   readonly timeSeconds?: number;
   readonly floatingGold?: readonly FloatingGold[];
@@ -97,19 +100,31 @@ export function createCanvasRenderer(
       layout.gameArea.height,
     );
     context.clip();
-    drawMap(context, layout, {
+    drawMap(context, layout, assets, {
       cell: options.selectedCell,
       range: options.selectedRange,
+      valid: options.selectedValid,
     });
     const timeSeconds = Number.isFinite(options.timeSeconds) ? options.timeSeconds ?? 0 : 0;
     const effects = options.effects ?? [];
-    drawGroundEffects(context, layout, snapshot, timeSeconds, effects);
-    drawEntities(context, layout, snapshot, assets);
-    drawForegroundEffects(context, layout, snapshot, options.floatingGold ?? [], effects);
+    drawGroundEffects(context, layout, effects);
+    drawEntities(context, layout, snapshot, assets, {
+      timeSeconds,
+      previewTower: options.previewTower,
+    });
+    drawForegroundEffects(
+      context,
+      layout,
+      snapshot,
+      options.floatingGold ?? [],
+      effects,
+      assets,
+      timeSeconds,
+    );
+    drawBossPresentation(context, layout, snapshot.bossSpawnedAtSeconds, timeSeconds);
     if (options.paused === true) drawPauseOverlay(context, layout);
     context.restore();
 
-    if (layout.showOrientationPrompt) drawOrientationPrompt(context, layout);
   }
 
   resize(initialViewport(canvas));

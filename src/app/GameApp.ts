@@ -10,10 +10,11 @@ import {
   type RuntimeEffect,
 } from '../game/render/effects';
 import { createGame } from '../game/simulation/createGame';
-import { placeTower } from '../game/simulation/placeTower';
+import { placeTower, validateTowerPlacement } from '../game/simulation/placeTower';
 import { updateGame as updateSimulation } from '../game/simulation/updateGame';
 import { TOWER_CATALOG, TOWER_TYPES, type TowerType } from '../game/towers/towerCatalog';
 import { STAGE_1_WAVES } from '../game/waves/stage1Waves';
+import { calculateGameScore } from '../game/scoring';
 import {
   createGameRuntime,
   type AnimationFrameScheduler,
@@ -23,7 +24,9 @@ import {
 import {
   createHud,
   createModalFocusManager,
+  renderResultPanel,
   renderHud,
+  showPlacementActions,
   showStateOverlay,
 } from './hud';
 import { isTapGesture, pointerToCell, type ClientPoint } from './input';
@@ -31,8 +34,9 @@ import { guardInitialization, LifecycleScope } from './lifecycle';
 import {
   browserPreferenceStorage,
   loadPreferences,
+  recordAttempt,
+  recordOutcome,
   saveMutedPreference,
-  updateBestClear,
 } from './preferences';
 
 export type GameApp = Readonly<{
@@ -43,6 +47,17 @@ type ActivePointer = Readonly<{ id: number; start: ClientPoint }>;
 
 const EMPTY_DIRECTIONS = { ne: null, se: null, sw: null, nw: null } as const;
 const EMPTY_ASSETS: GameAssets = {
+  map: {
+    grass: null,
+    roadHorizontal: null,
+    roadVertical: null,
+    roadNorthEast: null,
+    roadEastSouth: null,
+    roadSouthWest: null,
+    roadWestNorth: null,
+    entry: null,
+    snackChest: null,
+  },
   towers: { arrow: EMPTY_DIRECTIONS, deokbae: null, huchu: null, slow: null },
   enemies: {
     slime: EMPTY_DIRECTIONS,
@@ -50,6 +65,15 @@ const EMPTY_ASSETS: GameAssets = {
     orc: EMPTY_DIRECTIONS,
     golem: EMPTY_DIRECTIONS,
     minotaur: EMPTY_DIRECTIONS,
+  },
+  motion: { orc: null, fairy: null },
+  vfx: {
+    arrow: null,
+    fireball: null,
+    waterball: null,
+    arrowImpact: null,
+    fireBurst: null,
+    aquaBurst: null,
   },
 };
 
@@ -208,6 +232,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     let effects: RuntimeEffect[] = [];
     let lastEffectTimeSeconds = 0;
     let lastRenderedGold = 0;
+    let newBestScore = false;
     const frameEvents = createFrameEventBuffer();
     const renderer = await createRendererWithFallback(hud.canvas);
     const sound = new SoundEngine();
@@ -233,13 +258,10 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         return '타워를 고르고 빈 칸을 탭해 적을 막으세요.';
       }
       if (snapshot.phase === 'victory') {
-        const best = preferences.bestClearSeconds === null
-          ? ''
-          : ` · 최고 ${clearTime(preferences.bestClearSeconds)}`;
-        return `클리어 ${clearTime(snapshot.elapsedSeconds)}${best}`;
+        return '간식 창고와 친구들을 멋지게 지켜냈어요!';
       }
       if (snapshot.phase === 'defeat') {
-        return `웨이브 ${Math.min(snapshot.game.wave.index + 1, STAGE_1_WAVES.length)}에서 멈췄어요.`;
+        return '다음에는 더 오래 지킬 수 있어요.';
       }
       return '';
     }
@@ -271,12 +293,23 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         const gold = createGoldPop(lastHitPosition, earnedGold);
         if (gold !== null) nextEffects.push(gold);
       }
-      const selectedRange = snapshot.selectedTower === null
+      const placementValidation = snapshot.selectedTower === null || snapshot.selectedCell === null
+        ? null
+        : validateTowerPlacement(snapshot.game, snapshot.selectedTower, snapshot.selectedCell);
+      const selectedRange = snapshot.selectedTower === null || snapshot.selectedCell === null
         ? undefined
         : TOWER_CATALOG[snapshot.selectedTower].range;
       renderer.render(snapshot.game, {
         selectedCell: snapshot.selectedCell,
         selectedRange,
+        selectedValid: placementValidation?.ok,
+        previewTower: snapshot.selectedTower === null || snapshot.selectedCell === null
+          ? null
+          : {
+            type: snapshot.selectedTower,
+            cell: snapshot.selectedCell,
+            valid: placementValidation?.ok ?? false,
+          },
         paused: snapshot.phase === 'paused',
         timeSeconds: snapshot.elapsedSeconds,
         effects: nextEffects,
@@ -292,6 +325,35 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       if (overlayKey !== lastOverlayKey) {
         lastOverlayKey = overlayKey;
         showStateOverlay(hud, snapshot.phase, body);
+        if (snapshot.phase === 'victory' || snapshot.phase === 'defeat') {
+          const score = calculateGameScore(
+            snapshot.game,
+            snapshot.game.outcome,
+            snapshot.elapsedSeconds,
+          );
+          renderResultPanel(hud, {
+            score: score.total,
+            stars: score.stars,
+            newBestScore,
+            completedWaves: snapshot.game.stats.completedWaves,
+            defeatedEnemies: snapshot.game.stats.defeatedEnemies,
+            baseHp: snapshot.game.baseHp,
+            bossDefeated: snapshot.game.stats.bossDefeated,
+            elapsedText: clearTime(snapshot.elapsedSeconds),
+            timeBonus: score.breakdown.timeBonus,
+            bestScore: preferences.bestScore,
+            bestClearText: preferences.bestClearSeconds === null
+              ? '--:--'
+              : clearTime(preferences.bestClearSeconds),
+            totalAttempts: preferences.totalAttempts,
+            totalVictories: preferences.totalVictories,
+            nextGoalText: score.nextStarScore === null
+              ? '최고 등급 달성! 더 빠른 클리어에 도전해 보세요.'
+              : `별 하나를 더 받으려면 ${Math.max(0, score.nextStarScore - score.total).toLocaleString('ko-KR')}점이 필요해요.`,
+          });
+        } else {
+          renderResultPanel(hud, null);
+        }
       }
       const modalityChanged = focusManager.prepare({
         stateVisible: stateOverlayVisible(snapshot),
@@ -306,6 +368,8 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         snapshot.speed,
         preferences.muted,
         snapshot.selectedTower,
+        snapshot.selectedCell?.col ?? '',
+        snapshot.selectedCell?.row ?? '',
         snapshot.portraitBlocked,
       ].join('|');
       if (hudKey !== lastHudKey) {
@@ -320,6 +384,11 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
           muted: preferences.muted,
           portraitBlocked: snapshot.portraitBlocked,
         }, snapshot.selectedTower);
+        showPlacementActions(
+          hud,
+          snapshot.selectedTower,
+          snapshot.selectedCell !== null && placementValidation?.ok === true,
+        );
       }
       if (modalityChanged) focusManager.commit();
     }
@@ -341,7 +410,15 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       render,
       onOutcome(outcome, elapsedSeconds) {
         sound.play(outcome);
-        if (outcome === 'victory') preferences = updateBestClear(storage, elapsedSeconds);
+        const game = runtime.getSnapshot().game;
+        const score = calculateGameScore(game, outcome, elapsedSeconds);
+        const recorded = recordOutcome(storage, {
+          score: score.total,
+          victory: outcome === 'victory',
+          elapsedSeconds,
+        });
+        preferences = recorded.preferences;
+        newBestScore = recorded.newBestScore;
       },
     });
     scope.add(() => runtime.destroy());
@@ -383,7 +460,9 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       frameEvents.reset();
       effects = [];
       renderedGame = null;
+      newBestScore = false;
       hud.placementStatus.textContent = '타워를 선택해 주세요.';
+      preferences = recordAttempt(storage);
       runtime.startGame();
     }
 
@@ -391,7 +470,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       void sound.unlock();
     }
 
-    function placeSelectedTower(point: ClientPoint): void {
+    function previewSelectedTower(point: ClientPoint): void {
       const snapshot = runtime.getSnapshot();
       if (
         snapshot.selectedTower === null
@@ -404,22 +483,48 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         return;
       }
       runtime.setSelectedCell(cell);
-      const result = placeTower(snapshot.game, snapshot.selectedTower, cell);
+      const result = validateTowerPlacement(snapshot.game, snapshot.selectedTower, cell);
       if (!result.ok) {
         showInvalidPlacement(result.reason === 'insufficient-gold'
           ? '골드가 부족해요.'
-          : '길이나 사용 중인 칸에는 설치할 수 없어요.');
+          : '길에 맞닿은 빈 칸에만 설치할 수 있어요.');
         runtime.renderNow();
         return;
       }
-      hud.placementStatus.textContent = '타워를 설치했어요.';
+      hud.placementStatus.textContent = '사거리를 확인하고 배치 또는 취소를 눌러 주세요.';
+      runtime.renderNow();
+    }
+
+    function confirmPlacement(): void {
+      const snapshot = runtime.getSnapshot();
+      if (
+        snapshot.selectedTower === null
+        || snapshot.selectedCell === null
+        || snapshot.phase !== 'playing'
+        || snapshot.portraitBlocked
+      ) return;
+      const result = placeTower(snapshot.game, snapshot.selectedTower, snapshot.selectedCell);
+      if (!result.ok) {
+        showInvalidPlacement(result.reason === 'insufficient-gold'
+          ? '골드가 부족해요.'
+          : '이 칸에는 더 이상 설치할 수 없어요.');
+        runtime.renderNow();
+        return;
+      }
+      hud.placementStatus.textContent = '타워를 설치했어요. 같은 타워를 계속 배치할 수 있어요.';
       const placedTower = snapshot.game.towers.at(-1);
       if (placedTower?.type === 'slow') {
         const pulse = createSlowPulse(placedTower.position);
         if (pulse !== null) effects.push(pulse);
       }
       sound.play('placement');
+      runtime.setSelectedCell(null);
       runtime.renderNow();
+    }
+
+    function cancelPlacement(): void {
+      runtime.setSelectedCell(null);
+      hud.placementStatus.textContent = '배치를 취소했어요. 다른 칸을 선택할 수 있어요.';
     }
 
     scope.listen(hud.stateAction, 'click', () => {
@@ -442,6 +547,11 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       sound.setMuted(preferences.muted);
       runtime.renderNow();
     });
+    scope.listen(hud.placementConfirm, 'click', () => {
+      unlockAudio();
+      confirmPlacement();
+    });
+    scope.listen(hud.placementCancel, 'click', cancelPlacement);
     for (const type of TOWER_TYPES) {
       scope.listen(hud.towerButtons[type], 'click', () => {
         unlockAudio();
@@ -476,7 +586,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       activePointer = null;
       if (active === null || active.id !== pointer.pointerId) return;
       const end = { x: pointer.clientX, y: pointer.clientY };
-      if (isTapGesture(active.start, end)) placeSelectedTower(end);
+      if (isTapGesture(active.start, end)) previewSelectedTower(end);
     });
     scope.listen(hud.canvas, 'pointercancel', () => {
       activePointer = null;

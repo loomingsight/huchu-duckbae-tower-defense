@@ -7,10 +7,14 @@ export type RecordedCall = {
   strokeStyle: string | CanvasGradient | CanvasPattern;
 };
 
-export type TaggedImage = { readonly tag: string };
+export type TaggedImage = {
+  readonly tag: string;
+  readonly naturalWidth: number;
+  readonly naturalHeight: number;
+};
 
-export function taggedImage(tag: string): HTMLImageElement {
-  return { tag } as unknown as HTMLImageElement;
+export function taggedImage(tag: string, naturalWidth = 128): HTMLImageElement {
+  return { tag, naturalWidth, naturalHeight: 128 } as unknown as HTMLImageElement;
 }
 
 export function createTestAssets(): GameAssets {
@@ -22,6 +26,17 @@ export function createTestAssets(): GameAssets {
   });
 
   return {
+    map: {
+      grass: taggedImage('map-grass'),
+      roadHorizontal: taggedImage('map-road-horizontal'),
+      roadVertical: taggedImage('map-road-vertical'),
+      roadNorthEast: taggedImage('map-road-ne'),
+      roadEastSouth: taggedImage('map-road-es'),
+      roadSouthWest: taggedImage('map-road-sw'),
+      roadWestNorth: taggedImage('map-road-wn'),
+      entry: taggedImage('map-entry'),
+      snackChest: taggedImage('map-snack-chest'),
+    },
     towers: {
       arrow: directions('tower-arrow'),
       deokbae: taggedImage('tower-deokbae'),
@@ -34,6 +49,18 @@ export function createTestAssets(): GameAssets {
       orc: directions('enemy-orc'),
       golem: directions('enemy-golem'),
       minotaur: directions('enemy-minotaur'),
+    },
+    motion: {
+      orc: taggedImage('motion-orc', 128 * 6),
+      fairy: taggedImage('motion-fairy', 128 * 8),
+    },
+    vfx: {
+      arrow: taggedImage('vfx-arrow', 128 * 8),
+      fireball: taggedImage('vfx-fireball', 128 * 4),
+      waterball: taggedImage('vfx-waterball', 128 * 4),
+      arrowImpact: taggedImage('vfx-arrow-impact', 128 * 4),
+      fireBurst: taggedImage('vfx-fire-burst', 128 * 8),
+      aquaBurst: taggedImage('vfx-aqua-burst', 128 * 8),
     },
   };
 }
@@ -76,11 +103,19 @@ export function createRecordingContext(options: { rejectNonFinite?: boolean } = 
     clip: (...args: unknown[]) => record('clip', args),
     moveTo: (...args: unknown[]) => record('moveTo', args),
     lineTo: (...args: unknown[]) => record('lineTo', args),
+    translate: (...args: unknown[]) => record('translate', args),
+    scale: (...args: unknown[]) => record('scale', args),
     arc: (...args: unknown[]) => record('arc', args),
+    ellipse: (...args: unknown[]) => record('ellipse', args),
+    roundRect: (...args: unknown[]) => record('roundRect', args),
     fill: (...args: unknown[]) => record('fill', args),
     stroke: (...args: unknown[]) => record('stroke', args),
     drawImage: (...args: unknown[]) => record('drawImage', args),
     fillText: (...args: unknown[]) => record('fillText', args),
+    createRadialGradient: (...args: unknown[]) => {
+      record('createRadialGradient', args);
+      return { addColorStop: (...colorArgs: unknown[]) => record('addColorStop', colorArgs) };
+    },
   } as unknown as CanvasRenderingContext2D;
 
   return { context, calls };

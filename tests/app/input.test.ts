@@ -12,12 +12,19 @@ describe('mobile canvas input', () => {
     const layout = computeCanvasLayout({ width: 400, height: 300, dpr: 2 });
     const canvasRect = { left: 50, top: 20, width: 800, height: 600 };
 
+    const world = { x: 2.5, y: 4.5 };
+    const screen = {
+      x: layout.mapOrigin.x + (world.x - world.y) * layout.tileWidth / 2,
+      y: layout.mapOrigin.y + (world.x + world.y) * layout.tileHeight / 2,
+    };
     const point = {
-      x: canvasRect.left + (layout.mapArea.x + layout.cellSize * 2.5) * 2,
-      y: canvasRect.top + (layout.mapArea.y + layout.cellSize * 4.5) * 2,
+      x: canvasRect.left + screen.x * 2,
+      y: canvasRect.top + screen.y * 2,
     };
 
-    expect(pointerToWorld(point, layout, canvasRect)).toEqual({ x: 2.5, y: 4.5 });
+    const converted = pointerToWorld(point, layout, canvasRect);
+    expect(converted?.x).toBeCloseTo(2.5, 10);
+    expect(converted?.y).toBeCloseTo(4.5, 10);
     expect(pointerToCell(point, layout, canvasRect)).toEqual({ col: 2, row: 4 });
   });
 

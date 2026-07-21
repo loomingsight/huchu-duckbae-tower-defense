@@ -77,6 +77,8 @@ export function createGameRuntime(dependencies: GameRuntimeDependencies): GameRu
         elapsedSeconds += deltaSeconds;
         if (game.outcome === 'playing') return;
         phase = game.outcome;
+        selectedTower = null;
+        selectedCell = null;
         dependencies.onOutcome?.(game.outcome, elapsedSeconds);
       },
       render: dependencies.render,

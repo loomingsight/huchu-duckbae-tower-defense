@@ -31,7 +31,7 @@ describe('tower placement', () => {
     const state = createGame();
     state.gold = TOWER_CATALOG.arrow.cost - 1;
 
-    expect(placeTower(state, 'arrow', { col: 2, row: 5 })).toEqual({
+    expect(placeTower(state, 'arrow', { col: 2, row: 1 })).toEqual({
       ok: false,
       reason: 'insufficient-gold',
     });
@@ -46,12 +46,22 @@ describe('tower placement', () => {
       ok: false,
       reason: 'not-buildable',
     });
-    expect(placeTower(state, 'arrow', { col: 2, row: 5 }).ok).toBe(true);
-    expect(placeTower(state, 'slow', { col: 2, row: 5 })).toEqual({
+    expect(placeTower(state, 'arrow', { col: 2, row: 1 }).ok).toBe(true);
+    expect(placeTower(state, 'slow', { col: 2, row: 1 })).toEqual({
       ok: false,
       reason: 'not-buildable',
     });
     expect(state.gold).toBe(350);
+  });
+
+  it('rejects empty cells that are not one of the eight neighbors of the road', () => {
+    const state = createGame();
+
+    expect(placeTower(state, 'arrow', { col: 2, row: 5 })).toEqual({
+      ok: false,
+      reason: 'not-buildable',
+    });
+    expect(state.gold).toBe(450);
   });
 
   it.each([
@@ -76,16 +86,16 @@ describe('tower placement', () => {
   it('places towers at exact cell centers and allows duplicate types on different cells', () => {
     const state = createGame();
 
-    expect(placeTower(state, 'arrow', { col: 2, row: 5 }).ok).toBe(true);
-    expect(placeTower(state, 'arrow', { col: 3, row: 5 }).ok).toBe(true);
+    expect(placeTower(state, 'arrow', { col: 2, row: 1 }).ok).toBe(true);
+    expect(placeTower(state, 'arrow', { col: 3, row: 1 }).ok).toBe(true);
 
     expect(state.towers.map((tower) => ({
       type: tower.type,
       cell: tower.cell,
       position: tower.position,
     }))).toEqual([
-      { type: 'arrow', cell: { col: 2, row: 5 }, position: { x: 2.5, y: 5.5 } },
-      { type: 'arrow', cell: { col: 3, row: 5 }, position: { x: 3.5, y: 5.5 } },
+      { type: 'arrow', cell: { col: 2, row: 1 }, position: { x: 2.5, y: 1.5 } },
+      { type: 'arrow', cell: { col: 3, row: 1 }, position: { x: 3.5, y: 1.5 } },
     ]);
     expect(state.gold).toBe(250);
   });

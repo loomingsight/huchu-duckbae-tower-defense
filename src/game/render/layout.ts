@@ -1,7 +1,9 @@
 import { GRID_HEIGHT, GRID_WIDTH } from '../config';
 
-const GAME_ASPECT_RATIO = 16 / 9;
 const MAX_DEVICE_PIXEL_RATIO = 2;
+const TILE_HEIGHT_RATIO = 0.44;
+const MAP_TOP_PADDING_RATIO = 0.1;
+const MAP_BOTTOM_PADDING = 6;
 
 export type Viewport = {
   width: number;
@@ -20,6 +22,9 @@ export type CanvasLayout = {
   viewport: Readonly<{ width: number; height: number }>;
   gameArea: Readonly<CanvasRect>;
   mapArea: Readonly<CanvasRect>;
+  mapOrigin: Readonly<{ x: number; y: number }>;
+  tileWidth: number;
+  tileHeight: number;
   cellSize: number;
   dpr: number;
   backingWidth: number;
@@ -36,31 +41,42 @@ export function computeCanvasLayout(viewport: Viewport): CanvasLayout {
   const height = positiveDimension(viewport.height);
   const requestedDpr = Number.isFinite(viewport.dpr) ? viewport.dpr ?? 1 : 1;
   const dpr = Math.min(MAX_DEVICE_PIXEL_RATIO, Math.max(1, requestedDpr));
-  const viewportAspect = width / height;
-  const gameWidth = viewportAspect > GAME_ASPECT_RATIO
-    ? height * GAME_ASPECT_RATIO
-    : width;
-  const gameHeight = gameWidth / GAME_ASPECT_RATIO;
   const gameArea = {
-    x: (width - gameWidth) / 2,
-    y: (height - gameHeight) / 2,
-    width: gameWidth,
-    height: gameHeight,
+    x: 0,
+    y: 0,
+    width,
+    height,
   };
-  const cellSize = Math.min(gameWidth / GRID_WIDTH, gameHeight / GRID_HEIGHT);
-  const mapWidth = cellSize * GRID_WIDTH;
-  const mapHeight = cellSize * GRID_HEIGHT;
+  const dimensionSum = GRID_WIDTH + GRID_HEIGHT;
+  const horizontalTileWidth = Math.max(1, (width - 12) * 2 / dimensionSum);
+  const topPadding = Math.max(8, height * MAP_TOP_PADDING_RATIO);
+  const availableHeight = Math.max(1, height - topPadding - MAP_BOTTOM_PADDING);
+  const verticalTileWidth = Math.max(
+    1,
+    availableHeight * 2 / (dimensionSum * TILE_HEIGHT_RATIO),
+  );
+  const tileWidth = Math.min(horizontalTileWidth, verticalTileWidth);
+  const tileHeight = tileWidth * TILE_HEIGHT_RATIO;
+  const mapWidth = dimensionSum * tileWidth / 2;
+  const mapHeight = dimensionSum * tileHeight / 2;
+  const mapArea = {
+    x: (width - mapWidth) / 2,
+    y: topPadding + Math.max(0, (availableHeight - mapHeight) / 2),
+    width: mapWidth,
+    height: mapHeight,
+  };
 
   return {
     viewport: { width, height },
     gameArea,
-    mapArea: {
-      x: gameArea.x + (gameWidth - mapWidth) / 2,
-      y: gameArea.y + (gameHeight - mapHeight) / 2,
-      width: mapWidth,
-      height: mapHeight,
+    mapArea,
+    mapOrigin: {
+      x: mapArea.x + GRID_HEIGHT * tileWidth / 2,
+      y: mapArea.y,
     },
-    cellSize,
+    tileWidth,
+    tileHeight,
+    cellSize: tileWidth,
     dpr,
     backingWidth: Math.max(1, Math.round(width * dpr)),
     backingHeight: Math.max(1, Math.round(height * dpr)),

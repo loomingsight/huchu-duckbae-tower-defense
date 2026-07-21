@@ -41,26 +41,46 @@ async function startGame(page: Page): Promise<void> {
 }
 
 async function placeTower(page: Page, name: string, col: number, row: number): Promise<void> {
-  const towerButton = page.getByRole('button', { name: new RegExp(name) });
+  const type = name === '슬로우 타워'
+    ? 'slow'
+    : name === '화살 타워' ? 'arrow' : name === '덕배' ? 'deokbae' : 'huchu';
+  const towerButton = page.locator(`[data-tower="${type}"]`);
   if (await towerButton.getAttribute('aria-pressed') !== 'true') await towerButton.click();
+  const position = await canvasPositionForCell(page, col, row);
+  await page.locator('canvas').click({ position });
+  await expect(page.getByRole('button', { name: `${name} 배치 확정` })).toBeVisible();
+  const beforeConfirm = await clockSnapshot(page);
+  expect(beforeConfirm.towerCells).not.toContainEqual({ col, row });
+  await page.getByRole('button', { name: `${name} 배치 확정` }).click();
+  expect((await clockSnapshot(page)).towerCells).toContainEqual({ col, row });
+}
+
+async function canvasPositionForCell(
+  page: Page,
+  col: number,
+  row: number,
+): Promise<{ x: number; y: number }> {
   const box = await page.locator('canvas').boundingBox();
   if (box === null) throw new Error('Canvas has no layout box');
-  const gameWidth = Math.min(box.width, box.height * 16 / 9);
-  const gameHeight = gameWidth * 9 / 16;
-  const offsetX = (box.width - gameWidth) / 2;
-  const offsetY = (box.height - gameHeight) / 2;
-  const cellSize = Math.min(gameWidth / 20, gameHeight / 10);
-  const mapWidth = cellSize * 20;
-  const mapHeight = cellSize * 10;
-  const mapOffsetX = offsetX + (gameWidth - mapWidth) / 2;
-  const mapOffsetY = offsetY + (gameHeight - mapHeight) / 2;
-  await page.locator('canvas').click({
-    position: {
-      x: mapOffsetX + (col + 0.5) * cellSize,
-      y: mapOffsetY + (row + 0.5) * cellSize,
-    },
-  });
-  expect((await clockSnapshot(page)).towerCells).toContainEqual({ col, row });
+  const dimensionSum = 30;
+  const topPadding = Math.max(8, box.height * 0.1);
+  const availableHeight = Math.max(1, box.height - topPadding - 6);
+  const tileWidth = Math.min(
+    Math.max(1, (box.width - 12) * 2 / dimensionSum),
+    Math.max(1, availableHeight * 2 / (dimensionSum * 0.44)),
+  );
+  const tileHeight = tileWidth * 0.44;
+  const mapWidth = dimensionSum * tileWidth / 2;
+  const mapHeight = dimensionSum * tileHeight / 2;
+  const mapX = (box.width - mapWidth) / 2;
+  const mapY = topPadding + Math.max(0, (availableHeight - mapHeight) / 2);
+  const originX = mapX + 10 * tileWidth / 2;
+  const worldX = col + 0.5;
+  const worldY = row + 0.5;
+  return {
+    x: originX + (worldX - worldY) * tileWidth / 2,
+    y: mapY + (worldX + worldY) * tileHeight / 2,
+  };
 }
 
 function screenshotPath(testInfo: TestInfo, filename: string): string {
@@ -83,7 +103,13 @@ test('844x390 touch flow builds, controls time, and progresses deterministically
   await startGame(page);
   const initial = await clockSnapshot(page);
 
-  await placeTower(page, '화살 타워', 2, 5);
+  const arrowButton = page.locator('[data-tower="arrow"]');
+  await arrowButton.click();
+  await page.locator('canvas').click({ position: await canvasPositionForCell(page, 2, 1) });
+  await expect(page.getByRole('button', { name: '화살 타워 배치 취소' })).toBeVisible();
+  await page.getByRole('button', { name: '화살 타워 배치 취소' }).click();
+  expect((await clockSnapshot(page)).towerCells).toEqual([]);
+  await placeTower(page, '화살 타워', 2, 1);
   await expect(page.locator('[data-hud="gold"]')).toHaveText('350');
 
   const beforeOneTimes = await clockSnapshot(page);
@@ -118,10 +144,10 @@ test('844x390 touch flow builds, controls time, and progresses deterministically
 test('victory overlay appears and restart resets the game', async ({ page }, testInfo) => {
   const consoleErrors = captureConsoleErrors(page);
   await startGame(page);
-  await placeTower(page, '후추 타워', 8, 5);
-  await placeTower(page, '화살 타워', 3, 4);
+  await placeTower(page, '후추', 4, 3);
+  await placeTower(page, '화살 타워', 2, 1);
   const reinforcements = [
-    [7, 6], [9, 6], [11, 5], [13, 5], [15, 5], [6, 1], [15, 1], [18, 5],
+    [6, 5], [8, 6], [11, 6], [13, 5], [15, 4], [18, 4], [11, 2], [4, 6],
   ] as const;
   let nextReinforcement = 0;
 
@@ -131,13 +157,14 @@ test('victory overlay appears and restart resets the game', async ({ page }, tes
     let availableGold = state.gold;
     while (availableGold >= 300 && nextReinforcement < reinforcements.length) {
       const [col, row] = reinforcements[nextReinforcement];
-      await placeTower(page, '후추 타워', col, row);
+      await placeTower(page, '후추', col, row);
       availableGold -= 300;
       nextReinforcement += 1;
     }
   }
 
-  await expect(page.getByRole('heading', { name: '간식 창고를 지켰어요!' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '간식 창고를 지켜줘서 고마워요' })).toBeVisible();
+  await expect(page.getByText('처치 완료', { exact: true })).toBeVisible();
   await page.screenshot({ path: screenshotPath(testInfo, 'victory-844x390.png') });
   await page.getByRole('button', { name: '다시 하기' }).click();
   const restarted = await clockSnapshot(page);
@@ -161,7 +188,7 @@ test('defeat can repeat without multiplying the animation lifecycle', async ({ p
       const state = await advance(page, 10_000);
       if (state.phase === 'defeat') break;
     }
-    await expect(page.getByRole('heading', { name: '간식 창고가 비었어요' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '간식 창고가 다 털려버렸어요' })).toBeVisible();
     if (run === 0) {
       await page.screenshot({ path: screenshotPath(testInfo, 'defeat-844x390.png') });
     }

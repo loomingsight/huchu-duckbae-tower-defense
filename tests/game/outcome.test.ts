@@ -82,4 +82,18 @@ describe('base damage and game outcomes', () => {
     expect(state.outcome).toBe('defeat');
     expect(state.enemies).toEqual([]);
   });
+
+  it('records boss appearance and defeat statistics once', () => {
+    const state = createGame();
+    state.elapsedSeconds = 12;
+    state.wave.allSpawned = true;
+
+    spawnEnemy(state, 'minotaur', 9);
+    expect(state.bossSpawnedAtSeconds).toBe(12);
+    state.enemies[0].hp = 0;
+    updateGame(state, 0);
+
+    expect(state.stats.defeatedEnemies).toBe(1);
+    expect(state.stats.bossDefeated).toBe(true);
+  });
 });

@@ -1,12 +1,15 @@
-import { TOWER_CATALOG } from '../towers/towerCatalog';
+import { enemyPosition } from '../combat/targeting';
 import type {
+  GameEnemy,
   GameProjectile,
   GameTower,
 } from '../simulation/createGame';
 import type { Vec2 } from '../types';
+import type { GameAssets, LoadedSprite } from './assetLoader';
+import { isRenderablePoint, worldToScreen } from './drawMap';
 import type { RuntimeEffect } from './effects';
 import type { CanvasLayout } from './layout';
-import { isRenderablePoint, worldToScreen } from './drawMap';
+import { drawSpriteFrame } from './spriteSheet';
 
 export type FloatingGold = {
   readonly position: Readonly<Vec2>;
@@ -17,74 +20,96 @@ export type FloatingGold = {
 export type EffectSnapshot = {
   readonly towers: readonly Readonly<GameTower>[];
   readonly projectiles: readonly Readonly<GameProjectile>[];
+  readonly enemies: readonly Readonly<GameEnemy>[];
+  readonly bossSpawnedAtSeconds?: number | null;
 };
 
-function drawSlowAuras(
-  ctx: CanvasRenderingContext2D,
+export function arrowFrameForScreenVector(vector: Readonly<Vec2>): number {
+  const x = Number.isFinite(vector.x) ? vector.x : 0;
+  const y = Number.isFinite(vector.y) ? vector.y : 0;
+  if (x === 0 && y === 0) return 0;
+  return (Math.round(Math.atan2(y, x) / (Math.PI / 4)) + 8) % 8;
+}
+
+function projectileFrame(
+  projectile: Readonly<GameProjectile>,
+  snapshot: EffectSnapshot,
   layout: CanvasLayout,
-  towers: readonly Readonly<GameTower>[],
-  timeSeconds: number,
-): void {
-  const pulse = 0.94 + Math.sin(timeSeconds * 3.5) * 0.04;
-  for (const tower of towers) {
-    if (tower.type !== 'slow' || !isRenderablePoint(layout, tower.position)) continue;
-    const center = worldToScreen(layout, tower.position);
-    const radius = TOWER_CATALOG.slow.range * layout.cellSize * pulse;
-    ctx.fillStyle = 'rgba(116, 102, 215, 0.075)';
-    ctx.strokeStyle = 'rgba(139, 217, 226, 0.4)';
-    ctx.lineWidth = Math.max(1, 1.5 / layout.dpr);
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-  }
+): number {
+  const target = snapshot.enemies.find((enemy) => enemy.id === projectile.targetId);
+  const targetPosition = target === undefined ? undefined : enemyPosition(target);
+  if (targetPosition === undefined) return 0;
+  const current = worldToScreen(layout, projectile.position);
+  const destination = worldToScreen(layout, targetPosition);
+  return arrowFrameForScreenVector({
+    x: destination.x - current.x,
+    y: destination.y - current.y,
+  });
 }
 
-function drawArrowProjectile(
+function drawCenteredFrame(
   ctx: CanvasRenderingContext2D,
-  center: Readonly<Vec2>,
+  image: LoadedSprite,
+  frame: number,
   size: number,
-): void {
-  ctx.strokeStyle = '#f7d477';
-  ctx.lineWidth = Math.max(2, size * 0.12);
-  ctx.beginPath();
-  ctx.moveTo(center.x - size * 0.45, center.y + size * 0.3);
-  ctx.lineTo(center.x + size * 0.45, center.y - size * 0.3);
-  ctx.stroke();
-}
-
-function drawOrb(
-  ctx: CanvasRenderingContext2D,
   center: Readonly<Vec2>,
-  radius: number,
-  outer: string,
-  inner: string,
-): void {
-  ctx.fillStyle = outer;
-  ctx.beginPath();
-  ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = inner;
-  ctx.beginPath();
-  ctx.arc(center.x - radius * 0.22, center.y - radius * 0.22, radius * 0.48, 0, Math.PI * 2);
-  ctx.fill();
+): boolean {
+  return drawSpriteFrame(ctx, image, frame, 128, {
+    x: center.x - size / 2,
+    y: center.y - size / 2,
+    width: size,
+    height: size,
+  });
 }
 
 function drawProjectiles(
   ctx: CanvasRenderingContext2D,
   layout: CanvasLayout,
-  projectiles: readonly Readonly<GameProjectile>[],
+  snapshot: EffectSnapshot,
+  assets: GameAssets,
+  timeSeconds: number,
 ): void {
-  for (const projectile of projectiles) {
+  for (const projectile of snapshot.projectiles) {
     if (!isRenderablePoint(layout, projectile.position)) continue;
     const center = worldToScreen(layout, projectile.position);
-    const size = Math.max(5, layout.cellSize * 0.2);
+    const animationFrame = Math.floor(timeSeconds * 12 + projectile.id * 0.73) % 4;
     if (projectile.towerType === 'arrow') {
-      drawArrowProjectile(ctx, center, size);
+      if (!drawCenteredFrame(
+        ctx,
+        assets.vfx.arrow,
+        projectileFrame(projectile, snapshot, layout),
+        layout.tileWidth * 1.55,
+        center,
+      )) {
+        ctx.fillStyle = '#f8d377';
+        ctx.fillRect(center.x - 2, center.y - 2, 5, 5);
+      }
     } else if (projectile.towerType === 'deokbae') {
-      drawOrb(ctx, center, size * 0.62, '#de4d2f', '#ffb03c');
+      if (!drawCenteredFrame(
+        ctx,
+        assets.vfx.fireball,
+        animationFrame,
+        layout.tileWidth * 1.55,
+        center,
+      )) {
+        ctx.fillStyle = '#ff7a2f';
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, layout.tileWidth * 0.12, 0, Math.PI * 2);
+        ctx.fill();
+      }
     } else if (projectile.towerType === 'huchu') {
-      drawOrb(ctx, center, size * 0.78, '#1ca5c4', '#a8f4ff');
+      if (!drawCenteredFrame(
+        ctx,
+        assets.vfx.waterball,
+        animationFrame,
+        layout.tileWidth * 1.7,
+        center,
+      )) {
+        ctx.fillStyle = '#5be3f1';
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, layout.tileWidth * 0.14, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 }
@@ -97,75 +122,44 @@ function drawRuntimeEffect(
   ctx: CanvasRenderingContext2D,
   layout: CanvasLayout,
   effect: RuntimeEffect,
+  assets: GameAssets,
 ): void {
   if (!isRenderablePoint(layout, effect.position)) return;
   const center = worldToScreen(layout, effect.position);
   const progress = effectProgress(effect);
-  const alpha = 1 - progress;
-
+  let image: LoadedSprite = null;
+  let frames = 1;
+  let size = layout.tileWidth * 2;
   if (effect.kind === 'arrow-impact') {
-    ctx.strokeStyle = `rgba(255, 227, 153, ${alpha})`;
-    ctx.lineWidth = Math.max(1.5, 2 / layout.dpr);
-    const radius = layout.cellSize * (0.16 + progress * 0.42);
-    for (let index = 0; index < 4; index += 1) {
-      const angle = (Math.PI / 2) * index + Math.PI / 4;
-      ctx.beginPath();
-      ctx.moveTo(
-        center.x + Math.cos(angle) * radius * 0.2,
-        center.y + Math.sin(angle) * radius * 0.2,
-      );
-      ctx.lineTo(
-        center.x + Math.cos(angle) * radius,
-        center.y + Math.sin(angle) * radius,
-      );
-      ctx.stroke();
-    }
-    return;
+    image = assets.vfx.arrowImpact;
+    frames = 4;
+    size = layout.tileWidth * 1.75;
+  } else if (effect.kind === 'fire-burst') {
+    image = assets.vfx.fireBurst;
+    frames = 8;
+    size = layout.tileWidth * (2.25 + progress * 0.65);
+  } else if (effect.kind === 'aqua-splash') {
+    image = assets.vfx.aquaBurst;
+    frames = 8;
+    size = layout.tileWidth * (2.45 + progress * 0.85);
   }
 
-  if (effect.kind === 'fire-burst') {
-    ctx.strokeStyle = `rgba(255, 115, 39, ${alpha})`;
-    ctx.fillStyle = `rgba(255, 189, 59, ${alpha * 0.72})`;
-    ctx.lineWidth = Math.max(2, layout.cellSize * 0.08);
-    const radius = layout.cellSize * (0.2 + progress * 0.7);
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, radius * 0.38, 0, Math.PI * 2);
-    ctx.fill();
-    for (let index = 0; index < 7; index += 1) {
-      const angle = index * Math.PI * 2 / 7;
-      ctx.beginPath();
-      ctx.moveTo(center.x + Math.cos(angle) * radius * 0.35, center.y + Math.sin(angle) * radius * 0.35);
-      ctx.lineTo(center.x + Math.cos(angle) * radius, center.y + Math.sin(angle) * radius);
-      ctx.stroke();
-    }
-    return;
-  }
-
-  if (effect.kind === 'aqua-splash') {
-    ctx.strokeStyle = `rgba(61, 213, 239, ${alpha})`;
-    ctx.fillStyle = 'rgba(73, 211, 235, 0.2)';
-    ctx.lineWidth = Math.max(2, 2.5 / layout.dpr);
-    const radius = layout.cellSize * (0.25 + progress * 1.05);
-    ctx.beginPath();
-    ctx.arc(center.x, center.y, radius, 0, Math.PI * 2);
-    ctx.stroke();
-    for (let index = 0; index < 5; index += 1) {
-      const angle = index * Math.PI * 2 / 5 - Math.PI / 2;
-      const distance = radius * (0.55 + progress * 0.35);
-      ctx.beginPath();
-      ctx.arc(center.x + Math.cos(angle) * distance, center.y + Math.sin(angle) * distance, Math.max(1.5, layout.cellSize * 0.06), 0, Math.PI * 2);
-      ctx.fill();
-    }
+  if (image !== null) {
+    const frame = Math.min(frames - 1, Math.floor(progress * frames));
+    ctx.save();
+    ctx.globalAlpha = Math.max(0.2, 1 - progress * 0.62);
+    drawCenteredFrame(ctx, image, frame, size, center);
+    ctx.restore();
     return;
   }
 
   if (effect.kind === 'gold-pop') {
-    ctx.globalAlpha = alpha;
+    ctx.globalAlpha = 1 - progress;
     ctx.fillStyle = '#ffe27a';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = `800 ${Math.max(11, layout.cellSize * 0.32)}px system-ui, sans-serif`;
-    ctx.fillText(`+${Math.round(effect.value)}`, center.x, center.y - progress * layout.cellSize);
+    ctx.font = `900 ${Math.max(11, layout.tileWidth * 0.28)}px system-ui, sans-serif`;
+    ctx.fillText(`+${Math.round(effect.value)}`, center.x, center.y - progress * layout.tileWidth);
     ctx.globalAlpha = 1;
   }
 }
@@ -179,10 +173,18 @@ function drawSlowPulses(
     if (effect.kind !== 'slow-pulse' || !isRenderablePoint(layout, effect.position)) continue;
     const center = worldToScreen(layout, effect.position);
     const progress = effectProgress(effect);
-    ctx.strokeStyle = `rgba(126, 232, 255, ${1 - progress})`;
+    ctx.strokeStyle = `rgba(170, 132, 255, ${1 - progress})`;
     ctx.lineWidth = Math.max(1.5, 2 / layout.dpr);
     ctx.beginPath();
-    ctx.arc(center.x, center.y, layout.cellSize * (0.35 + progress * 2), 0, Math.PI * 2);
+    ctx.ellipse(
+      center.x,
+      center.y,
+      layout.tileWidth * (0.35 + progress * 0.8),
+      layout.tileHeight * (0.35 + progress * 0.8),
+      0,
+      0,
+      Math.PI * 2,
+    );
     ctx.stroke();
   }
 }
@@ -194,21 +196,19 @@ function drawFloatingGold(
 ): void {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `800 ${Math.max(11, layout.cellSize * 0.32)}px system-ui, sans-serif`;
+  ctx.font = `900 ${Math.max(11, layout.tileWidth * 0.28)}px system-ui, sans-serif`;
   for (const pop of gold) {
     if (
       !isRenderablePoint(layout, pop.position)
       || !Number.isFinite(pop.value)
       || !Number.isFinite(pop.ageSeconds)
       || pop.ageSeconds >= 0.9
-    ) {
-      continue;
-    }
+    ) continue;
     const center = worldToScreen(layout, pop.position);
     const age = Math.max(0, pop.ageSeconds);
     ctx.globalAlpha = Math.max(0, 1 - age / 0.9);
     ctx.fillStyle = '#ffe27a';
-    ctx.fillText(`+${Math.max(0, Math.round(pop.value))}`, center.x, center.y - age * layout.cellSize);
+    ctx.fillText(`+${Math.max(0, Math.round(pop.value))}`, center.x, center.y - age * layout.tileWidth);
   }
   ctx.globalAlpha = 1;
 }
@@ -216,11 +216,8 @@ function drawFloatingGold(
 export function drawGroundEffects(
   ctx: CanvasRenderingContext2D,
   layout: CanvasLayout,
-  snapshot: EffectSnapshot,
-  timeSeconds: number,
   effects: readonly RuntimeEffect[],
 ): void {
-  drawSlowAuras(ctx, layout, snapshot.towers, timeSeconds);
   drawSlowPulses(ctx, layout, effects);
 }
 
@@ -230,10 +227,49 @@ export function drawForegroundEffects(
   snapshot: EffectSnapshot,
   floatingGold: readonly FloatingGold[],
   effects: readonly RuntimeEffect[],
+  assets: GameAssets,
+  timeSeconds: number,
 ): void {
-  drawProjectiles(ctx, layout, snapshot.projectiles);
-  for (const effect of effects) drawRuntimeEffect(ctx, layout, effect);
+  drawProjectiles(ctx, layout, snapshot, assets, timeSeconds);
+  for (const effect of effects) drawRuntimeEffect(ctx, layout, effect, assets);
   drawFloatingGold(ctx, layout, floatingGold);
+}
+
+export function drawBossPresentation(
+  ctx: CanvasRenderingContext2D,
+  layout: CanvasLayout,
+  bossSpawnedAtSeconds: number | null | undefined,
+  timeSeconds: number,
+): void {
+  if (bossSpawnedAtSeconds === null || bossSpawnedAtSeconds === undefined) return;
+  const age = timeSeconds - bossSpawnedAtSeconds;
+  if (!Number.isFinite(age) || age < 0 || age > 1.4) return;
+  const visibility = Math.sin(Math.min(1, age / 1.4) * Math.PI);
+  const gradient = ctx.createRadialGradient(
+    layout.gameArea.x + layout.gameArea.width / 2,
+    layout.gameArea.y + layout.gameArea.height / 2,
+    layout.gameArea.height * 0.12,
+    layout.gameArea.x + layout.gameArea.width / 2,
+    layout.gameArea.y + layout.gameArea.height / 2,
+    layout.gameArea.width * 0.62,
+  );
+  gradient.addColorStop(0, 'rgba(98, 42, 132, 0)');
+  gradient.addColorStop(1, `rgba(72, 20, 104, ${0.66 * visibility})`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(layout.gameArea.x, layout.gameArea.y, layout.gameArea.width, layout.gameArea.height);
+
+  const bannerWidth = Math.min(layout.gameArea.width * 0.68, 430);
+  const bannerX = layout.gameArea.x + (layout.gameArea.width - bannerWidth) / 2;
+  const bannerY = layout.gameArea.y + 12;
+  ctx.fillStyle = `rgba(78, 35, 103, ${0.88 * visibility})`;
+  ctx.beginPath();
+  ctx.roundRect(bannerX, bannerY, bannerWidth, 44, 22);
+  ctx.fill();
+  ctx.fillStyle = `rgba(250, 226, 255, ${visibility})`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `900 ${Math.max(17, layout.tileWidth * 0.5)}px system-ui, sans-serif`;
+  ctx.fillText('보스가 나타났어요!', bannerX + bannerWidth / 2, bannerY + 22);
 }
 
 export function drawPauseOverlay(
@@ -246,19 +282,6 @@ export function drawPauseOverlay(
   ctx.fillStyle = '#fff9e8';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `800 ${Math.max(18, layout.cellSize * 0.72)}px system-ui, sans-serif`;
+  ctx.font = `800 ${Math.max(18, layout.tileWidth * 0.72)}px system-ui, sans-serif`;
   ctx.fillText('일시정지', gameArea.x + gameArea.width / 2, gameArea.y + gameArea.height / 2);
-}
-
-export function drawOrientationPrompt(
-  ctx: CanvasRenderingContext2D,
-  layout: CanvasLayout,
-): void {
-  ctx.fillStyle = 'rgba(24, 42, 34, 0.86)';
-  ctx.fillRect(0, 0, layout.viewport.width, layout.viewport.height);
-  ctx.fillStyle = '#fff9e8';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `800 ${Math.max(18, layout.viewport.width * 0.055)}px system-ui, sans-serif`;
-  ctx.fillText('가로 화면으로 돌려 주세요', layout.viewport.width / 2, layout.viewport.height / 2);
 }

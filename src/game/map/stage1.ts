@@ -34,6 +34,14 @@ function expandPath(waypoints: readonly Cell[]): Cell[] {
 const pathCells = expandPath(WAYPOINTS);
 const pathCellKeys = new Set(pathCells.map(({ col, row }) => `${col}:${row}`));
 
+function isRoadAdjacentCell(cell: Readonly<Cell>): boolean {
+  return pathCells.some((pathCell) => {
+    const colDistance = Math.abs(pathCell.col - cell.col);
+    const rowDistance = Math.abs(pathCell.row - cell.row);
+    return Math.max(colDistance, rowDistance) === 1;
+  });
+}
+
 function isBuildableCell(cell: Cell, occupiedCells: readonly Cell[]): boolean {
   const isInBounds = Number.isInteger(cell.col)
     && Number.isInteger(cell.row)
@@ -41,7 +49,11 @@ function isBuildableCell(cell: Cell, occupiedCells: readonly Cell[]): boolean {
     && cell.col < GRID_WIDTH
     && cell.row >= 0
     && cell.row < GRID_HEIGHT;
-  if (!isInBounds || pathCellKeys.has(`${cell.col}:${cell.row}`)) {
+  if (
+    !isInBounds
+    || pathCellKeys.has(`${cell.col}:${cell.row}`)
+    || !isRoadAdjacentCell(cell)
+  ) {
     return false;
   }
 
@@ -52,5 +64,6 @@ export const STAGE_1 = {
   width: GRID_WIDTH,
   height: GRID_HEIGHT,
   pathCells,
+  isRoadAdjacentCell,
   isBuildableCell,
 };

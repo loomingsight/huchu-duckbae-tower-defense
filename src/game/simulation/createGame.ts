@@ -12,6 +12,7 @@ export type GameEnemy = {
   progress: number;
   speedMultiplier: number;
   rewarded: boolean;
+  lastHitAtSeconds: number | null;
 };
 
 export type GameTower = {
@@ -50,6 +51,7 @@ export type WaveState = {
 };
 
 export type GameState = {
+  elapsedSeconds: number;
   gold: number;
   baseHp: number;
   outcome: Outcome;
@@ -61,10 +63,18 @@ export type GameState = {
   nextProjectileId: number;
   hitEvents: GameHitEvent[];
   wave: WaveState;
+  bossSpawnedAtSeconds: number | null;
+  stats: {
+    defeatedEnemies: number;
+    leakedEnemies: number;
+    completedWaves: number;
+    bossDefeated: boolean;
+  };
 };
 
 export function createGame(_seed?: number): GameState {
   return {
+    elapsedSeconds: 0,
     gold: 450,
     baseHp: 20,
     outcome: 'playing',
@@ -83,6 +93,13 @@ export function createGame(_seed?: number): GameState {
       delayRemaining: 0,
       delayActive: false,
       allSpawned: false,
+    },
+    bossSpawnedAtSeconds: null,
+    stats: {
+      defeatedEnemies: 0,
+      leakedEnemies: 0,
+      completedWaves: 0,
+      bossDefeated: false,
     },
   };
 }

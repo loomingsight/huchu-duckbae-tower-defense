@@ -17,7 +17,11 @@ export function spawnEnemy(state: GameState, type: EnemyType, waveIndex: number)
     progress: 0,
     speedMultiplier: 1,
     rewarded: false,
+    lastHitAtSeconds: null,
   });
+  if (type === 'minotaur' && state.bossSpawnedAtSeconds === null) {
+    state.bossSpawnedAtSeconds = state.elapsedSeconds;
+  }
   state.nextEnemyId += 1;
 }
 
@@ -54,6 +58,7 @@ export function updateWaves(state: GameState, dt: number): void {
       remaining = Math.max(0, remaining - state.wave.delayRemaining);
       state.wave.delayRemaining = 0;
       state.wave.delayActive = false;
+      state.stats.completedWaves = Math.max(state.stats.completedWaves, state.wave.index + 1);
       state.wave.index += 1;
       state.wave.groupIndex = 0;
       state.wave.spawnedInGroup = 0;

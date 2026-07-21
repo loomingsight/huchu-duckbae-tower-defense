@@ -10,10 +10,10 @@ import {
 describe('mobile HUD view', () => {
   it('exposes the four tower names, role icons, and prices', () => {
     expect(TOWER_CARDS).toEqual([
-      { type: 'slow', name: '느림 장판', roleIcon: '🌀', cost: 80 },
+      { type: 'slow', name: '슬로우 타워', roleIcon: '🌀', cost: 80 },
       { type: 'arrow', name: '화살 타워', roleIcon: '🏹', cost: 100 },
-      { type: 'deokbae', name: '덕배 타워', roleIcon: '🔥', cost: 250 },
-      { type: 'huchu', name: '후추 타워', roleIcon: '💧', cost: 300 },
+      { type: 'deokbae', name: '덕배', roleIcon: '🔥', cost: 250 },
+      { type: 'huchu', name: '후추', roleIcon: '💧', cost: 300 },
     ]);
   });
 

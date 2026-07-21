@@ -14,6 +14,8 @@ export function updateEnemies(state: GameState, dt: number): void {
       if (!enemy.rewarded) {
         state.gold += definition.reward;
         enemy.rewarded = true;
+        state.stats.defeatedEnemies += 1;
+        if (enemy.type === 'minotaur') state.stats.bossDefeated = true;
       }
       continue;
     }
@@ -21,6 +23,7 @@ export function updateEnemies(state: GameState, dt: number): void {
     enemy.progress += definition.speed * enemy.speedMultiplier * safeDt;
     if (enemy.progress >= ROUTE_LENGTH) {
       state.baseHp = Math.max(0, state.baseHp - definition.leak);
+      state.stats.leakedEnemies += 1;
       continue;
     }
 

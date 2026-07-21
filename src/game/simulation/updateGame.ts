@@ -11,6 +11,7 @@ export function updateGame(state: GameState, dt: number): void {
   if (state.outcome !== 'playing') return;
 
   const safeDt = Number.isFinite(dt) && dt >= 0 ? dt : 0;
+  state.elapsedSeconds += safeDt;
   const hadEnemies = state.enemies.length > 0;
   updateSlow(state);
   updateTowers(state, safeDt);
@@ -30,6 +31,7 @@ export function updateGame(state: GameState, dt: number): void {
   updateWaves(state, clearedCompletedWave ? 0 : safeDt);
 
   if (state.outcome === 'playing' && state.wave.allSpawned && state.enemies.length === 0) {
+    state.stats.completedWaves = STAGE_1_WAVES.length;
     state.outcome = 'victory';
   }
 }
