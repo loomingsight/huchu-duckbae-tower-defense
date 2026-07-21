@@ -9,7 +9,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "check": "npm run test && npm run build"
+    "check": "npm run test && npm run build",
+    "assets:preview:validate": "node tools/assets/validateRedesignPreview.mjs",
+    "assets:preview:sheet": "node tools/assets/buildRedesignPreviewSheet.mjs"
   },
   "devDependencies": {
     "@playwright/test": "^1.52.0",
