@@ -5,6 +5,7 @@ import {
   createModalFocusManager,
   GAME_NAME,
   TOWER_CARDS,
+  towerCardAvailability,
   type ModalFocusTarget,
 } from '../../src/app/hud';
 
@@ -20,6 +21,32 @@ describe('mobile HUD view', () => {
       { type: 'deokbae', name: '덕배', roleIcon: '🔥', cost: 250 },
       { type: 'huchu', name: '후추', roleIcon: '💧', cost: 300 },
     ]);
+  });
+
+  it('disables unaffordable tower cards at the exact cost boundary', () => {
+    expect(towerCardAvailability({
+      gold: 99,
+      phase: 'playing',
+      portraitBlocked: false,
+    }, 100)).toEqual({ disabled: true, unaffordable: true });
+    expect(towerCardAvailability({
+      gold: 100,
+      phase: 'playing',
+      portraitBlocked: false,
+    }, 100)).toEqual({ disabled: false, unaffordable: false });
+  });
+
+  it('keeps tower cards disabled outside active landscape play', () => {
+    expect(towerCardAvailability({
+      gold: 100,
+      phase: 'paused',
+      portraitBlocked: false,
+    }, 100).disabled).toBe(true);
+    expect(towerCardAvailability({
+      gold: 100,
+      phase: 'playing',
+      portraitBlocked: true,
+    }, 100).disabled).toBe(true);
   });
 
   it('formats live values and accessible control states', () => {

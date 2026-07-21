@@ -40,6 +40,19 @@ export type HudView = Readonly<{
   towerControlsDisabled: boolean;
 }>;
 
+export function towerCardAvailability(
+  input: Pick<HudViewInput, 'gold' | 'phase' | 'portraitBlocked'>,
+  cost: number,
+): Readonly<{ disabled: boolean; unaffordable: boolean }> {
+  const unaffordable = !Number.isFinite(input.gold)
+    || !Number.isFinite(cost)
+    || input.gold < cost;
+  return {
+    unaffordable,
+    disabled: input.portraitBlocked || input.phase !== 'playing' || unaffordable,
+  };
+}
+
 function wholeNumber(value: number): string {
   return String(Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0);
 }
@@ -348,10 +361,11 @@ export function renderHud(
   for (const card of TOWER_CARDS) {
     const button = elements.towerButtons[card.type];
     const isSelected = selectedTower === card.type;
-    button.disabled = view.towerControlsDisabled;
+    const availability = towerCardAvailability(input, card.cost);
+    button.disabled = availability.disabled;
     button.setAttribute('aria-pressed', String(isSelected));
     button.classList.toggle('tower-card--selected', isSelected);
-    button.classList.toggle('tower-card--unaffordable', input.gold < card.cost);
+    button.classList.toggle('tower-card--unaffordable', availability.unaffordable);
   }
 }
 
