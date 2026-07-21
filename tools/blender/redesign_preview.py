@@ -1,18 +1,20 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
 import math
 import os
 import re
 import shutil
+import stat
 import sys
 import tempfile
 from pathlib import Path
 
 import bpy
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 
 REPO = Path(__file__).resolve().parents[2]
@@ -25,10 +27,13 @@ OWNER = "v1"
 SCENE_NAME = "TDPreview_v1"
 GROUP_NAME = "TDPreview_Group_map"
 TOWER_GROUP_NAME = "TDPreview_Group_tower"
+MOTION_GROUP_NAME = "TDPreview_Group_motion"
 RIG_COLLECTION_NAME = "TDPreview_Rig_v1"
 MATERIAL_PREFIX = "TDPreview_map_v1__"
 TOWER_MATERIAL_PREFIX = "TDPreview_tower_v1__"
+MOTION_MATERIAL_PREFIX = "TDPreview_motion_v1__"
 TOWER_GROUND_Z = 0.20
+MOTION_ROOT_YAW = math.radians(225.0)
 
 CAMERA_SPEC = {
     "name": "TD_Preview_Camera",
@@ -924,6 +929,59 @@ TOWER_ASSETS = {
     "towers/huchu-se.png": ("character-assets-v2.blend", huchu_predicate),
 }
 
+MOTION_ASSETS = {
+    "motion/orc-walk-se.png": ("orc", 6),
+    "motion/fairy-fly-se.png": ("fairy", 8),
+}
+
+MOTION_REQUIRED_OBJECTS = {
+    "orc": {
+        "Enemy_Orc_Root": ("EMPTY", None),
+        "Enemy_Orc_Body": ("EMPTY", "Enemy_Orc_Root"),
+        "Enemy_Orc_VFX": ("EMPTY", "Enemy_Orc_Root"),
+        "Orc_Arm_L": ("MESH", "Enemy_Orc_Body"),
+        "Orc_Arm_R": ("MESH", "Enemy_Orc_Body"),
+        "Orc_Fist_L": ("MESH", "Enemy_Orc_Body"),
+        "Orc_Fist_R": ("MESH", "Enemy_Orc_Body"),
+        "Orc_Leg_L": ("MESH", "Enemy_Orc_Body"),
+        "Orc_Leg_R": ("MESH", "Enemy_Orc_Body"),
+        "Orc_Foot_L": ("MESH", "Enemy_Orc_Body"),
+        "Orc_Foot_R": ("MESH", "Enemy_Orc_Body"),
+        "Orc_Club_End": ("MESH", "Enemy_Orc_Body"),
+        "Orc_Club_Grip": ("MESH", "Enemy_Orc_Body"),
+        "Orc_Club_Head": ("MESH", "Enemy_Orc_Body"),
+    },
+    "fairy": {
+        "Enemy_Fairy_Root": ("EMPTY", None),
+        "Enemy_Fairy_Body": ("EMPTY", "Enemy_Fairy_Root"),
+        "Enemy_Fairy_VFX": ("EMPTY", "Enemy_Fairy_Root"),
+        "Fairy_Wing_LL": ("MESH", "Enemy_Fairy_VFX"),
+        "Fairy_Wing_LR": ("MESH", "Enemy_Fairy_VFX"),
+        "Fairy_Wing_UL": ("MESH", "Enemy_Fairy_VFX"),
+        "Fairy_Wing_UR": ("MESH", "Enemy_Fairy_VFX"),
+    },
+}
+
+ORC_PIVOT_MEMBERS = {
+    "shoulder_l": ("Orc_Arm_L", "Orc_Fist_L"),
+    "shoulder_r": (
+        "Orc_Arm_R",
+        "Orc_Fist_R",
+        "Orc_Club_End",
+        "Orc_Club_Grip",
+        "Orc_Club_Head",
+    ),
+    "hip_l": ("Orc_Leg_L", "Orc_Foot_L"),
+    "hip_r": ("Orc_Leg_R", "Orc_Foot_R"),
+}
+
+FAIRY_WINGS = (
+    "Fairy_Wing_LL",
+    "Fairy_Wing_LR",
+    "Fairy_Wing_UL",
+    "Fairy_Wing_UR",
+)
+
 
 def append_selected_objects(
     blend_path: Path,
@@ -931,7 +989,7 @@ def append_selected_objects(
     collection_name: str,
 ) -> list[bpy.types.Object]:
     if bpy.data.collections.get(collection_name) is not None:
-        raise AssertionError(f"Tower asset collection already exists: {collection_name}")
+        raise AssertionError(f"Preview asset collection already exists: {collection_name}")
     with bpy.data.libraries.load(str(blend_path), link=False) as (source, target):
         selected_names = [name for name in source.objects if predicate(name)]  # type: ignore[operator]
         target.objects = selected_names
@@ -1031,28 +1089,50 @@ def _tower_collection_for(objects: list[bpy.types.Object]) -> bpy.types.Collecti
     return next(iter(collections))
 
 
-def fit_objects_to_tile(
+def _owned_asset_collection_for(
     objects: list[bpy.types.Object],
-    target_width: float = 2.45,
-    target_height: float = 2.65,
-) -> None:
+    group: str,
+) -> bpy.types.Collection:
+    collections = {
+        collection
+        for obj in objects
+        for collection in obj.users_collection
+        if collection.get("td_preview_owner") == OWNER
+        and collection.get("td_preview_group") == group
+        and isinstance(collection.get("td_preview_asset"), str)
+    }
+    if len(collections) != 1:
+        raise AssertionError(
+            f"{group} objects must share exactly one owned asset collection"
+        )
+    return next(iter(collections))
+
+
+def _owned_asset_slug(collection: bpy.types.Collection, group: str) -> str:
+    relative_path = collection.get("td_preview_asset")
+    assets = TOWER_ASSETS if group == "tower" else MOTION_ASSETS if group == "motion" else None
+    if not isinstance(relative_path, str) or assets is None or relative_path not in assets:
+        raise AssertionError(f"Invalid {group} asset collection identity: {collection.name}")
+    return Path(relative_path).stem.replace("-", "_")
+
+
+def _fit_objects_to_owned_collection(
+    objects: list[bpy.types.Object],
+    target_width: float,
+    target_height: float,
+    group: str,
+) -> bpy.types.Object:
     if target_width <= 0 or target_height <= 0:
-        raise AssertionError("Tower fit targets must be positive")
-    collection = _tower_collection_for(objects)
-    minimum, maximum = mesh_bounds(objects)
-    extent = maximum - minimum
-    widest = max(extent.x, extent.y)
-    if widest <= 0 or extent.z <= 0:
-        raise AssertionError("Tower source has degenerate bounds")
-    scale = min(target_width / widest, target_height / extent.z)
-    slug = _tower_asset_slug(collection)
-    root = bpy.data.objects.new(f"TDPreview_tower_{slug}__FitRoot", None)
-    _tag(root, "tower")
+        raise AssertionError(f"{group} fit targets must be positive")
+    collection = _owned_asset_collection_for(objects, group)
+    slug = _owned_asset_slug(collection, group)
+    root = bpy.data.objects.new(f"TDPreview_{group}_{slug}__FitRoot", None)
+    _tag(root, group)
     collection.objects.link(root)
     object_set = set(objects)
     roots = [obj for obj in objects if obj.parent not in object_set]
     if not roots:
-        raise AssertionError("Tower source hierarchy has no top-level root")
+        raise AssertionError(f"{group} source hierarchy has no top-level root")
     parent_edges = {
         obj: obj.parent
         for obj in objects
@@ -1062,8 +1142,15 @@ def fit_objects_to_tile(
         world_transform = obj.matrix_world.copy()
         obj.parent = root
         obj.matrix_world = world_transform
+    bpy.context.view_layer.update()
     if any(obj.parent is not parent for obj, parent in parent_edges.items()):
-        raise AssertionError("Tower fit flattened a source parent edge")
+        raise AssertionError(f"{group} fit flattened a source parent edge")
+    minimum, maximum = mesh_bounds(objects)
+    extent = maximum - minimum
+    widest = max(extent.x, extent.y)
+    if widest <= 0 or extent.z <= 0:
+        raise AssertionError(f"{group} source has degenerate bounds")
+    scale = min(target_width / widest, target_height / extent.z)
     root.scale = (scale, scale, scale)
     bpy.context.view_layer.update()
     minimum, maximum = mesh_bounds(objects)
@@ -1073,6 +1160,20 @@ def fit_objects_to_tile(
         TOWER_GROUND_Z - minimum.z,
     )
     bpy.context.view_layer.update()
+    return root
+
+
+def fit_objects_to_tile(
+    objects: list[bpy.types.Object],
+    target_width: float = 2.45,
+    target_height: float = 2.65,
+) -> None:
+    _fit_objects_to_owned_collection(
+        objects,
+        target_width,
+        target_height,
+        "tower",
+    )
 
 
 def _tower_asset_collection_name(relative_path: str) -> str:
@@ -1739,6 +1840,859 @@ def render_tower_group(scene: bpy.types.Scene) -> dict[str, object]:
     }
 
 
+def _motion_asset_collection_name(relative_path: str) -> str:
+    return "TDPreview_motion_" + Path(relative_path).stem.replace("-", "_")
+
+
+def _motion_source_name(obj: bpy.types.Object) -> str:
+    source_name = obj.get("td_preview_source_name")
+    return source_name if isinstance(source_name, str) else obj.name
+
+
+def _motion_object(
+    collection: bpy.types.Collection,
+    source_name: str,
+) -> bpy.types.Object:
+    matches = [
+        obj
+        for obj in collection.objects
+        if _motion_source_name(obj) == source_name
+    ]
+    if len(matches) != 1:
+        raise AssertionError(
+            f"Expected one motion object {source_name}, found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _has_ancestor(obj: bpy.types.Object, ancestor: bpy.types.Object) -> bool:
+    current = obj.parent
+    while current is not None:
+        if current is ancestor:
+            return True
+        current = current.parent
+    return False
+
+
+def _assert_motion_inventory(
+    kind: str,
+    objects: list[bpy.types.Object],
+) -> dict[str, bpy.types.Object]:
+    manifest = MOTION_REQUIRED_OBJECTS.get(kind)
+    if manifest is None:
+        raise AssertionError(f"Unknown motion inventory kind: {kind}")
+    by_name = {_motion_source_name(obj): obj for obj in objects}
+    missing = sorted(set(manifest) - set(by_name))
+    if missing:
+        raise AssertionError(f"Missing {kind} motion objects: {missing}")
+    for name, (expected_type, expected_parent) in manifest.items():
+        obj = by_name[name]
+        if obj.type != expected_type:
+            raise AssertionError(
+                f"{kind} motion type mismatch for {name}: "
+                f"expected={expected_type} actual={obj.type}"
+            )
+        actual_parent = _motion_source_name(obj.parent) if obj.parent is not None else None
+        if actual_parent != expected_parent:
+            raise AssertionError(
+                f"{kind} source hierarchy mismatch for {name}: "
+                f"expected={expected_parent} actual={actual_parent}"
+            )
+        if obj.hide_render:
+            raise AssertionError(f"{kind} required object is hidden: {name}")
+    body = by_name[f"Enemy_{kind.title()}_Body"]
+    visible_body_meshes = [
+        obj
+        for obj in objects
+        if obj.type == "MESH" and not obj.hide_render and _has_ancestor(obj, body)
+    ]
+    if not visible_body_meshes:
+        raise AssertionError(f"{kind} body transform root has no visible mesh descendants")
+    return by_name
+
+
+def _stable_motion_name(slug: str, original: str) -> str:
+    safe_original = re.sub(r"[^A-Za-z0-9_]+", "_", original).strip("_")
+    return f"TDPreview_motion_{slug}__{safe_original}"
+
+
+def _tag_motion_dependencies(
+    objects: list[bpy.types.Object],
+    collection: bpy.types.Collection,
+) -> None:
+    slug = _owned_asset_slug(collection, "motion")
+    original_names = {obj: obj.name for obj in objects}
+    for obj, original in original_names.items():
+        obj["td_preview_source_name"] = original
+        _tag(obj, "motion")
+        desired = _stable_motion_name(slug, original)
+        occupied = bpy.data.objects.get(desired)
+        if occupied is not None and occupied is not obj:
+            raise AssertionError(f"Motion object name is occupied: {desired}")
+        obj.name = desired
+    seen_data: set[object] = set()
+    seen_materials: set[bpy.types.Material] = set()
+    for obj in objects:
+        if obj.data is not None and obj.data not in seen_data:
+            seen_data.add(obj.data)
+            original = obj.data.name
+            owner = obj.data.get("td_preview_owner")
+            if owner not in (None, OWNER):
+                raise AssertionError(f"Foreign data on motion object: {obj.name}")
+            _tag(obj.data, "motion")
+            obj.data.name = _stable_motion_name(
+                slug,
+                f"data_{len(seen_data):02d}_{original}",
+            )
+        for slot in obj.material_slots:
+            material = slot.material
+            if material is None or material in seen_materials:
+                continue
+            seen_materials.add(material)
+            owner = material.get("td_preview_owner")
+            if owner not in (None, OWNER):
+                raise AssertionError(f"Foreign material on motion object: {material.name}")
+            original = material.name
+            _tag(material, "motion")
+            material.name = _stable_motion_name(
+                slug,
+                f"material_{len(seen_materials):02d}_{original}",
+            ).replace("TDPreview_motion_", MOTION_MATERIAL_PREFIX, 1)
+
+
+def _remove_unused_owned_motion_data() -> None:
+    for datablocks in (bpy.data.meshes, bpy.data.curves, bpy.data.armatures, bpy.data.materials):
+        for block in list(datablocks):
+            if (
+                block.get("td_preview_owner") == OWNER
+                and block.get("td_preview_group") == "motion"
+                and block.users == 0
+            ):
+                datablocks.remove(block)
+
+
+def _prepare_motion_group(scene: bpy.types.Scene) -> bpy.types.Collection:
+    existing = bpy.data.collections.get(MOTION_GROUP_NAME)
+    if existing is not None:
+        _remove_owned_collection(existing, "motion")
+        _remove_unused_owned_motion_data()
+    group = bpy.data.collections.new(MOTION_GROUP_NAME)
+    _tag(group, "motion")
+    _link_child(scene.collection, group)
+    return group
+
+
+def _matrix_max_delta(left: object, right: object) -> float:
+    return max(
+        abs(float(left[row][column]) - float(right[row][column]))  # type: ignore[index]
+        for row in range(4)
+        for column in range(4)
+    )
+
+
+def _snapshot_motion_transforms(
+    objects: object,
+) -> dict[bpy.types.Object, dict[str, object]]:
+    return {
+        obj: {
+            "parent": obj.parent,
+            "parent_type": obj.parent_type,
+            "parent_bone": obj.parent_bone,
+            "matrix_parent_inverse": obj.matrix_parent_inverse.copy(),
+            "matrix_basis": obj.matrix_basis.copy(),
+            "rotation_mode": obj.rotation_mode,
+            "location": obj.location.copy(),
+            "rotation_euler": obj.rotation_euler.copy(),
+            "rotation_quaternion": obj.rotation_quaternion.copy(),
+            "rotation_axis_angle": tuple(obj.rotation_axis_angle),
+            "scale": obj.scale.copy(),
+        }
+        for obj in objects  # type: ignore[union-attr]
+    }
+
+
+def _restore_motion_transforms(
+    snapshot: dict[bpy.types.Object, dict[str, object]],
+) -> None:
+    for obj, state in snapshot.items():
+        obj.parent = state["parent"]  # type: ignore[assignment]
+        obj.parent_type = str(state["parent_type"])
+        obj.parent_bone = str(state["parent_bone"])
+    bpy.context.view_layer.update()
+    for obj, state in snapshot.items():
+        obj.rotation_mode = str(state["rotation_mode"])
+        obj.matrix_parent_inverse = state["matrix_parent_inverse"].copy()  # type: ignore[union-attr]
+        obj.matrix_basis = state["matrix_basis"].copy()  # type: ignore[union-attr]
+        obj.location = state["location"]  # type: ignore[assignment]
+        obj.scale = state["scale"]  # type: ignore[assignment]
+        if obj.rotation_mode == "QUATERNION":
+            obj.rotation_quaternion = state["rotation_quaternion"]  # type: ignore[assignment]
+        elif obj.rotation_mode == "AXIS_ANGLE":
+            obj.rotation_axis_angle = state["rotation_axis_angle"]  # type: ignore[assignment]
+        else:
+            obj.rotation_euler = state["rotation_euler"]  # type: ignore[assignment]
+    bpy.context.view_layer.update()
+
+
+def _reparent_preserve_world(
+    obj: bpy.types.Object,
+    parent: bpy.types.Object,
+) -> None:
+    world = obj.matrix_world.copy()
+    obj.parent = parent
+    obj.parent_type = "OBJECT"
+    obj.parent_bone = ""
+    obj.matrix_parent_inverse = parent.matrix_world.inverted_safe()
+    obj.matrix_world = world
+    bpy.context.view_layer.update()
+    if _matrix_max_delta(obj.matrix_world, world) > 1e-6:
+        raise AssertionError(f"World transform changed while parenting {obj.name}")
+
+
+def _new_motion_empty(
+    collection: bpy.types.Collection,
+    name: str,
+    parent: bpy.types.Object,
+    parent_local_location: Vector,
+) -> bpy.types.Object:
+    obj = bpy.data.objects.new(name, None)
+    _tag(obj, "motion")
+    collection.objects.link(obj)
+    obj.parent = parent
+    obj.parent_type = "OBJECT"
+    obj.parent_bone = ""
+    obj.matrix_parent_inverse = Matrix.Identity(4)
+    obj.matrix_basis = Matrix.Translation(parent_local_location)
+    bpy.context.view_layer.update()
+    if set(obj.users_collection) != {collection}:
+        raise AssertionError(f"Motion pivot escaped its asset collection: {name}")
+    return obj
+
+
+def _mesh_points_in_parent_space(
+    obj: bpy.types.Object,
+    parent: bpy.types.Object,
+) -> list[Vector]:
+    if obj.type != "MESH" or not obj.data.vertices:
+        raise AssertionError(f"Motion attachment object is not a populated mesh: {obj.name}")
+    transform = parent.matrix_world.inverted_safe() @ obj.matrix_world
+    return [transform @ vertex.co for vertex in obj.data.vertices]
+
+
+def _top_center_attachment(
+    obj: bpy.types.Object,
+    parent: bpy.types.Object,
+) -> Vector:
+    points = _mesh_points_in_parent_space(obj, parent)
+    return Vector((
+        (min(point.x for point in points) + max(point.x for point in points)) / 2.0,
+        (min(point.y for point in points) + max(point.y for point in points)) / 2.0,
+        max(point.z for point in points),
+    ))
+
+
+def _wing_inner_attachment(
+    wing: bpy.types.Object,
+    parent: bpy.types.Object,
+    side: str,
+) -> Vector:
+    points = _mesh_points_in_parent_space(wing, parent)
+    inner_x = max(point.x for point in points) if side == "L" else min(point.x for point in points)
+    candidates = [point for point in points if abs(point.x - inner_x) <= 1e-6]
+    if not candidates:
+        raise AssertionError(f"No inner-edge hinge vertices for {wing.name}")
+    return Vector((
+        inner_x,
+        sum(point.y for point in candidates) / len(candidates),
+        sum(point.z for point in candidates) / len(candidates),
+    ))
+
+
+def _orc_pose_components(frame: int, count: int) -> tuple[float, float]:
+    if count != 6 or frame not in range(count):
+        raise AssertionError("Orc walk requires frames 0..5")
+    phase = math.tau * frame / count
+    return (
+        math.radians(15.0) * math.sin(phase),
+        0.06 * (1.0 - math.cos(phase)) / 2.0,
+    )
+
+
+def _fairy_pose_components(frame: int, count: int) -> tuple[float, float]:
+    if count != 8 or frame not in range(count):
+        raise AssertionError("Fairy flight requires frames 0..7")
+    flap_phase = math.tau * 2.0 * frame / count
+    hover_phase = math.tau * frame / count + math.pi / 8.0
+    return (
+        math.radians(28.0) * math.sin(flap_phase),
+        0.10 * math.sin(hover_phase),
+    )
+
+
+def _matrix_signature(matrix: object) -> list[float]:
+    return [
+        round(float(matrix[row][column]), 7)  # type: ignore[index]
+        for row in range(4)
+        for column in range(4)
+    ]
+
+
+def _motion_geometry_metrics(
+    relative_path: str,
+    objects: list[bpy.types.Object],
+) -> dict[str, float]:
+    minimum, maximum = render_geometry_bounds(objects)
+    extent = maximum - minimum
+    if max(extent.x, extent.y) > 2.45001 or extent.z > 2.65001:
+        raise AssertionError(f"{relative_path} exceeds one-tile bounds: {minimum} {maximum}")
+    if abs((minimum.x + maximum.x) / 2.0) > 1e-5 or abs((minimum.y + maximum.y) / 2.0) > 1e-5:
+        raise AssertionError(f"{relative_path} is not centered before posing")
+    if abs(minimum.z - TOWER_GROUND_Z) > 1e-5:
+        raise AssertionError(f"{relative_path} is not grounded at {TOWER_GROUND_Z}")
+    return {
+        "width_x": round(float(extent.x), 6),
+        "width_y": round(float(extent.y), 6),
+        "height": round(float(extent.z), 6),
+        "ground_z": round(float(minimum.z), 6),
+    }
+
+
+def pack_frames(
+    frame_paths: object,
+    output_path: Path,
+    frame_size: int,
+) -> None:
+    paths = [Path(path) for path in frame_paths]  # type: ignore[union-attr]
+    if not paths or frame_size <= 0:
+        raise AssertionError("Frame packing requires positive, nonempty inputs")
+    images: list[bpy.types.Image] = []
+    sheet = None
+    try:
+        for path in paths:
+            image = bpy.data.images.load(str(path), check_existing=False)
+            images.append(image)
+            if tuple(image.size) != (frame_size, frame_size) or image.channels != 4:
+                raise AssertionError(
+                    f"Frame input is not {frame_size}x{frame_size} RGBA: {path}"
+                )
+        sheet_width = frame_size * len(images)
+        sheet = bpy.data.images.new(
+            "TDPreview_motion_FrameSheet",
+            width=sheet_width,
+            height=frame_size,
+            alpha=True,
+        )
+        target = [0.0] * (sheet_width * frame_size * 4)
+        for index, image in enumerate(images):
+            pixels = image.pixels[:]
+            for y in range(frame_size):
+                source_start = y * frame_size * 4
+                target_start = (y * sheet_width + index * frame_size) * 4
+                target[target_start:target_start + frame_size * 4] = pixels[
+                    source_start:source_start + frame_size * 4
+                ]
+        sheet.pixels.foreach_set(target)
+        sheet.update()
+        sheet.filepath_raw = str(output_path)
+        sheet.file_format = "PNG"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        sheet.save()
+    finally:
+        for image in images:
+            if image.name in bpy.data.images:
+                bpy.data.images.remove(image)
+        if sheet is not None and sheet.name in bpy.data.images:
+            bpy.data.images.remove(sheet)
+
+
+def _canonical_frame_digest(
+    pixels: object,
+    sheet_width: int,
+    frame_size: int,
+    frame: int,
+) -> str:
+    canonical = bytearray()
+    x_offset = frame * frame_size
+    for y in range(frame_size):
+        for x in range(frame_size):
+            offset = (y * sheet_width + x_offset + x) * 4
+            alpha = max(0.0, min(1.0, float(pixels[offset + 3])))  # type: ignore[index]
+            for channel in range(3):
+                value = max(0.0, min(1.0, float(pixels[offset + channel])))  # type: ignore[index]
+                canonical.append(round(value * alpha * 255.0))
+            canonical.append(round(alpha * 255.0))
+    return hashlib.sha256(canonical).hexdigest()
+
+
+def _validate_animation_png(
+    path: Path,
+    frame_size: int,
+    frame_count: int,
+) -> dict[str, object]:
+    image = None
+    try:
+        image = bpy.data.images.load(str(path), check_existing=False)
+        sheet_width = frame_size * frame_count
+        if tuple(image.size) != (sheet_width, frame_size):
+            raise AssertionError(
+                f"{path} has size {tuple(image.size)}, expected {(sheet_width, frame_size)}"
+            )
+        if image.channels != 4:
+            raise AssertionError(f"{path} is not RGBA: {image.channels} channels")
+        pixels = image.pixels[:]
+        frames: list[dict[str, object]] = []
+        for frame in range(frame_count):
+            visible_x: list[int] = []
+            visible_y: list[int] = []
+            x_offset = frame * frame_size
+            for y in range(frame_size):
+                for x in range(frame_size):
+                    alpha = pixels[(y * sheet_width + x_offset + x) * 4 + 3]
+                    if alpha > 1e-6:
+                        visible_x.append(x)
+                        visible_y.append(y)
+                    if (x in (0, frame_size - 1) or y in (0, frame_size - 1)) and alpha > 1e-6:
+                        raise AssertionError(f"{path} frame {frame} border is not transparent")
+            if not visible_x:
+                raise AssertionError(f"{path} frame {frame} has no visible pixels")
+            digest = _canonical_frame_digest(
+                pixels,
+                sheet_width,
+                frame_size,
+                frame,
+            )
+            frames.append({
+                "frame": frame,
+                "digest": digest,
+                "visible_pixels": len(visible_x),
+                "bounds": [min(visible_x), max(visible_x), min(visible_y), max(visible_y)],
+            })
+        digests = [str(frame["digest"]) for frame in frames]
+        if len(set(digests)) != frame_count:
+            raise AssertionError(f"{path} contains duplicate motion frames: {digests}")
+        return {"size": [sheet_width, frame_size], "channels": 4, "frames": frames}
+    finally:
+        if image is not None:
+            bpy.data.images.remove(image)
+
+
+def _remove_motion_frame_temp(temp: Path, frame_root: Path) -> None:
+    if temp.exists():
+        _remove_tree_exact(temp, temp, frame_root, "motion frame temp")
+    if frame_root.exists():
+        if any(frame_root.iterdir()):
+            raise AssertionError(f"Motion frame root contains unexpected residue: {frame_root}")
+        _assert_exact_path(frame_root, frame_root, frame_root.parent, "motion frame root")
+        frame_root.rmdir()
+
+
+def render_animation_sheet(
+    relative_path: str,
+    frame_count: int,
+    pose_frame: object,
+) -> dict[str, object]:
+    if _STAGING_ROOT is None:
+        raise AssertionError("No run staging root for motion frames")
+    expected = MOTION_ASSETS.get(relative_path)
+    if expected is None or expected[1] != frame_count:
+        raise AssertionError(f"Unknown motion sheet contract: {relative_path}/{frame_count}")
+    slug = Path(relative_path).stem
+    frame_root = _STAGING_ROOT / ".frames"
+    temp = frame_root / slug
+    if temp.exists():
+        raise AssertionError(f"Motion frame temp already exists: {temp}")
+    master_frames: list[Path] = []
+    mobile_frames: list[Path] = []
+    try:
+        (temp / "master").mkdir(parents=True, exist_ok=False)
+        (temp / "mobile").mkdir(parents=True, exist_ok=False)
+        for frame in range(frame_count):
+            restore = pose_frame(frame, frame_count)  # type: ignore[operator]
+            master_frame = temp / "master" / f"{frame:02d}.png"
+            mobile_frame = temp / "mobile" / f"{frame:02d}.png"
+            try:
+                render_still(master_frame)
+                resize_png(master_frame, mobile_frame, MOBILE_SIZE, MOBILE_SIZE)
+            finally:
+                if restore is not None:
+                    restore()  # type: ignore[operator]
+            master_frames.append(master_frame)
+            mobile_frames.append(mobile_frame)
+        master = _STAGING_ROOT / "master" / relative_path
+        mobile = _STAGING_ROOT / "mobile" / relative_path
+        pack_frames(master_frames, master, FRAME_SIZE)
+        pack_frames(mobile_frames, mobile, MOBILE_SIZE)
+        return {
+            "master": _validate_animation_png(master, FRAME_SIZE, frame_count),
+            "mobile": _validate_animation_png(mobile, MOBILE_SIZE, frame_count),
+        }
+    finally:
+        _remove_motion_frame_temp(temp, frame_root)
+
+
+def _clear_motion_asset_objects(collection: bpy.types.Collection) -> None:
+    for obj in list(collection.objects):
+        if obj.get("td_preview_owner") != OWNER or obj.get("td_preview_group") != "motion":
+            raise AssertionError(f"Refusing to remove foreign motion object {obj.name}")
+        bpy.data.objects.remove(obj, do_unlink=True)
+    _remove_unused_owned_motion_data()
+    if collection.objects or collection.children:
+        raise AssertionError(f"Motion asset cleanup left scene objects: {collection.name}")
+
+
+def _snapshot_motion_append_datablocks() -> dict[str, set[object]]:
+    return {
+        "objects": set(bpy.data.objects),
+        "collections": set(bpy.data.collections),
+        "meshes": set(bpy.data.meshes),
+        "curves": set(bpy.data.curves),
+        "armatures": set(bpy.data.armatures),
+        "materials": set(bpy.data.materials),
+    }
+
+
+def _rollback_failed_motion_append(snapshot: dict[str, set[object]]) -> None:
+    for obj in [block for block in bpy.data.objects if block not in snapshot["objects"]]:
+        bpy.data.objects.remove(obj, do_unlink=True)
+    for collection in [
+        block
+        for block in bpy.data.collections
+        if block not in snapshot["collections"]
+    ]:
+        bpy.data.collections.remove(collection)
+    for name, blocks in (
+        ("meshes", bpy.data.meshes),
+        ("curves", bpy.data.curves),
+        ("armatures", bpy.data.armatures),
+        ("materials", bpy.data.materials),
+    ):
+        for block in [item for item in blocks if item not in snapshot[name]]:
+            if block.users != 0:
+                raise AssertionError(
+                    f"Failed motion append left used {name} datablock: {block.name}"
+                )
+            blocks.remove(block)
+    residue = {
+        name: [block.name for block in blocks if block not in snapshot[name]]
+        for name, blocks in (
+            ("objects", bpy.data.objects),
+            ("collections", bpy.data.collections),
+            ("meshes", bpy.data.meshes),
+            ("curves", bpy.data.curves),
+            ("armatures", bpy.data.armatures),
+            ("materials", bpy.data.materials),
+        )
+    }
+    residue = {name: names for name, names in residue.items() if names}
+    if residue:
+        raise AssertionError(f"Failed motion append cleanup left datablocks: {residue}")
+
+
+def _append_motion_asset(
+    group: bpy.types.Collection,
+    relative_path: str,
+    kind: str,
+) -> tuple[bpy.types.Collection, list[bpy.types.Object], dict[str, bpy.types.Object]]:
+    title = kind.title()
+    collection_name = _motion_asset_collection_name(relative_path)
+    append_snapshot = _snapshot_motion_append_datablocks()
+    try:
+        objects = append_selected_objects(
+            REPO / "assets/blender/enemies-voxel-v1.blend",
+            lambda name: name.startswith(f"Enemy_{title}_") or name.startswith(f"{title}_"),
+            collection_name,
+        )
+        inventory = _assert_motion_inventory(kind, objects)
+        collection = bpy.data.collections[collection_name]
+        _tag(collection, "motion")
+        collection["td_preview_asset"] = relative_path
+        bpy.context.scene.collection.children.unlink(collection)
+        _link_child(group, collection)
+        _tag_motion_dependencies(objects, collection)
+        inventory = {_motion_source_name(obj): obj for obj in objects}
+        return collection, objects, inventory
+    except BaseException:
+        try:
+            _rollback_failed_motion_append(append_snapshot)
+        except BaseException as cleanup_error:
+            raise AssertionError("Failed to roll back partial motion append") from cleanup_error
+        raise
+
+
+def _rig_orc_motion(
+    collection: bpy.types.Collection,
+    inventory: dict[str, bpy.types.Object],
+) -> tuple[dict[str, bpy.types.Object], dict[str, list[float]]]:
+    body = inventory["Enemy_Orc_Body"]
+    pivots: dict[str, bpy.types.Object] = {}
+    attachments: dict[str, list[float]] = {}
+    for pivot_key, member_names in ORC_PIVOT_MEMBERS.items():
+        attachment = _top_center_attachment(inventory[member_names[0]], body)
+        attachments[pivot_key] = [round(float(value), 7) for value in attachment]
+        pivot = _new_motion_empty(
+            collection,
+            _stable_motion_name(Path(str(collection["td_preview_asset"])).stem.replace("-", "_"), f"Pivot_{pivot_key}"),
+            body,
+            attachment,
+        )
+        pivots[pivot_key] = pivot
+        for name in member_names:
+            _reparent_preserve_world(inventory[name], pivot)
+    for pivot_key, member_names in ORC_PIVOT_MEMBERS.items():
+        if any(inventory[name].parent is not pivots[pivot_key] for name in member_names):
+            raise AssertionError(f"Orc paired limb parenting failed: {pivot_key}")
+    return pivots, attachments
+
+
+def _rig_fairy_motion(
+    collection: bpy.types.Collection,
+    inventory: dict[str, bpy.types.Object],
+) -> tuple[bpy.types.Object, dict[str, bpy.types.Object], dict[str, list[float]]]:
+    root = inventory["Enemy_Fairy_Root"]
+    body = inventory["Enemy_Fairy_Body"]
+    vfx = inventory["Enemy_Fairy_VFX"]
+    slug = Path(str(collection["td_preview_asset"])).stem.replace("-", "_")
+    hover = _new_motion_empty(
+        collection,
+        _stable_motion_name(slug, "HoverRoot"),
+        root,
+        Vector((0.0, 0.0, 0.0)),
+    )
+    _reparent_preserve_world(body, hover)
+    _reparent_preserve_world(vfx, hover)
+    pivots: dict[str, bpy.types.Object] = {}
+    attachments: dict[str, list[float]] = {}
+    for name in FAIRY_WINGS:
+        wing = inventory[name]
+        side = name[-1]
+        attachment = _wing_inner_attachment(wing, vfx, side)
+        attachments[name] = [round(float(value), 7) for value in attachment]
+        pivot = _new_motion_empty(
+            collection,
+            _stable_motion_name(slug, f"Hinge_{name}"),
+            vfx,
+            attachment,
+        )
+        pivots[name] = pivot
+        _reparent_preserve_world(wing, pivot)
+    if body.parent is not hover or vfx.parent is not hover:
+        raise AssertionError("Fairy body and wing parent are not under one hover root")
+    if any(inventory[name].parent is not pivots[name] for name in FAIRY_WINGS):
+        raise AssertionError("Fairy wing hinge parenting failed")
+    return hover, pivots, attachments
+
+
+def _assert_motion_root_anchor(
+    root: bpy.types.Object,
+    expected_matrix: object,
+) -> None:
+    if abs(root.rotation_euler.z - MOTION_ROOT_YAW) > 1e-6:
+        raise AssertionError(f"Motion root yaw changed: {root.rotation_euler.z}")
+    if _matrix_max_delta(root.matrix_world, expected_matrix) > 1e-6:
+        raise AssertionError(f"Motion root anchor moved: {root.name}")
+
+
+def _render_orc_motion_asset(
+    collection: bpy.types.Collection,
+    objects: list[bpy.types.Object],
+    inventory: dict[str, bpy.types.Object],
+) -> dict[str, object]:
+    source_snapshot = _snapshot_motion_transforms(objects)
+    baseline = None
+    try:
+        root = inventory["Enemy_Orc_Root"]
+        root.rotation_mode = "XYZ"
+        root.rotation_euler.z = MOTION_ROOT_YAW
+        bpy.context.view_layer.update()
+        fit_root = _fit_objects_to_owned_collection(objects, 2.45, 2.65, "motion")
+        root.rotation_euler.z = MOTION_ROOT_YAW
+        bpy.context.view_layer.update()
+        geometry = _motion_geometry_metrics("motion/orc-walk-se.png", objects)
+        pivots, attachments = _rig_orc_motion(collection, inventory)
+        baseline_objects = [*objects, fit_root, *pivots.values()]
+        baseline = _snapshot_motion_transforms(baseline_objects)
+        root_anchor = root.matrix_world.copy()
+        body = inventory["Enemy_Orc_Body"]
+        traces: list[dict[str, object]] = []
+
+        def pose(frame: int, count: int) -> object:
+            _restore_motion_transforms(baseline)
+            swing, bob = _orc_pose_components(frame, count)
+            pivots["shoulder_l"].rotation_euler.x += swing
+            pivots["hip_r"].rotation_euler.x += swing
+            pivots["shoulder_r"].rotation_euler.x -= swing
+            pivots["hip_l"].rotation_euler.x -= swing
+            body.location.z += bob
+            bpy.context.view_layer.update()
+            _assert_motion_root_anchor(root, root_anchor)
+            traces.append({
+                "frame": frame,
+                "phase": round(math.tau * frame / count, 10),
+                "swing_degrees": round(math.degrees(swing), 10),
+                "bob": round(bob, 10),
+                "root": _matrix_signature(root.matrix_world),
+                "diagonal_a": round(pivots["shoulder_l"].rotation_euler.x, 10),
+                "diagonal_b": round(pivots["shoulder_r"].rotation_euler.x, 10),
+            })
+            return lambda: _restore_motion_transforms(baseline)
+
+        sheets = render_animation_sheet("motion/orc-walk-se.png", 6, pose)
+        _restore_motion_transforms(baseline)
+        _assert_motion_root_anchor(root, root_anchor)
+        return {
+            "geometry": geometry,
+            "root_yaw_radians": round(float(root.rotation_euler.z), 9),
+            "root_yaw_degrees": round(math.degrees(root.rotation_euler.z), 6),
+            "root_anchor": _matrix_signature(root_anchor),
+            "attachments": attachments,
+            "traces": traces,
+            "sheets": sheets,
+        }
+    finally:
+        if baseline is not None:
+            _restore_motion_transforms(baseline)
+        _restore_motion_transforms(source_snapshot)
+
+
+def _render_fairy_motion_asset(
+    collection: bpy.types.Collection,
+    objects: list[bpy.types.Object],
+    inventory: dict[str, bpy.types.Object],
+) -> dict[str, object]:
+    source_snapshot = _snapshot_motion_transforms(objects)
+    baseline = None
+    try:
+        root = inventory["Enemy_Fairy_Root"]
+        root.rotation_mode = "XYZ"
+        root.rotation_euler.z = MOTION_ROOT_YAW
+        bpy.context.view_layer.update()
+        fit_root = _fit_objects_to_owned_collection(objects, 2.45, 2.65, "motion")
+        root.rotation_euler.z = MOTION_ROOT_YAW
+        bpy.context.view_layer.update()
+        geometry = _motion_geometry_metrics("motion/fairy-fly-se.png", objects)
+        hover, pivots, attachments = _rig_fairy_motion(collection, inventory)
+        baseline_objects = [*objects, fit_root, hover, *pivots.values()]
+        baseline = _snapshot_motion_transforms(baseline_objects)
+        root_anchor = root.matrix_world.copy()
+        traces: list[dict[str, object]] = []
+
+        def pose(frame: int, count: int) -> object:
+            _restore_motion_transforms(baseline)
+            flap, hover_offset = _fairy_pose_components(frame, count)
+            for name, pivot in pivots.items():
+                pivot.rotation_euler.y += flap if name.endswith("L") else -flap
+            hover.location.z += hover_offset
+            bpy.context.view_layer.update()
+            _assert_motion_root_anchor(root, root_anchor)
+            traces.append({
+                "frame": frame,
+                "phase": round(math.tau * 2.0 * frame / count, 10),
+                "flap_degrees": round(math.degrees(flap), 10),
+                "hover": round(hover_offset, 10),
+                "root": _matrix_signature(root.matrix_world),
+                "left": round(pivots["Fairy_Wing_UL"].rotation_euler.y, 10),
+                "right": round(pivots["Fairy_Wing_UR"].rotation_euler.y, 10),
+            })
+            return lambda: _restore_motion_transforms(baseline)
+
+        sheets = render_animation_sheet("motion/fairy-fly-se.png", 8, pose)
+        _restore_motion_transforms(baseline)
+        _assert_motion_root_anchor(root, root_anchor)
+        return {
+            "geometry": geometry,
+            "root_yaw_radians": round(float(root.rotation_euler.z), 9),
+            "root_yaw_degrees": round(math.degrees(root.rotation_euler.z), 6),
+            "root_anchor": _matrix_signature(root_anchor),
+            "attachments": attachments,
+            "traces": traces,
+            "sheets": sheets,
+        }
+    finally:
+        if baseline is not None:
+            _restore_motion_transforms(baseline)
+        _restore_motion_transforms(source_snapshot)
+
+
+def _assert_motion_group_clean(group: bpy.types.Collection) -> None:
+    expected = {_motion_asset_collection_name(path) for path in MOTION_ASSETS}
+    if {collection.name for collection in group.children} != expected:
+        raise AssertionError("Motion group asset collection manifest mismatch")
+    for collection in group.children:
+        if (
+            collection.get("td_preview_owner") != OWNER
+            or collection.get("td_preview_group") != "motion"
+            or collection.objects
+            or collection.children
+        ):
+            raise AssertionError(f"Motion asset collection was not cleaned: {collection.name}")
+    residue = [
+        obj.name
+        for obj in bpy.data.objects
+        if obj.get("td_preview_owner") == OWNER
+        and obj.get("td_preview_group") == "motion"
+    ]
+    if residue:
+        raise AssertionError("Motion-owned temporary objects remain: " + ", ".join(residue))
+
+
+def render_motion_group(scene: bpy.types.Scene) -> dict[str, object]:
+    group = _prepare_motion_group(scene)
+    preserved_visibility = _snapshot_preview_render_visibility()
+    metrics: dict[str, object] = {}
+    visibility_audit: dict[str, list[str]] = {}
+    try:
+        for relative_path, (kind, _) in MOTION_ASSETS.items():
+            collection = None
+            objects: list[bpy.types.Object] = []
+            asset_visibility: dict[str, bool] | None = None
+            try:
+                collection, objects, inventory = _append_motion_asset(
+                    group,
+                    relative_path,
+                    kind,
+                )
+                asset_visibility = _snapshot_preview_render_visibility()
+                _isolate_preview_render_collection(group, collection)
+                visibility_audit[relative_path] = _assert_current_only_render_visibility(
+                    group,
+                    collection,
+                )
+                if kind == "orc":
+                    metrics[relative_path] = _render_orc_motion_asset(
+                        collection,
+                        objects,
+                        inventory,
+                    )
+                else:
+                    metrics[relative_path] = _render_fairy_motion_asset(
+                        collection,
+                        objects,
+                        inventory,
+                    )
+            finally:
+                if asset_visibility is not None:
+                    _restore_preview_render_visibility(asset_visibility)
+                if collection is not None:
+                    _clear_motion_asset_objects(collection)
+        _assert_motion_group_clean(group)
+    finally:
+        _restore_preview_render_visibility(preserved_visibility)
+    final_visibility = _snapshot_preview_render_visibility()
+    if any(final_visibility.get(name) != hidden for name, hidden in preserved_visibility.items()):
+        raise AssertionError("Previously persisted render visibility changed after motion renders")
+    if any(
+        final_visibility.get(collection.name) is not False
+        for collection in (group, *group.children)
+    ):
+        raise AssertionError("Motion collection visibility did not restore to visible")
+    group["render_visibility_audit"] = json.dumps(visibility_audit, sort_keys=True)
+    group["motion_metrics"] = json.dumps(metrics, sort_keys=True)
+    return {
+        "motion_metrics": metrics,
+        "render_visibility_audit": visibility_audit,
+    }
+
+
 def _validate_png(path: Path, expected_size: int) -> dict[str, int]:
     image = None
     try:
@@ -1781,8 +2735,15 @@ def _validate_png(path: Path, expected_size: int) -> dict[str, int]:
 
 
 def _expected_file_names(group: str = "map") -> set[str]:
-    builders = MAP_BUILDERS if group == "map" else TOWER_ASSETS
-    return {Path(relative_path).name for relative_path in builders}
+    if group == "map":
+        relative_paths = MAP_BUILDERS
+    elif group == "tower":
+        relative_paths = TOWER_ASSETS
+    elif group == "motion":
+        relative_paths = MOTION_ASSETS
+    else:
+        raise AssertionError(f"Unsupported preview group manifest: {group}")
+    return {Path(relative_path).name for relative_path in relative_paths}
 
 
 def _group_directory(group: str) -> str:
@@ -1790,18 +2751,20 @@ def _group_directory(group: str) -> str:
         return "map"
     if group == "tower":
         return "towers"
+    if group == "motion":
+        return "motion"
     raise AssertionError(f"Unsupported preview group directory: {group}")
 
 
 def _validate_render_tree(
     root: Path,
     group: str = "map",
-) -> dict[str, dict[str, dict[str, int]]]:
-    if group not in ("map", "tower"):
+) -> dict[str, dict[str, object]]:
+    if group not in ("map", "tower", "motion"):
         raise AssertionError(f"Unsupported render tree group: {group}")
     expected = _expected_file_names(group)
     group_directory = _group_directory(group)
-    result: dict[str, dict[str, dict[str, int]]] = {}
+    result: dict[str, dict[str, object]] = {}
     for variant, size in (("master", FRAME_SIZE), ("mobile", MOBILE_SIZE)):
         directory = root / variant / group_directory
         actual = {path.name for path in directory.glob("*.png")}
@@ -1809,20 +2772,30 @@ def _validate_render_tree(
             raise AssertionError(f"{variant} manifest mismatch: expected={sorted(expected)} actual={sorted(actual)}")
         if len(list(directory.iterdir())) != len(expected):
             raise AssertionError(f"{variant} {group_directory} directory contains non-manifest files")
-        result[variant] = {
-            name: _validate_png(directory / name, size)
-            for name in sorted(expected)
-        }
+        if group == "motion":
+            frame_counts = {
+                Path(relative_path).name: frame_count
+                for relative_path, (_, frame_count) in MOTION_ASSETS.items()
+            }
+            result[variant] = {
+                name: _validate_animation_png(directory / name, size, frame_counts[name])
+                for name in sorted(expected)
+            }
+        else:
+            result[variant] = {
+                name: _validate_png(directory / name, size)
+                for name in sorted(expected)
+            }
     return result
 
 
 def _assert_owned_data_integrity() -> dict[str, int]:
     counts: dict[str, int] = {}
     datablock_sets = (
-        ("mesh", bpy.data.meshes, {"map", "tower"}),
-        ("material", bpy.data.materials, {"map", "tower"}),
-        ("curve", bpy.data.curves, {"tower"}),
-        ("armature", bpy.data.armatures, {"tower"}),
+        ("mesh", bpy.data.meshes, {"map", "tower", "motion"}),
+        ("material", bpy.data.materials, {"map", "tower", "motion"}),
+        ("curve", bpy.data.curves, {"tower", "motion"}),
+        ("armature", bpy.data.armatures, {"tower", "motion"}),
         ("camera", bpy.data.cameras, {"common"}),
         ("light", bpy.data.lights, {"common"}),
     )
@@ -1860,7 +2833,12 @@ def _assert_owned_data_integrity() -> dict[str, int]:
                     for obj in users
                 ):
                     raise AssertionError(f"Owned material is linked to a foreign object: {block.name}")
-                expected_prefix = MATERIAL_PREFIX if group == "map" else TOWER_MATERIAL_PREFIX
+                if group == "map":
+                    expected_prefix = MATERIAL_PREFIX
+                elif group == "tower":
+                    expected_prefix = TOWER_MATERIAL_PREFIX
+                else:
+                    expected_prefix = MOTION_MATERIAL_PREFIX
                 if not block.name.startswith(expected_prefix):
                     raise AssertionError(f"Owned {group} material is outside its namespace: {block.name}")
             else:
@@ -1873,10 +2851,10 @@ def _assert_owned_data_integrity() -> dict[str, int]:
         if obj.get("td_preview_owner") != OWNER:
             continue
         group = obj.get("td_preview_group")
-        if group not in ("map", "tower", "common"):
+        if group not in ("map", "tower", "motion", "common"):
             raise AssertionError(f"Owned object has invalid data/group: {obj.name}")
         if obj.data is None:
-            if group != "tower" or obj.type != "EMPTY":
+            if group not in ("tower", "motion") or obj.type != "EMPTY":
                 raise AssertionError(f"Owned object has invalid empty data: {obj.name}")
         elif obj.data.get("td_preview_owner") != OWNER or obj.data.get("td_preview_group") != group:
             raise AssertionError(f"Owned object/data ownership mismatch: {obj.name}")
@@ -1890,7 +2868,7 @@ def _validate_candidate(
     preserved_state: dict[str, object],
     group_name: str = "map",
 ) -> dict[str, object]:
-    if group_name not in ("map", "tower"):
+    if group_name not in ("map", "tower", "motion"):
         raise AssertionError(f"Unsupported candidate group: {group_name}")
     bpy.ops.wm.open_mainfile(filepath=str(candidate), load_ui=False)
     scenes = [scene for scene in bpy.data.scenes if scene.name == SCENE_NAME]
@@ -1898,7 +2876,12 @@ def _validate_candidate(
         raise AssertionError(f"Expected one {SCENE_NAME}, found {len(scenes)}")
     scene = scenes[0]
     rigs = [collection for collection in bpy.data.collections if collection.name == RIG_COLLECTION_NAME]
-    active_group_name = GROUP_NAME if group_name == "map" else TOWER_GROUP_NAME
+    if group_name == "map":
+        active_group_name = GROUP_NAME
+    elif group_name == "tower":
+        active_group_name = TOWER_GROUP_NAME
+    else:
+        active_group_name = MOTION_GROUP_NAME
     groups = [collection for collection in bpy.data.collections if collection.name == active_group_name]
     if len(rigs) != 1 or len(groups) != 1:
         raise AssertionError(f"Rig/{group_name} persistence mismatch: rigs={len(rigs)} groups={len(groups)}")
@@ -1906,8 +2889,15 @@ def _validate_candidate(
     _assert_rig_exact(scene, rig)
     group = groups[0]
     asset_collections = list(group.children)
-    builders = MAP_BUILDERS if group_name == "map" else TOWER_ASSETS
-    collection_namer = _asset_collection_name if group_name == "map" else _tower_asset_collection_name
+    if group_name == "map":
+        builders = MAP_BUILDERS
+        collection_namer = _asset_collection_name
+    elif group_name == "tower":
+        builders = TOWER_ASSETS
+        collection_namer = _tower_asset_collection_name
+    else:
+        builders = MOTION_ASSETS
+        collection_namer = _motion_asset_collection_name
     expected_names = {collection_namer(path) for path in builders}
     if len(asset_collections) != len(builders) or {collection.name for collection in asset_collections} != expected_names:
         raise AssertionError(f"{group_name} per-asset collection persistence mismatch")
@@ -1932,11 +2922,19 @@ def _validate_candidate(
             raise AssertionError(f"Unknown persisted {group_name} asset: {relative_path}")
         if group_name == "map":
             _assert_asset_geometry(relative_path, collection)
-        else:
+        elif group_name == "tower":
             _assert_tower_asset_geometry(relative_path, collection)
             _assert_tower_component_layout(relative_path, collection)
             _assert_clean_tower_dependencies(list(collection.all_objects), [collection])
+        elif (
+            collection.get("td_preview_owner") != OWNER
+            or collection.get("td_preview_group") != "motion"
+            or collection.objects
+            or collection.children
+        ):
+            raise AssertionError(f"Persisted motion collection is not clean: {collection.name}")
     character_metrics: dict[str, dict[str, float]] | None = None
+    motion_metrics: dict[str, object] | None = None
     if group_name == "tower":
         _assert_only_td_rig(scene, group)
         _assert_persisted_tower_visibility_audit(group)
@@ -1964,6 +2962,27 @@ def _validate_candidate(
             raise AssertionError("Persisted Huchu height ratio exceeds contract")
         if huchu["head_width"] > deokbae["head_width"] * 1.05 + 1e-6:
             raise AssertionError("Persisted Huchu head-width ratio exceeds contract")
+    elif group_name == "motion":
+        _assert_motion_group_clean(group)
+        persisted_metrics = group.get("motion_metrics")
+        persisted_visibility = group.get("render_visibility_audit")
+        if not isinstance(persisted_metrics, str) or not isinstance(persisted_visibility, str):
+            raise AssertionError("Motion metrics/visibility audit were not persisted")
+        motion_metrics = json.loads(persisted_metrics)
+        visibility_audit = json.loads(persisted_visibility)
+        if set(motion_metrics) != set(MOTION_ASSETS) or set(visibility_audit) != set(MOTION_ASSETS):
+            raise AssertionError("Motion persistence audit manifest mismatch")
+        for relative_path, (_, frame_count) in MOTION_ASSETS.items():
+            metric = motion_metrics[relative_path]
+            if (
+                abs(float(metric["root_yaw_degrees"]) - 225.0) > 1e-5
+                or abs(float(metric["root_yaw_radians"]) - MOTION_ROOT_YAW) > 1e-6
+                or len(metric["traces"]) != frame_count
+            ):
+                raise AssertionError(f"Persisted motion trace contract mismatch: {relative_path}")
+            anchors = {tuple(trace["root"]) for trace in metric["traces"]}
+            if len(anchors) != 1:
+                raise AssertionError(f"Persisted root anchor moved: {relative_path}")
     data_counts = _assert_owned_data_integrity()
     result: dict[str, object] = {
         "scene": scene.name,
@@ -1976,11 +2995,13 @@ def _validate_candidate(
     }
     if character_metrics is not None:
         result["character_metrics"] = character_metrics
+    if motion_metrics is not None:
+        result["motion_metrics"] = motion_metrics
     return result
 
 
 def _journal_path(output_root: Path = OUTPUT, group: str = "map") -> Path:
-    if group not in ("map", "tower"):
+    if group not in ("map", "tower", "motion"):
         raise AssertionError(f"Unsupported publish group: {group}")
     return output_root / f".{group}-publish-journal.json"
 
@@ -1998,7 +3019,7 @@ def _derive_publish_paths(
     group: str = "map",
 ) -> dict[str, Path]:
     validated = _validate_run_id(run_id)
-    if group not in ("map", "tower"):
+    if group not in ("map", "tower", "motion"):
         raise AssertionError(f"Unsupported publish group: {group}")
     return {
         "staging_root": output_root / f".staging-{group}-{validated}",
@@ -2145,7 +3166,7 @@ def _validate_publish_record(
 ) -> dict[str, Path]:
     if record.get("kind") != "td-preview-map-v1" or record.get("version") != 2:
         raise AssertionError("Refusing unknown preview publish journal")
-    if record.get("group", "map") not in ("map", "tower"):
+    if record.get("group", "map") not in ("map", "tower", "motion"):
         raise AssertionError("Refusing invalid preview publish group")
     if record.get("phase") not in ("prepared", "maps_promoted", "blend_promoted"):
         raise AssertionError("Refusing invalid preview publish phase")
@@ -2291,6 +3312,25 @@ def _rollback_publish(
     paths = _validate_publish_record(record, output_root, blend_output)
     previous = record["previous"]
     group = str(record.get("group", "map"))
+    backup_root = paths["backup_root"]
+    if backup_root.exists():
+        if not backup_root.is_dir() or backup_root.is_symlink():
+            raise AssertionError("Rollback backup root is not a real directory")
+        allowed_names = {
+            _backup_component_path(paths, component, group).name
+            for component in ("master", "mobile", "blend")
+        }
+        actual_names = {path.name for path in backup_root.iterdir()}
+        unexpected = sorted(actual_names - allowed_names)
+        if unexpected:
+            raise AssertionError(f"Unexpected rollback backup entries: {unexpected}")
+        for component in ("master", "mobile", "blend"):
+            backup = _backup_component_path(paths, component, group)
+            if not backup.exists():
+                continue
+            expected = previous[component]
+            if expected is None or not _component_matches(backup, expected):
+                raise AssertionError(f"Unsafe rollback backup for {component}")
     for component in ("master", "mobile", "blend"):
         final = _final_component_path(output_root, blend_output, component, group)
         backup = _backup_component_path(paths, component, group)
@@ -2373,8 +3413,22 @@ def _recover_stale_publish_at(
 
 
 def _recover_stale_publish() -> None:
-    for group in ("map", "tower"):
+    for group in ("map", "tower", "motion"):
         _recover_stale_publish_at(OUTPUT, BLEND_OUTPUT, _source_hashes, group)
+
+
+def _assert_publish_inputs_clean(record: dict[str, object]) -> None:
+    paths = _validate_publish_record(record, OUTPUT, BLEND_OUTPUT)
+    group = str(record.get("group", "map"))
+    if not paths["staging_root"].is_dir() or paths["staging_root"].is_symlink():
+        raise AssertionError("Publish staging root is not a real directory")
+    if not paths["candidate"].is_file() or paths["candidate"].is_symlink():
+        raise AssertionError("Publish candidate is not a real file")
+    if paths["backup_root"].exists():
+        raise AssertionError(f"Publish backup root already exists: {paths['backup_root']}")
+    journal = _journal_path(OUTPUT, group)
+    if journal.exists():
+        raise AssertionError(f"Publish journal already exists: {journal}")
 
 
 def _publish(
@@ -2394,6 +3448,7 @@ def _publish(
         source_hashes_before,
         group,
     )
+    _assert_publish_inputs_clean(record)
     _write_journal_atomic(record, OUTPUT)
     paths = _validated_record_paths(record, OUTPUT, BLEND_OUTPUT)
     try:
@@ -2414,9 +3469,112 @@ def _publish(
     _cleanup_publish(record, OUTPUT, BLEND_OUTPUT)
 
 
+def _acquire_publish_lock(
+    run_id: str,
+    group: str,
+    output_root: Path = OUTPUT,
+) -> tuple[Path, int]:
+    _validate_run_id(run_id)
+    if group not in ("map", "tower", "motion"):
+        raise AssertionError(f"Unsupported publish lock group: {group}")
+    output_root.mkdir(parents=True, exist_ok=True)
+    if output_root.is_symlink() or not output_root.is_dir():
+        raise AssertionError(f"Preview output root is not a real directory: {output_root}")
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(output_root, flags)
+    except OSError as error:
+        raise AssertionError(f"Could not open preview publish lock root: {output_root}") from error
+    try:
+        if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+            raise AssertionError(f"Preview publish lock root is not a directory: {output_root}")
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise AssertionError(
+                f"Another preview publisher owns the output lock: {output_root}"
+            ) from error
+    except BaseException:
+        os.close(descriptor)
+        raise
+    return output_root, descriptor
+
+
+def _release_publish_lock(
+    lock: tuple[Path, int],
+    output_root: Path = OUTPUT,
+) -> None:
+    locked_root, descriptor = lock
+    error: BaseException | None = None
+    try:
+        if locked_root.absolute() != output_root.absolute():
+            raise AssertionError(f"Unexpected preview publish lock root: {locked_root}")
+        if locked_root.is_symlink() or not locked_root.is_dir():
+            raise AssertionError("Preview publish lock root disappeared or changed type")
+        held = os.fstat(descriptor)
+        current = os.stat(locked_root, follow_symlinks=False)
+        if not stat.S_ISDIR(held.st_mode) or (held.st_dev, held.st_ino) != (current.st_dev, current.st_ino):
+            raise AssertionError("Preview publish lock root changed while locked")
+    except BaseException as caught:
+        error = caught
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
+    if error is not None:
+        raise error
+
+
+def _assert_no_publish_residue() -> None:
+    residue: list[Path] = []
+    for group in ("map", "tower", "motion"):
+        journal = _journal_path(OUTPUT, group)
+        if journal.exists():
+            residue.append(journal)
+    for pattern in (
+        ".staging-*",
+        ".backup-*",
+        ".*-publish-journal.*.tmp",
+    ):
+        residue.extend(OUTPUT.glob(pattern))
+    residue.extend(
+        BLEND_OUTPUT.parent.glob(f".{BLEND_OUTPUT.stem}.*.candidate.blend")
+    )
+    if residue:
+        raise AssertionError(
+            "Refusing preview publish residue: "
+            + ", ".join(str(path) for path in sorted(set(residue)))
+        )
+
+
+def _snapshot_preserved_output_groups(active_group: str) -> dict[str, dict[str, str]]:
+    result: dict[str, dict[str, str]] = {}
+    for group in ("map", "tower", "motion"):
+        if group == active_group:
+            continue
+        directory = _group_directory(group)
+        for variant in ("master", "mobile"):
+            path = OUTPUT / variant / directory
+            if path.exists():
+                result[f"{variant}/{directory}"] = _hash_tree(path)
+    return result
+
+
+def _assert_preserved_output_groups(snapshot: dict[str, dict[str, str]]) -> None:
+    for relative, expected in snapshot.items():
+        path = OUTPUT / relative
+        if not path.exists() or _hash_tree(path) != expected:
+            raise AssertionError(f"Previously rendered output changed: {relative}")
+
+
 def render_group(group: str) -> None:
     global _STAGING_ROOT, _EXPECTED_PRESERVED_STATE
-    if group not in ("map", "tower"):
+    if group not in ("map", "tower", "motion"):
         raise ValueError(f"Unsupported preview group: {group}")
     if _PREFLIGHT_SNAPSHOT is None:
         raise AssertionError("render_group requires the main child preflight snapshot")
@@ -2435,68 +3593,88 @@ def render_group(group: str) -> None:
     if bpy.data.is_dirty:
         raise AssertionError(f"Refusing to mutate dirty child scene: {bpy.data.filepath}")
     source_hashes_before = _snapshot_source_hashes(_PREFLIGHT_SNAPSHOT)
-    _recover_stale_publish()
-    _assert_preflight_snapshot(
-        _PREFLIGHT_SNAPSHOT,
-        "stale_publish_recovery",
-        require_initial_path=True,
-    )
-    if BLEND_OUTPUT.exists():
-        if BLEND_OUTPUT.name in SOURCE_BLEND_NAMES:
-            raise AssertionError("Target blend overlaps protected source allow-list")
-        bpy.ops.wm.open_mainfile(filepath=str(BLEND_OUTPUT), load_ui=False)
-        if bpy.data.is_dirty:
-            raise AssertionError("Target preview blend opened dirty")
-    scene = _preview_scene()
-    active_group_name = GROUP_NAME if group == "map" else TOWER_GROUP_NAME
-    _EXPECTED_PRESERVED_STATE = _snapshot_preserved_groups(active_group_name)
-    ensure_preview_rig(scene)
     run_id = _RUN_ID
-    staging_root = OUTPUT / f".staging-{group}-{run_id}"
-    candidate = BLEND_OUTPUT.parent / f".{BLEND_OUTPUT.stem}.{run_id}.candidate.blend"
-    if staging_root.exists() or candidate.exists():
-        raise AssertionError(f"Run paths already exist for {run_id}")
-    staging_root.mkdir(parents=True)
-    _STAGING_ROOT = staging_root
+    lock = _acquire_publish_lock(run_id, group)
     try:
-        build_result = render_map_group(scene) if group == "map" else render_tower_group(scene)
-        render_validation = _validate_render_tree(staging_root, group)
-        if _source_hashes() != source_hashes_before:
-            raise AssertionError("Protected source blend hash changed during render")
-        bpy.context.preferences.filepaths.save_version = 0
-        bpy.ops.wm.save_as_mainfile(filepath=str(candidate), check_existing=False)
-        persistence = _validate_candidate(candidate, _EXPECTED_PRESERVED_STATE, group)
-        if _source_hashes() != source_hashes_before:
-            raise AssertionError("Protected source blend hash changed during candidate validation")
-        _publish(staging_root, candidate, run_id, source_hashes_before, group)
+        _recover_stale_publish()
+        _assert_no_publish_residue()
         _assert_preflight_snapshot(
             _PREFLIGHT_SNAPSHOT,
-            "render_publish_complete",
-            require_initial_path=False,
+            "stale_publish_recovery",
+            require_initial_path=True,
         )
-        _LIFECYCLE_EVENTS.append("render_publish_ok")
-        print("TD_PREVIEW_RENDER_VALIDATION " + json.dumps(render_validation, sort_keys=True))
-        print("TD_PREVIEW_PERSISTENCE " + json.dumps(persistence, sort_keys=True))
-        if build_result is not None:
-            print("TD_PREVIEW_GROUP_METRICS " + json.dumps(build_result, sort_keys=True))
-        print("TD_PREVIEW_SOURCE_HASHES " + json.dumps(source_hashes_before, sort_keys=True))
-    except BaseException:
-        if candidate.exists():
-            _unlink_exact(candidate, candidate, candidate.parent, "candidate blend")
-        _remove_tree_exact(
-            staging_root,
-            OUTPUT / f".staging-{group}-{run_id}",
-            OUTPUT,
-            "run staging",
-        )
-        raise
+        preserved_output_hashes = _snapshot_preserved_output_groups(group)
+        if BLEND_OUTPUT.exists():
+            if BLEND_OUTPUT.name in SOURCE_BLEND_NAMES:
+                raise AssertionError("Target blend overlaps protected source allow-list")
+            bpy.ops.wm.open_mainfile(filepath=str(BLEND_OUTPUT), load_ui=False)
+            if bpy.data.is_dirty:
+                raise AssertionError("Target preview blend opened dirty")
+        scene = _preview_scene()
+        if group == "map":
+            active_group_name = GROUP_NAME
+        elif group == "tower":
+            active_group_name = TOWER_GROUP_NAME
+        else:
+            active_group_name = MOTION_GROUP_NAME
+        _EXPECTED_PRESERVED_STATE = _snapshot_preserved_groups(active_group_name)
+        ensure_preview_rig(scene)
+        paths = _derive_publish_paths(run_id, OUTPUT, BLEND_OUTPUT, group)
+        staging_root = paths["staging_root"]
+        candidate = paths["candidate"]
+        if staging_root.exists() or paths["backup_root"].exists() or candidate.exists():
+            raise AssertionError(f"Run paths already exist for {run_id}")
+        staging_root.mkdir(parents=True)
+        _STAGING_ROOT = staging_root
+        try:
+            if group == "map":
+                build_result = render_map_group(scene)
+            elif group == "tower":
+                build_result = render_tower_group(scene)
+            else:
+                build_result = render_motion_group(scene)
+            render_validation = _validate_render_tree(staging_root, group)
+            if _source_hashes() != source_hashes_before:
+                raise AssertionError("Protected source blend hash changed during render")
+            bpy.context.preferences.filepaths.save_version = 0
+            bpy.ops.wm.save_as_mainfile(filepath=str(candidate), check_existing=False)
+            persistence = _validate_candidate(candidate, _EXPECTED_PRESERVED_STATE, group)
+            if _source_hashes() != source_hashes_before:
+                raise AssertionError("Protected source blend hash changed during candidate validation")
+            _publish(staging_root, candidate, run_id, source_hashes_before, group)
+            _assert_preserved_output_groups(preserved_output_hashes)
+            _assert_no_publish_residue()
+            _assert_preflight_snapshot(
+                _PREFLIGHT_SNAPSHOT,
+                "render_publish_complete",
+                require_initial_path=False,
+            )
+            _LIFECYCLE_EVENTS.append("render_publish_ok")
+            print("TD_PREVIEW_RENDER_VALIDATION " + json.dumps(render_validation, sort_keys=True))
+            print("TD_PREVIEW_PERSISTENCE " + json.dumps(persistence, sort_keys=True))
+            print("TD_PREVIEW_PRESERVED_OUTPUTS " + json.dumps(preserved_output_hashes, sort_keys=True))
+            if build_result is not None:
+                print("TD_PREVIEW_GROUP_METRICS " + json.dumps(build_result, sort_keys=True))
+            print("TD_PREVIEW_SOURCE_HASHES " + json.dumps(source_hashes_before, sort_keys=True))
+        except BaseException:
+            if candidate.exists():
+                _unlink_exact(candidate, candidate, candidate.parent, "candidate blend")
+            _remove_tree_exact(
+                staging_root,
+                paths["staging_root"],
+                OUTPUT,
+                "run staging",
+            )
+            raise
+        finally:
+            _STAGING_ROOT = None
     finally:
-        _STAGING_ROOT = None
+        _release_publish_lock(lock)
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--group", choices=("map", "tower"), required=True)
+    parser.add_argument("--group", choices=("map", "tower", "motion"), required=True)
     parser.add_argument("--run-id", required=True)
     args = parser.parse_args(argv)
     try:
@@ -2579,6 +3757,48 @@ def _test_publish_path_security() -> None:
             ),
         )
         _assert_marker(outside, "protected")
+
+
+def _test_v2_candidate_path_compatibility() -> None:
+    with tempfile.TemporaryDirectory(prefix="td-preview-v2-candidate-") as temporary:
+        sandbox = Path(temporary)
+        output = sandbox / "assets/renders/redesign-preview-v1"
+        blend = sandbox / "assets/blender/td-redesign-preview-v1.blend"
+        run_id = "LegacyV2Candidate123"
+        group = "tower"
+        paths = _derive_publish_paths(run_id, output, blend, group)
+        legacy_candidate = blend.parent / f".{blend.stem}.{run_id}.candidate.blend"
+        record = {
+            "run_id": run_id,
+            "group": group,
+            "staging_root": str(paths["staging_root"]),
+            "backup_root": str(paths["backup_root"]),
+            "candidate": str(legacy_candidate),
+        }
+        validated = _validated_record_paths(record, output, blend)
+        if validated["candidate"] != legacy_candidate:
+            raise AssertionError("Version 2 journal candidate path is not backward compatible")
+
+
+def _test_publish_lock_crash_recovery() -> None:
+    with tempfile.TemporaryDirectory(prefix="td-preview-lock-") as temporary:
+        output = Path(temporary) / "assets/renders/redesign-preview-v1"
+        first = _acquire_publish_lock("CrashLockFirst123", "motion", output)
+        try:
+            _expect_assertion(
+                "concurrent preview publisher",
+                lambda: _acquire_publish_lock("CrashLockOther123", "map", output),
+            )
+            lock_path, descriptor = first
+            os.close(descriptor)
+            first = None
+            recovered = _acquire_publish_lock("CrashLockNext123", "tower", output)
+            _release_publish_lock(recovered, output)
+            if lock_path != output or not lock_path.is_dir():
+                raise AssertionError("Advisory lock must use the stable output directory inode")
+        finally:
+            if first is not None:
+                _release_publish_lock(first, output)
 
 
 def _write_marker_tree(path: Path, marker: str) -> None:
@@ -2715,6 +3935,39 @@ def _test_source_hash_failure_rolls_back_everything() -> None:
             _assert_marker(output / variant / "map", "old")
         if blend.read_bytes() != b"old-blend":
             raise AssertionError("Source hash failure did not roll back the blend")
+
+
+def _test_rollback_rejects_foreign_backup_before_mutation() -> None:
+    with tempfile.TemporaryDirectory(prefix="td-preview-foreign-backup-") as temporary:
+        sandbox = Path(temporary)
+        output = sandbox / "assets/renders/redesign-preview-v1"
+        blend = sandbox / "assets/blender/td-redesign-preview-v1.blend"
+        run_id = "ForeignBackup123"
+        paths = _derive_publish_paths(run_id, output, blend)
+        for variant in ("master", "mobile"):
+            _write_marker_tree(output / variant / "map", "old")
+            _write_marker_tree(paths["staging_root"] / variant / "map", "new")
+        blend.parent.mkdir(parents=True, exist_ok=True)
+        blend.write_bytes(b"old-blend")
+        paths["candidate"].write_bytes(b"new-blend")
+        record = _create_publish_record(
+            paths["staging_root"],
+            paths["candidate"],
+            run_id,
+            output,
+            blend,
+            {"source": "stable"},
+        )
+        paths["backup_root"].mkdir(parents=True, exist_ok=False)
+        _write_marker_tree(paths["backup_root"] / "master-map", "foreign")
+        _expect_assertion(
+            "foreign rollback backup",
+            lambda: _rollback_publish(record, output, blend),
+        )
+        for variant in ("master", "mobile"):
+            _assert_marker(output / variant / "map", "old")
+        if blend.read_bytes() != b"old-blend":
+            raise AssertionError("Rejected rollback backup mutated the final blend")
 
 
 def _test_foreign_material_and_group_invariants() -> None:
@@ -3130,6 +4383,265 @@ def _test_current_only_render_visibility() -> None:
         bpy.data.collections.remove(map_asset)
 
 
+def _test_motion_phase_contract() -> None:
+    orc = [_orc_pose_components(frame, 6) for frame in range(6)]
+    if len({(round(swing, 10), round(bob, 10)) for swing, bob in orc}) != 6:
+        raise AssertionError("Orc motion signatures must be unique across six frames")
+    for frame, (swing, bob) in enumerate(orc):
+        phase = math.tau * frame / 6
+        expected_swing = math.radians(15.0) * math.sin(phase)
+        expected_bob = 0.06 * (1.0 - math.cos(phase)) / 2.0
+        if abs(swing - expected_swing) > 1e-12 or abs(bob - expected_bob) > 1e-12:
+            raise AssertionError(f"Orc frame {frame} does not use the exact phase contract")
+
+    fairy = [_fairy_pose_components(frame, 8) for frame in range(8)]
+    if len({(round(flap, 10), round(hover, 10)) for flap, hover in fairy}) != 8:
+        raise AssertionError("Fairy motion signatures must be unique across eight frames")
+    for frame, (flap, hover) in enumerate(fairy):
+        flap_phase = math.tau * 2.0 * frame / 8
+        hover_phase = math.tau * frame / 8 + math.pi / 8.0
+        expected_flap = math.radians(28.0) * math.sin(flap_phase)
+        expected_hover = 0.10 * math.sin(hover_phase)
+        if abs(flap - expected_flap) > 1e-12 or abs(hover - expected_hover) > 1e-12:
+            raise AssertionError(f"Fairy frame {frame} does not use the exact phase contract")
+        paired_flap = fairy[(frame + 4) % 8][0]
+        if abs(flap - paired_flap) > 1e-12:
+            raise AssertionError("Fairy four-frame pairs must repeat the wing cycle")
+    extrema = [math.degrees(fairy[index][0]) for index in (1, 3, 5, 7)]
+    if any(abs(abs(value) - 28.0) > 1e-10 for value in extrema):
+        raise AssertionError("Fairy sampled flap extrema must reach exactly 28 degrees")
+
+
+def _review_motion_inventory(kind: str) -> tuple[bpy.types.Collection, list[bpy.types.Object]]:
+    collection = bpy.data.collections.new(f"ReviewMotionInventory_{kind}")
+    bpy.context.scene.collection.children.link(collection)
+    if kind == "orc":
+        empty_names = ("Enemy_Orc_Root", "Enemy_Orc_Body", "Enemy_Orc_VFX")
+        mesh_names = (
+            "Orc_Arm_L",
+            "Orc_Arm_R",
+            "Orc_Fist_L",
+            "Orc_Fist_R",
+            "Orc_Leg_L",
+            "Orc_Leg_R",
+            "Orc_Foot_L",
+            "Orc_Foot_R",
+            "Orc_Club_End",
+            "Orc_Club_Grip",
+            "Orc_Club_Head",
+            "Orc_Torso",
+        )
+        root_name, body_name, vfx_name = empty_names
+    elif kind == "fairy":
+        empty_names = ("Enemy_Fairy_Root", "Enemy_Fairy_Body", "Enemy_Fairy_VFX")
+        mesh_names = (
+            "Fairy_Wing_LL",
+            "Fairy_Wing_LR",
+            "Fairy_Wing_UL",
+            "Fairy_Wing_UR",
+            "Fairy_Head",
+        )
+        root_name, body_name, vfx_name = empty_names
+    else:
+        raise AssertionError(kind)
+    objects = [bpy.data.objects.new(name, None) for name in empty_names]
+    by_name = {obj.name: obj for obj in objects}
+    for name in mesh_names:
+        mesh = bpy.data.meshes.new(name + "_Mesh")
+        mesh.from_pydata(
+            [
+                (-0.1, -0.1, -0.1),
+                (0.1, -0.1, -0.1),
+                (0.1, 0.1, 0.1),
+                (-0.1, 0.1, 0.1),
+            ],
+            [],
+            [(0, 1, 2, 3)],
+        )
+        obj = bpy.data.objects.new(name, mesh)
+        objects.append(obj)
+        by_name[name] = obj
+    for obj in objects:
+        collection.objects.link(obj)
+    by_name[body_name].parent = by_name[root_name]
+    by_name[vfx_name].parent = by_name[root_name]
+    for name in mesh_names:
+        by_name[name].parent = (
+            by_name[vfx_name]
+            if kind == "fairy" and name.startswith("Fairy_Wing_")
+            else by_name[body_name]
+        )
+    bpy.context.view_layer.update()
+    return collection, objects
+
+
+def _test_motion_required_inventory_and_hierarchy() -> None:
+    for kind in ("orc", "fairy"):
+        collection, objects = _review_motion_inventory(kind)
+        try:
+            inventory = _assert_motion_inventory(kind, objects)
+            expected_body = f"Enemy_{kind.title()}_Body"
+            if inventory[expected_body].type != "EMPTY":
+                raise AssertionError(f"{kind} body must be an EMPTY transform root")
+            required_mesh = "Orc_Arm_L" if kind == "orc" else "Fairy_Wing_LL"
+            if inventory[required_mesh].type != "MESH":
+                raise AssertionError(f"{required_mesh} must be render geometry")
+            _expect_assertion(
+                f"missing {kind} required mesh",
+                lambda: _assert_motion_inventory(
+                    kind,
+                    [obj for obj in objects if obj.name != required_mesh],
+                ),
+            )
+            original_parent = inventory[required_mesh].parent
+            inventory[required_mesh].parent = inventory[f"Enemy_{kind.title()}_Root"]
+            _expect_assertion(
+                f"invalid {kind} source hierarchy",
+                lambda: _assert_motion_inventory(kind, objects),
+            )
+            inventory[required_mesh].parent = original_parent
+        finally:
+            bpy.context.scene.collection.children.unlink(collection)
+            for obj in reversed(objects):
+                data = obj.data
+                bpy.data.objects.remove(obj)
+                if isinstance(data, bpy.types.Mesh) and data.users == 0:
+                    bpy.data.meshes.remove(data)
+        bpy.data.collections.remove(collection)
+
+
+def _test_motion_append_failure_cleanup() -> None:
+    group = bpy.data.collections.new("ReviewMotionAppendFailureGroup")
+    bpy.context.scene.collection.children.link(group)
+    tracked = {
+        "objects": bpy.data.objects,
+        "collections": bpy.data.collections,
+        "meshes": bpy.data.meshes,
+        "curves": bpy.data.curves,
+        "armatures": bpy.data.armatures,
+        "materials": bpy.data.materials,
+    }
+    before = {name: set(blocks) for name, blocks in tracked.items()}
+    original_inventory_assertion = globals()["_assert_motion_inventory"]
+    leaked: dict[str, list[str]] = {}
+
+    def fail_inventory(kind: str, objects: list[bpy.types.Object]) -> object:
+        raise AssertionError(f"Injected {kind} inventory failure after {len(objects)} objects")
+
+    globals()["_assert_motion_inventory"] = fail_inventory
+    try:
+        _expect_assertion(
+            "injected motion inventory failure",
+            lambda: _append_motion_asset(
+                group,
+                "motion/orc-walk-se.png",
+                "orc",
+            ),
+        )
+        leaked = {
+            name: [block.name for block in blocks if block not in before[name]]
+            for name, blocks in tracked.items()
+        }
+    finally:
+        globals()["_assert_motion_inventory"] = original_inventory_assertion
+        for obj in [block for block in bpy.data.objects if block not in before["objects"]]:
+            bpy.data.objects.remove(obj, do_unlink=True)
+        for collection in [
+            block
+            for block in bpy.data.collections
+            if block not in before["collections"] and block is not group
+        ]:
+            bpy.data.collections.remove(collection)
+        for name in ("meshes", "curves", "armatures", "materials"):
+            blocks = tracked[name]
+            for block in [item for item in blocks if item not in before[name]]:
+                if block.users == 0:
+                    blocks.remove(block)
+        if group.name in bpy.data.collections:
+            bpy.data.collections.remove(group)
+    residue = {name: names for name, names in leaked.items() if names}
+    if residue:
+        raise AssertionError(f"Failed motion append leaked datablocks: {residue}")
+
+
+def _test_motion_transform_restore() -> None:
+    collection = bpy.data.collections.new("ReviewMotionTransform")
+    bpy.context.scene.collection.children.link(collection)
+    original_parent = bpy.data.objects.new("ReviewMotionOriginalParent", None)
+    temporary_parent = bpy.data.objects.new("ReviewMotionTemporaryParent", None)
+    child = bpy.data.objects.new("ReviewMotionChild", None)
+    for obj in (original_parent, temporary_parent, child):
+        collection.objects.link(obj)
+    original_parent.location = (0.3, -0.4, 0.8)
+    original_parent.rotation_euler.z = 0.2
+    temporary_parent.location = (-0.6, 0.2, 1.1)
+    temporary_parent.rotation_euler.x = -0.3
+    child.parent = original_parent
+    child.location = (0.2, 0.5, -0.1)
+    child.rotation_euler = (0.1, -0.2, 0.3)
+    child.scale = (0.9, 1.1, 1.2)
+    bpy.context.view_layer.update()
+    original_world = child.matrix_world.copy()
+    snapshot = _snapshot_motion_transforms((original_parent, temporary_parent, child))
+    try:
+        _reparent_preserve_world(child, temporary_parent)
+        if _matrix_max_delta(child.matrix_world, original_world) > 1e-6:
+            raise AssertionError("Motion reparent changed the child world matrix")
+        original_parent.location.x += 2.0
+        temporary_parent.rotation_euler.y += 0.7
+        child.location.z += 3.0
+        _restore_motion_transforms(snapshot)
+        if child.parent is not original_parent:
+            raise AssertionError("Motion restore did not restore parentage")
+        if _matrix_max_delta(child.matrix_world, original_world) > 1e-6:
+            raise AssertionError("Motion restore did not restore the world matrix")
+    finally:
+        bpy.context.scene.collection.children.unlink(collection)
+        for obj in (child, temporary_parent, original_parent):
+            bpy.data.objects.remove(obj)
+        bpy.data.collections.remove(collection)
+
+
+def _write_review_motion_frame(path: Path, size: int, color: tuple[float, float, float, float]) -> None:
+    image = bpy.data.images.new("ReviewMotionFrame", width=size, height=size, alpha=True)
+    try:
+        pixels = [0.0] * (size * size * 4)
+        for y in range(2, size - 2):
+            for x in range(2, size - 2):
+                offset = (y * size + x) * 4
+                pixels[offset:offset + 4] = color
+        image.pixels.foreach_set(pixels)
+        image.update()
+        image.filepath_raw = str(path)
+        image.file_format = "PNG"
+        image.save()
+    finally:
+        bpy.data.images.remove(image)
+
+
+def _test_motion_sheet_packing_and_validation() -> None:
+    with tempfile.TemporaryDirectory(prefix="td-preview-motion-sheet-") as temporary:
+        root = Path(temporary)
+        frame_paths = [root / f"frame-{index}.png" for index in range(3)]
+        for index, path in enumerate(frame_paths):
+            _write_review_motion_frame(
+                path,
+                8,
+                (0.2 + index * 0.2, 0.4, 0.7 - index * 0.1, 1.0),
+            )
+        sheet = root / "sheet.png"
+        pack_frames(frame_paths, sheet, 8)
+        validation = _validate_animation_png(sheet, 8, 3)
+        if validation["size"] != [24, 8] or len(validation["frames"]) != 3:
+            raise AssertionError("Motion sheet packing order/dimensions are invalid")
+        duplicate_sheet = root / "duplicate-sheet.png"
+        pack_frames((frame_paths[0], frame_paths[0], frame_paths[1]), duplicate_sheet, 8)
+        _expect_assertion(
+            "duplicate motion sheet cells",
+            lambda: _validate_animation_png(duplicate_sheet, 8, 3),
+        )
+
+
 def _run_review_self_tests() -> None:
     print("TD_PREVIEW_SELF_TEST_START", flush=True)
     if _LIFECYCLE_EVENTS != ["preflight_ok"]:
@@ -3140,8 +4652,11 @@ def _run_review_self_tests() -> None:
     _LIFECYCLE_EVENTS.append("self_tests_start")
     tests = (
         ("publish_path_security", _test_publish_path_security),
+        ("v2_candidate_path_compatibility", _test_v2_candidate_path_compatibility),
+        ("publish_lock_crash_recovery", _test_publish_lock_crash_recovery),
         ("publish_phase_recovery", _test_publish_recovery_phases),
         ("source_hash_failure_rollback", _test_source_hash_failure_rolls_back_everything),
+        ("foreign_backup_preflight", _test_rollback_rejects_foreign_backup_before_mutation),
         ("foreign_material_group_invariants", _test_foreign_material_and_group_invariants),
         ("rig_normalization_owned_orphans", _test_rig_normalization_and_owned_orphans),
         ("tower_predicates_purity", _test_tower_predicates_and_purity),
@@ -3151,6 +4666,11 @@ def _run_review_self_tests() -> None:
         ("curve_render_bounds", _test_curve_render_bounds),
         ("tower_dependency_cleanup_order", _test_tower_dependency_cleanup_order),
         ("current_only_render_visibility", _test_current_only_render_visibility),
+        ("motion_phase_contract", _test_motion_phase_contract),
+        ("motion_required_inventory_hierarchy", _test_motion_required_inventory_and_hierarchy),
+        ("motion_append_failure_cleanup", _test_motion_append_failure_cleanup),
+        ("motion_transform_restore", _test_motion_transform_restore),
+        ("motion_sheet_packing_validation", _test_motion_sheet_packing_and_validation),
     )
     failures: list[str] = []
     for name, test in tests:
