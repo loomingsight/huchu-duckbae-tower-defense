@@ -1,30 +1,31 @@
 import { access, readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
 import { PREVIEW_ASSETS, PREVIEW_ROOT } from './redesignPreviewContract.mjs';
 
-const groupFlag = process.argv.indexOf('--group');
-const requestedGroup = groupFlag === -1 ? null : process.argv[groupFlag + 1];
-const assets = PREVIEW_ASSETS.filter(
-  (asset) => requestedGroup === null || asset.group === requestedGroup,
-);
+const variants = Object.freeze(['master', 'mobile']);
 
-if (assets.length === 0) {
-  throw new Error(`Unknown or empty preview group: ${requestedGroup}`);
-}
+const getPreviewFiles = (assets, previewRoot) => assets.flatMap((asset) => variants.map((variant) => ({
+  asset,
+  frameSize: variant === 'master' ? asset.masterFrameSize : asset.mobileFrameSize,
+  filePath: path.join(previewRoot, variant, asset.relativePath),
+  variant,
+})));
 
-const browser = await chromium.launch({ headless: true });
-const page = await browser.newPage();
+export async function validatePreview({ assets, previewRoot, chromiumApi }) {
+  const previewFiles = getPreviewFiles(assets, previewRoot);
 
-try {
-  let files = 0;
-  for (const asset of assets) {
-    for (const variant of ['master', 'mobile']) {
-      const frameSize = variant === 'master'
-        ? asset.masterFrameSize
-        : asset.mobileFrameSize;
-      const filePath = path.join(PREVIEW_ROOT, variant, asset.relativePath);
-      await access(filePath);
+  await Promise.all(previewFiles.map(({ filePath }) => access(filePath)));
+
+  let browser;
+  let page;
+
+  try {
+    browser = await chromiumApi.launch({ headless: true });
+    page = await browser.newPage();
+
+    for (const { asset, filePath, frameSize, variant } of previewFiles) {
       const bytes = await readFile(filePath);
       const result = await page.evaluate(async ({ dataUrl, expectedWidth, expectedHeight }) => {
         const image = new Image();
@@ -61,11 +62,37 @@ try {
       if (result.corners.some((alpha) => alpha !== 0)) {
         throw new Error(`${asset.id}/${variant} has opaque corner alpha ${result.corners}`);
       }
-      files += 1;
+    }
+
+    return previewFiles.length;
+  } finally {
+    try {
+      await page?.close();
+    } finally {
+      await browser?.close();
     }
   }
+}
+
+async function main() {
+  const groupFlag = process.argv.indexOf('--group');
+  const requestedGroup = groupFlag === -1 ? null : process.argv[groupFlag + 1];
+  const assets = PREVIEW_ASSETS.filter(
+    (asset) => requestedGroup === null || asset.group === requestedGroup,
+  );
+
+  if (assets.length === 0) {
+    throw new Error(`Unknown or empty preview group: ${requestedGroup}`);
+  }
+
+  const files = await validatePreview({
+    assets,
+    previewRoot: PREVIEW_ROOT,
+    chromiumApi: chromium,
+  });
   console.log(`VALIDATED ${assets.length} assets / ${files} PNG files`);
-} finally {
-  await page.close();
-  await browser.close();
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
 }
