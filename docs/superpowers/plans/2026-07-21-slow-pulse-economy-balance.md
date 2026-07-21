@@ -34,7 +34,7 @@
 - Changes: 덕배 `420G`, 후추 `560G`
 - Changes: 처치 보상 `8/10/15/28/150G`
 
-- [ ] **Step 1: 승인 수치를 고정하는 실패 테스트 작성**
+- [x] **Step 1: 승인 수치를 고정하는 실패 테스트 작성**
 
 ```ts
 expect(INITIAL_GOLD).toBe(320);
@@ -47,13 +47,13 @@ expect(Object.values(ENEMY_CATALOG).map(({ reward }) => reward))
 
 `STAGE_1_WAVES`의 수량과 새 reward 표를 합산해 총 처치 보상 `2,562G`도 검증한다. HUD에서는 시작 직후 덕배와 후추 버튼이 비용 부족으로 비활성인지 확인한다.
 
-- [ ] **Step 2: RED 확인**
+- [x] **Step 2: RED 확인**
 
 Run: `npx vitest run tests/game/placement.test.ts tests/game/enemies.test.ts tests/app/hud.test.ts`
 
 Expected: 기존 `450/250/300G`와 이전 보상 표 때문에 새 assertion만 실패한다.
 
-- [ ] **Step 3: 시작 골드와 카탈로그 구현**
+- [x] **Step 3: 시작 골드와 카탈로그 구현**
 
 ```ts
 export const INITIAL_GOLD = 320;
@@ -68,11 +68,11 @@ export function createGame(): GameState {
 
 `towerCatalog.ts`에서 덕배/후추를 `420/560`, `enemyCatalog.ts`에서 슬라임/요정/오크/골렘/미노타우르스를 `8/10/15/28/150`으로 바꾼다.
 
-- [ ] **Step 4: 전투 테스트의 자금 fixture 분리**
+- [x] **Step 4: 전투 테스트의 자금 fixture 분리**
 
 전투 위력만 검증하는 helper는 설치할 타워 비용 이상을 명시적으로 넣는다. 경제 assertion이 아닌 기존 `450G` fixture는 `INITIAL_GOLD` 또는 테스트 의도가 드러나는 별도 금액으로 바꿔 새 가격과 우연히 결합하지 않게 한다.
 
-- [ ] **Step 5: GREEN 확인**
+- [x] **Step 5: GREEN 확인**
 
 Run: `npx vitest run tests/game/placement.test.ts tests/game/enemies.test.ts tests/app/hud.test.ts tests/game/combat.test.ts`
 

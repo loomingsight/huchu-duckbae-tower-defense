@@ -3,11 +3,30 @@ import { ENEMY_CATALOG } from '../../src/game/enemies/enemyCatalog';
 import { createGame } from '../../src/game/simulation/createGame';
 import { updateEnemies } from '../../src/game/simulation/updateEnemies';
 import { spawnEnemy } from '../../src/game/simulation/updateWaves';
+import { STAGE_1_WAVES } from '../../src/game/waves/stage1Waves';
 
 describe('enemy catalog and movement', () => {
   it('defines the faster fairy and the sturdier golem', () => {
     expect(ENEMY_CATALOG.fairy.speed).toBeGreaterThan(ENEMY_CATALOG.slime.speed);
     expect(ENEMY_CATALOG.golem.hp).toBeGreaterThan(ENEMY_CATALOG.orc.hp);
+  });
+
+  it('uses the approved rewards and total stage-one economy', () => {
+    expect(Object.fromEntries(Object.entries(ENEMY_CATALOG).map(([type, enemy]) => [
+      type,
+      enemy.reward,
+    ]))).toEqual({
+      slime: 8,
+      fairy: 10,
+      orc: 15,
+      golem: 28,
+      minotaur: 150,
+    });
+
+    const totalReward = STAGE_1_WAVES
+      .flatMap((wave) => wave.groups)
+      .reduce((total, group) => total + ENEMY_CATALOG[group.type].reward * group.count, 0);
+    expect(totalReward).toBe(2_562);
   });
 
   it('moves a fairy farther than a slime in one second', () => {
@@ -38,7 +57,7 @@ describe('enemy catalog and movement', () => {
     updateEnemies(state, 0);
     updateEnemies(state, 0);
 
-    expect(state.gold).toBe(460);
+    expect(state.gold).toBe(328);
     expect(state.enemies).toEqual([]);
   });
 });

@@ -4,6 +4,8 @@ import type { Cell, Vec2 } from '../types';
 
 export type Outcome = 'playing' | 'victory' | 'defeat';
 
+export const INITIAL_GOLD = 320;
+
 export type GameEnemy = {
   id: number;
   type: EnemyType;
@@ -75,7 +77,7 @@ export type GameState = {
 export function createGame(_seed?: number): GameState {
   return {
     elapsedSeconds: 0,
-    gold: 450,
+    gold: INITIAL_GOLD,
     baseHp: 20,
     outcome: 'playing',
     enemies: [],

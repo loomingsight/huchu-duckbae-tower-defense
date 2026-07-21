@@ -6,10 +6,12 @@ import { createGame } from '../../src/game/simulation/createGame';
 import { placeTower } from '../../src/game/simulation/placeTower';
 import { updateGame } from '../../src/game/simulation/updateGame';
 import { spawnEnemy } from '../../src/game/simulation/updateWaves';
+import { TOWER_CATALOG } from '../../src/game/towers/towerCatalog';
 
 function combatState(type: 'arrow' | 'deokbae' | 'huchu') {
   const state = createGame();
   state.wave.allSpawned = true;
+  state.gold = TOWER_CATALOG[type].cost;
   placeTower(state, type, { col: 2, row: 1 });
   return state;
 }
@@ -61,7 +63,7 @@ describe('tower combat', () => {
     updateGame(state, 0.2);
 
     expect(state.enemies).toEqual([]);
-    expect(state.gold).toBe(178);
+    expect(state.gold).toBe(20);
   });
 
   it('applies the non-stacking slow aura before enemy movement and deals zero damage', () => {

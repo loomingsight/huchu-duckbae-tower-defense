@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createGame } from '../../src/game/simulation/createGame';
+import { createGame, INITIAL_GOLD } from '../../src/game/simulation/createGame';
 import { placeTower } from '../../src/game/simulation/placeTower';
 import { TOWER_CATALOG } from '../../src/game/towers/towerCatalog';
 
@@ -9,7 +9,7 @@ describe('tower placement', () => {
       slow: { cost: 80, range: 2.4, multiplier: 0.62 },
       arrow: { cost: 100, range: 3.2, damage: 18, cooldown: 0.55, projectileSpeed: 8 },
       deokbae: {
-        cost: 250,
+        cost: 420,
         range: 3,
         damage: 14,
         cooldown: 0.42,
@@ -17,7 +17,7 @@ describe('tower placement', () => {
         splash: 0.85,
       },
       huchu: {
-        cost: 300,
+        cost: 560,
         range: 3.4,
         damage: 72,
         cooldown: 1.8,
@@ -25,6 +25,11 @@ describe('tower placement', () => {
         splash: 1.25,
       },
     });
+  });
+
+  it('starts stage one with the approved basic-tower budget', () => {
+    expect(INITIAL_GOLD).toBe(320);
+    expect(createGame().gold).toBe(INITIAL_GOLD);
   });
 
   it('rejects a tower when there is insufficient gold', () => {
@@ -51,7 +56,7 @@ describe('tower placement', () => {
       ok: false,
       reason: 'not-buildable',
     });
-    expect(state.gold).toBe(350);
+    expect(state.gold).toBe(220);
   });
 
   it('rejects empty cells that are not one of the eight neighbors of the road', () => {
@@ -61,7 +66,7 @@ describe('tower placement', () => {
       ok: false,
       reason: 'not-buildable',
     });
-    expect(state.gold).toBe(450);
+    expect(state.gold).toBe(INITIAL_GOLD);
   });
 
   it.each([
@@ -80,7 +85,7 @@ describe('tower placement', () => {
       reason: 'not-buildable',
     });
     expect(state.towers).toEqual([]);
-    expect(state.gold).toBe(450);
+    expect(state.gold).toBe(INITIAL_GOLD);
   });
 
   it('places towers at exact cell centers and allows duplicate types on different cells', () => {
@@ -97,6 +102,6 @@ describe('tower placement', () => {
       { type: 'arrow', cell: { col: 2, row: 1 }, position: { x: 2.5, y: 1.5 } },
       { type: 'arrow', cell: { col: 3, row: 1 }, position: { x: 3.5, y: 1.5 } },
     ]);
-    expect(state.gold).toBe(250);
+    expect(state.gold).toBe(120);
   });
 });

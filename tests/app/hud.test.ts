@@ -8,6 +8,7 @@ import {
   towerCardAvailability,
   type ModalFocusTarget,
 } from '../../src/app/hud';
+import { createGame } from '../../src/game/simulation/createGame';
 
 describe('mobile HUD view', () => {
   it('uses the approved game name', () => {
@@ -18,9 +19,23 @@ describe('mobile HUD view', () => {
     expect(TOWER_CARDS).toEqual([
       { type: 'slow', name: '슬로우 타워', roleIcon: '🌀', cost: 80 },
       { type: 'arrow', name: '화살 타워', roleIcon: '🏹', cost: 100 },
-      { type: 'deokbae', name: '덕배', roleIcon: '🔥', cost: 250 },
-      { type: 'huchu', name: '후추', roleIcon: '💧', cost: 300 },
+      { type: 'deokbae', name: '덕배', roleIcon: '🔥', cost: 420 },
+      { type: 'huchu', name: '후추', roleIcon: '💧', cost: 560 },
     ]);
+  });
+
+  it('keeps both advanced towers unaffordable at the start of stage one', () => {
+    const state = createGame();
+
+    for (const type of ['deokbae', 'huchu'] as const) {
+      const card = TOWER_CARDS.find((candidate) => candidate.type === type);
+      expect(card).toBeDefined();
+      expect(towerCardAvailability({
+        gold: state.gold,
+        phase: 'playing',
+        portraitBlocked: false,
+      }, card!.cost)).toEqual({ disabled: true, unaffordable: true });
+    }
   });
 
   it('disables unaffordable tower cards at the exact cost boundary', () => {
