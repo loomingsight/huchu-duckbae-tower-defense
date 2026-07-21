@@ -61,6 +61,8 @@ COLORS = {
 _ACTIVE_ASSET_COLLECTION: bpy.types.Collection | None = None
 _STAGING_ROOT: Path | None = None
 _EXPECTED_PRESERVED_STATE: dict[str, object] = {}
+_LIFECYCLE_EVENTS: list[str] = []
+_PREFLIGHT_SNAPSHOT: dict[str, object] | None = None
 
 
 def _tag(block: object, group: str) -> None:
@@ -81,6 +83,58 @@ def _source_hashes() -> dict[str, str]:
         name: _sha256(REPO / "assets/blender" / name)
         for name in SOURCE_BLEND_NAMES
     }
+
+
+def _child_preflight() -> dict[str, object]:
+    if _LIFECYCLE_EVENTS:
+        raise AssertionError("Child preflight must be the first lifecycle event")
+    if REPO.resolve() != EXPECTED_WORKTREE.resolve():
+        raise AssertionError(f"Must run from isolated worktree, got {REPO}")
+    if bpy.data.is_dirty:
+        raise AssertionError(f"Refusing to preflight dirty child scene: {bpy.data.filepath}")
+    initial_path = bpy.data.filepath
+    if initial_path:
+        active = Path(initial_path).resolve()
+        protected = {
+            (REPO / "assets/blender" / name).resolve()
+            for name in SOURCE_BLEND_NAMES
+        }
+        if active in protected:
+            raise AssertionError(f"Refusing protected source as child initial path: {initial_path}")
+    snapshot: dict[str, object] = {
+        "repo": str(REPO.resolve()),
+        "initial_path": initial_path,
+        "initial_dirty": bool(bpy.data.is_dirty),
+        "source_hashes": _source_hashes(),
+    }
+    _LIFECYCLE_EVENTS.append("preflight_ok")
+    print("TD_PREVIEW_PREFLIGHT_OK " + json.dumps(snapshot, sort_keys=True), flush=True)
+    return snapshot
+
+
+def _snapshot_source_hashes(snapshot: dict[str, object]) -> dict[str, str]:
+    hashes = snapshot.get("source_hashes")
+    if not isinstance(hashes, dict) or not all(
+        isinstance(name, str) and isinstance(digest, str)
+        for name, digest in hashes.items()
+    ):
+        raise AssertionError("Invalid child preflight source snapshot")
+    return hashes
+
+
+def _assert_preflight_snapshot(
+    snapshot: dict[str, object],
+    stage: str,
+    *,
+    require_initial_path: bool,
+) -> None:
+    if snapshot.get("repo") != str(REPO.resolve()):
+        raise AssertionError(f"Preflight worktree changed during {stage}")
+    if _source_hashes() != _snapshot_source_hashes(snapshot):
+        raise AssertionError(f"Protected source blend hash changed during {stage}")
+    if require_initial_path and bpy.data.filepath != snapshot.get("initial_path"):
+        raise AssertionError(f"Child active path changed during {stage}")
+    print(f"TD_PREVIEW_SOURCE_SNAPSHOT_OK {stage}", flush=True)
 
 
 def _set_supported_look(scene: bpy.types.Scene) -> str:
@@ -1346,12 +1400,29 @@ def render_group(group: str) -> None:
     global _STAGING_ROOT, _EXPECTED_PRESERVED_STATE
     if group != "map":
         raise ValueError(f"Unsupported preview group: {group}")
-    if REPO.resolve() != EXPECTED_WORKTREE.resolve():
-        raise AssertionError(f"Must run from isolated worktree, got {REPO}")
+    if _PREFLIGHT_SNAPSHOT is None:
+        raise AssertionError("render_group requires the main child preflight snapshot")
+    if _LIFECYCLE_EVENTS != [
+        "preflight_ok",
+        "self_tests_start",
+        "self_tests_ok",
+        "post_self_test_ok",
+    ]:
+        raise AssertionError("render_group lifecycle order is invalid")
+    _assert_preflight_snapshot(
+        _PREFLIGHT_SNAPSHOT,
+        "render_start",
+        require_initial_path=True,
+    )
     if bpy.data.is_dirty:
         raise AssertionError(f"Refusing to mutate dirty child scene: {bpy.data.filepath}")
-    source_hashes_before = _source_hashes()
+    source_hashes_before = _snapshot_source_hashes(_PREFLIGHT_SNAPSHOT)
     _recover_stale_publish()
+    _assert_preflight_snapshot(
+        _PREFLIGHT_SNAPSHOT,
+        "stale_publish_recovery",
+        require_initial_path=True,
+    )
     if BLEND_OUTPUT.exists():
         if BLEND_OUTPUT.name in SOURCE_BLEND_NAMES:
             raise AssertionError("Target blend overlaps protected source allow-list")
@@ -1379,6 +1450,12 @@ def render_group(group: str) -> None:
         if _source_hashes() != source_hashes_before:
             raise AssertionError("Protected source blend hash changed during candidate validation")
         _publish(staging_root, candidate, run_id, source_hashes_before)
+        _assert_preflight_snapshot(
+            _PREFLIGHT_SNAPSHOT,
+            "render_publish_complete",
+            require_initial_path=False,
+        )
+        _LIFECYCLE_EVENTS.append("render_publish_ok")
         print("TD_PREVIEW_RENDER_VALIDATION " + json.dumps(render_validation, sort_keys=True))
         print("TD_PREVIEW_PERSISTENCE " + json.dumps(persistence, sort_keys=True))
         print("TD_PREVIEW_SOURCE_HASHES " + json.dumps(source_hashes_before, sort_keys=True))
@@ -1676,6 +1753,13 @@ def _test_rig_normalization_and_owned_orphans() -> None:
 
 
 def _run_review_self_tests() -> None:
+    print("TD_PREVIEW_SELF_TEST_START", flush=True)
+    if _LIFECYCLE_EVENTS != ["preflight_ok"]:
+        raise AssertionError(
+            "TD_PREVIEW_SELF_TEST_BEFORE_PREFLIGHT "
+            + json.dumps(_LIFECYCLE_EVENTS)
+        )
+    _LIFECYCLE_EVENTS.append("self_tests_start")
     tests = (
         ("publish_path_security", _test_publish_path_security),
         ("publish_phase_recovery", _test_publish_recovery_phases),
@@ -1691,16 +1775,35 @@ def _run_review_self_tests() -> None:
             failures.append(f"{name}: {type(error).__name__}: {error}")
     if failures:
         raise AssertionError("TD_PREVIEW_SELF_TEST_FAIL " + " | ".join(failures))
-    print("TD_PREVIEW_SELF_TEST_OK " + ",".join(name for name, _ in tests))
+    _LIFECYCLE_EVENTS.append("self_tests_ok")
+    print("TD_PREVIEW_SELF_TEST_OK " + ",".join(name for name, _ in tests), flush=True)
 
 
 def main(argv: list[str]) -> int:
-    global _RUN_ID
+    global _PREFLIGHT_SNAPSHOT, _RUN_ID
     args = _parse_args(argv)
     _RUN_ID = args.run_id
+    _PREFLIGHT_SNAPSHOT = _child_preflight()
     _run_review_self_tests()
+    _assert_preflight_snapshot(
+        _PREFLIGHT_SNAPSHOT,
+        "after_self_tests",
+        require_initial_path=True,
+    )
+    _LIFECYCLE_EVENTS.append("post_self_test_ok")
+    print("TD_PREVIEW_POST_SELF_TEST_OK", flush=True)
     render_group(args.group)
-    print(f"TD_PREVIEW_OK {_RUN_ID}")
+    expected_events = [
+        "preflight_ok",
+        "self_tests_start",
+        "self_tests_ok",
+        "post_self_test_ok",
+        "render_publish_ok",
+    ]
+    if _LIFECYCLE_EVENTS != expected_events:
+        raise AssertionError("Child lifecycle order changed before completion")
+    print("TD_PREVIEW_LIFECYCLE_OK " + ",".join(_LIFECYCLE_EVENTS), flush=True)
+    print(f"TD_PREVIEW_OK {_RUN_ID}", flush=True)
     return 0
 
 
