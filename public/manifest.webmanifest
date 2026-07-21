@@ -1,0 +1,25 @@
+{
+  "id": "./",
+  "name": "후추덕배 타워 디펜스",
+  "short_name": "후추덕배 TD",
+  "description": "후추와 덕배가 간식 창고를 지키는 모바일 타워 디펜스 게임",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "landscape",
+  "theme_color": "#10271f",
+  "background_color": "#10271f",
+  "icons": [
+    {
+      "src": "icons/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
