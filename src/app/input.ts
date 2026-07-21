@@ -1,5 +1,9 @@
-import { GRID_HEIGHT, GRID_WIDTH } from '../game/config';
 import type { CanvasLayout } from '../game/render/layout';
+import {
+  isScreenPointInsidePolygon,
+  projectCellPolygon,
+  unprojectScreenPoint,
+} from '../game/render/projection';
 import type { Cell, Vec2 } from '../game/types';
 
 export type ClientPoint = Readonly<{ x: number; y: number }>;
@@ -36,41 +40,30 @@ export function pointerToWorld(
     || !Number.isFinite(clientRect.height)
     || clientRect.width <= 0
     || clientRect.height <= 0
-    || !Number.isFinite(layout.tileWidth)
-    || layout.tileWidth <= 0
-    || !Number.isFinite(layout.tileHeight)
-    || layout.tileHeight <= 0
   ) {
     return null;
   }
 
-  const canvasX = (point.x - clientRect.left) * (layout.viewport.width / clientRect.width);
-  const canvasY = (point.y - clientRect.top) * (layout.viewport.height / clientRect.height);
-  const projectedX = canvasX - layout.mapOrigin.x;
-  const projectedY = canvasY - layout.mapOrigin.y;
-  const x = projectedX / layout.tileWidth + projectedY / layout.tileHeight;
-  const y = projectedY / layout.tileHeight - projectedX / layout.tileWidth;
-  if (
-    !Number.isFinite(x)
-    || !Number.isFinite(y)
-    || x < 0
-    || x >= GRID_WIDTH
-    || y < 0
-    || y >= GRID_HEIGHT
-  ) {
-    return null;
-  }
-
-  return { x, y };
+  const screen = {
+    x: (point.x - clientRect.left) * (layout.viewport.width / clientRect.width),
+    y: (point.y - clientRect.top) * (layout.viewport.height / clientRect.height),
+  };
+  return unprojectScreenPoint(layout, screen);
 }
 
 export function pointerToCell(
   point: ClientPoint,
   layout: CanvasLayout,
-  clientRect?: ClientRect,
+  clientRect: ClientRect = defaultClientRect(layout),
 ): Cell | null {
   const world = pointerToWorld(point, layout, clientRect);
-  return world === null ? null : { col: Math.floor(world.x), row: Math.floor(world.y) };
+  if (world === null) return null;
+  const cell = { col: Math.floor(world.x), row: Math.floor(world.y) };
+  const screen = {
+    x: (point.x - clientRect.left) * (layout.viewport.width / clientRect.width),
+    y: (point.y - clientRect.top) * (layout.viewport.height / clientRect.height),
+  };
+  return isScreenPointInsidePolygon(screen, projectCellPolygon(layout, cell)) ? cell : null;
 }
 
 export function isTapGesture(

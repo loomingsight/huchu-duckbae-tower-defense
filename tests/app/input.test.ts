@@ -6,33 +6,35 @@ import {
   pointerToWorld,
 } from '../../src/app/input';
 import { computeCanvasLayout } from '../../src/game/render/layout';
+import { projectWorldPoint } from '../../src/game/render/projection';
 
 describe('mobile canvas input', () => {
-  it('converts client coordinates through the canvas rect and map letterbox', () => {
+  it('converts scaled client coordinates through the shared inverse projection', () => {
     const layout = computeCanvasLayout({ width: 400, height: 300, dpr: 2 });
     const canvasRect = { left: 50, top: 20, width: 800, height: 600 };
 
     const world = { x: 2.5, y: 4.5 };
-    const screen = {
-      x: layout.mapOrigin.x + (world.x - world.y) * layout.tileWidth / 2,
-      y: layout.mapOrigin.y + (world.x + world.y) * layout.tileHeight / 2,
-    };
+    const screen = projectWorldPoint(layout, world);
     const point = {
       x: canvasRect.left + screen.x * 2,
       y: canvasRect.top + screen.y * 2,
     };
 
     const converted = pointerToWorld(point, layout, canvasRect);
-    expect(converted?.x).toBeCloseTo(2.5, 10);
-    expect(converted?.y).toBeCloseTo(4.5, 10);
+    expect(converted?.x).toBeCloseTo(world.x, 1);
+    expect(converted?.y).toBeCloseTo(world.y, 1);
     expect(pointerToCell(point, layout, canvasRect)).toEqual({ col: 2, row: 4 });
   });
 
-  it('returns null for letterbox, outside-map, and non-finite coordinates', () => {
+  it('rejects the wide map bounds outside the narrow top trapezoid and invalid inputs', () => {
     const layout = computeCanvasLayout({ width: 400, height: 300, dpr: 1 });
+    const topOutside = {
+      x: layout.mapArea.x + 1,
+      y: layout.projection.topY + 1,
+    };
 
+    expect(pointerToCell(topOutside, layout)).toBeNull();
     expect(pointerToCell({ x: 10, y: 10 }, layout)).toBeNull();
-    expect(pointerToCell({ x: 200, y: 290 }, layout)).toBeNull();
     expect(pointerToCell({ x: Number.NaN, y: 100 }, layout)).toBeNull();
     expect(pointerToCell({ x: 100, y: Number.POSITIVE_INFINITY }, layout)).toBeNull();
   });

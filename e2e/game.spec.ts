@@ -1,5 +1,8 @@
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 
+import { computeCanvasLayout } from '../src/game/render/layout';
+import { projectWorldPoint } from '../src/game/render/projection';
+
 type TowerCell = Readonly<{ col: number; row: number }>;
 
 type ClockSnapshot = {
@@ -62,25 +65,8 @@ async function canvasPositionForCell(
 ): Promise<{ x: number; y: number }> {
   const box = await page.locator('canvas').boundingBox();
   if (box === null) throw new Error('Canvas has no layout box');
-  const dimensionSum = 30;
-  const topPadding = Math.max(8, box.height * 0.1);
-  const availableHeight = Math.max(1, box.height - topPadding - 6);
-  const tileWidth = Math.min(
-    Math.max(1, (box.width - 12) * 2 / dimensionSum),
-    Math.max(1, availableHeight * 2 / (dimensionSum * 0.44)),
-  );
-  const tileHeight = tileWidth * 0.44;
-  const mapWidth = dimensionSum * tileWidth / 2;
-  const mapHeight = dimensionSum * tileHeight / 2;
-  const mapX = (box.width - mapWidth) / 2;
-  const mapY = topPadding + Math.max(0, (availableHeight - mapHeight) / 2);
-  const originX = mapX + 10 * tileWidth / 2;
-  const worldX = col + 0.5;
-  const worldY = row + 0.5;
-  return {
-    x: originX + (worldX - worldY) * tileWidth / 2,
-    y: mapY + (worldX + worldY) * tileHeight / 2,
-  };
+  const layout = computeCanvasLayout({ width: box.width, height: box.height, dpr: 1 });
+  return projectWorldPoint(layout, { x: col + 0.5, y: row + 0.5 });
 }
 
 function screenshotPath(testInfo: TestInfo, filename: string): string {
