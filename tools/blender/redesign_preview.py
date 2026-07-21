@@ -854,23 +854,67 @@ def deokbae_predicate(name: str) -> bool:
 
 
 def arrow_predicate(name: str) -> bool:
-    return (name.startswith("Arrow_") or name == "ArrowTower_Root") and name not in {
-        "Arrow_Camera",
-        "Arrow_Key",
-        "Arrow_Fill",
-        "Arrow_Rim",
-        "Arrow_Ground",
-    }
+    return name in ARROW_COMPONENT_PARENTS
 
 
 def slow_predicate(name: str) -> bool:
-    return (name.startswith("Slow_") or name.startswith("SlowTower_")) and name not in {
-        "Slow_Camera",
-        "Slow_Key",
-        "Slow_Fill",
-        "Slow_Rim",
-        "Slow_Ground",
-    } and "aura" not in name.casefold()
+    return name in SLOW_COMPONENT_PARENTS
+
+
+SLOW_COMPONENT_PARENTS = {
+    "SlowTower_Root": None,
+    "SlowTower_Body": "SlowTower_Root",
+    "Slow_Base_Lower": "SlowTower_Body",
+    "Slow_Base_Mid": "SlowTower_Body",
+    "Slow_Base_Upper": "SlowTower_Body",
+    "Slow_Frame_Ring_Bottom": "SlowTower_Body",
+    "Slow_Frame_Ring_Top": "SlowTower_Body",
+    "Slow_Frame_Support_1": "SlowTower_Body",
+    "Slow_Frame_Support_2": "SlowTower_Body",
+    "Slow_Frame_Support_3": "SlowTower_Body",
+    "Slow_Hourglass_Pink_Bottom": "SlowTower_Body",
+    "Slow_Hourglass_Pink_Top": "SlowTower_Body",
+    "Slow_Snowflake_Front_Bar_1": "SlowTower_Body",
+    "Slow_Snowflake_Front_Bar_2": "SlowTower_Body",
+    "Slow_Snowflake_Front_Bar_3": "SlowTower_Body",
+    "Slow_Waist_Mint": "SlowTower_Body",
+}
+
+ARROW_COMPONENT_PARENTS = {
+    "ArrowTower_Root": None,
+    "Arrow_Base_Static": "ArrowTower_Root",
+    "Arrow_Base_Mint_Rim": "Arrow_Base_Static",
+    "Arrow_Base_Wood_Lower": "Arrow_Base_Static",
+    "Arrow_Base_Wood_Upper": "Arrow_Base_Static",
+    "Arrow_Pivot_Cap": "Arrow_Base_Static",
+    "Arrow_Pivot_Collar": "Arrow_Base_Static",
+    "Arrow_Pivot_Column": "Arrow_Base_Static",
+    "Arrow_Turret_Yaw": "ArrowTower_Root",
+    "Arrow_Bow_Band_L": "Arrow_Turret_Yaw",
+    "Arrow_Bow_Band_R": "Arrow_Turret_Yaw",
+    "Arrow_Bow_End_L": "Arrow_Turret_Yaw",
+    "Arrow_Bow_End_R": "Arrow_Turret_Yaw",
+    "Arrow_Bow_Limb": "Arrow_Turret_Yaw",
+    "Arrow_Bow_String": "Arrow_Turret_Yaw",
+    "Arrow_Fletching_H": "Arrow_Turret_Yaw",
+    "Arrow_Fletching_V": "Arrow_Turret_Yaw",
+    "Arrow_Loaded_Head": "Arrow_Turret_Yaw",
+    "Arrow_Loaded_Shaft": "Arrow_Turret_Yaw",
+    "Arrow_Rail": "Arrow_Turret_Yaw",
+    "Arrow_Stock": "Arrow_Turret_Yaw",
+    "Arrow_Turret_Collar": "Arrow_Turret_Yaw",
+}
+
+TOWER_COMPONENT_PARENTS = {
+    "towers/slow-se.png": SLOW_COMPONENT_PARENTS,
+    "towers/arrow-se.png": ARROW_COMPONENT_PARENTS,
+}
+
+CHARACTER_HEAD_COMPONENTS = {
+    "huchu": ("Huchu_v2", "Huchu_Eye3D_L", "Huchu_Eye3D_R"),
+    "deokbae": ("Deokbae_v2", "Deokbae_Eye3D_L", "Deokbae_Eye3D_R"),
+}
+HEAD_VERTEX_GROUP_NAME = "TDPreview_HeadMetric_v1"
 
 
 TOWER_ASSETS = {
@@ -902,12 +946,70 @@ def append_selected_objects(
             loaded.append(obj)
     if len(loaded) != len(selected_names):
         raise AssertionError(f"Incomplete object append from {blend_path.name}")
+    bpy.context.view_layer.update()
     return loaded
 
 
+RENDER_GEOMETRY_TYPES = {"MESH", "CURVE"}
+
+
+def render_geometry_bounds(objects: list[bpy.types.Object]) -> tuple[Vector, Vector]:
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    points: list[Vector] = []
+    for obj in objects:
+        if obj.type not in RENDER_GEOMETRY_TYPES or obj.hide_render:
+            continue
+        evaluated = obj.evaluated_get(depsgraph)
+        evaluated_mesh = None
+        try:
+            evaluated_mesh = evaluated.to_mesh(preserve_all_data_layers=False)
+            if evaluated_mesh is None or not evaluated_mesh.vertices:
+                raise AssertionError(f"Empty evaluated render geometry: {obj.name}")
+            object_points = [
+                evaluated.matrix_world @ vertex.co
+                for vertex in evaluated_mesh.vertices
+            ]
+            if any(not all(math.isfinite(value) for value in point) for point in object_points):
+                raise AssertionError(f"Non-finite evaluated render geometry: {obj.name}")
+            points.extend(object_points)
+        finally:
+            if evaluated_mesh is not None:
+                evaluated.to_mesh_clear()
+    if not points:
+        raise AssertionError("No evaluated render geometry found")
+    minimum = Vector(tuple(min(point[index] for point in points) for index in range(3)))
+    maximum = Vector(tuple(max(point[index] for point in points) for index in range(3)))
+    return minimum, maximum
+
+
 def mesh_bounds(objects: list[bpy.types.Object]) -> tuple[Vector, Vector]:
-    meshes = [obj for obj in objects if obj.type == "MESH"]
-    return _world_bounds(meshes)
+    return render_geometry_bounds(objects)
+
+
+def _assert_required_tower_components(
+    relative_path: str,
+    objects: list[bpy.types.Object],
+) -> None:
+    manifest = TOWER_COMPONENT_PARENTS.get(relative_path)
+    if manifest is None:
+        return
+    by_name = {obj.name: obj for obj in objects}
+    if set(by_name) != set(manifest):
+        raise AssertionError(
+            f"{relative_path} component manifest mismatch: "
+            f"missing={sorted(set(manifest) - set(by_name))} "
+            f"extra={sorted(set(by_name) - set(manifest))}"
+        )
+    for name, expected_parent in manifest.items():
+        obj = by_name[name]
+        actual_parent = obj.parent.name if obj.parent is not None else None
+        if actual_parent != expected_parent:
+            raise AssertionError(
+                f"{relative_path} source hierarchy mismatch for {name}: "
+                f"expected={expected_parent} actual={actual_parent}"
+            )
+        if obj.hide_render:
+            raise AssertionError(f"{relative_path} required component is hidden: {name}")
 
 
 def _tower_asset_slug(collection: bpy.types.Collection) -> str:
@@ -947,10 +1049,21 @@ def fit_objects_to_tile(
     root = bpy.data.objects.new(f"TDPreview_tower_{slug}__FitRoot", None)
     _tag(root, "tower")
     collection.objects.link(root)
-    for obj in objects:
+    object_set = set(objects)
+    roots = [obj for obj in objects if obj.parent not in object_set]
+    if not roots:
+        raise AssertionError("Tower source hierarchy has no top-level root")
+    parent_edges = {
+        obj: obj.parent
+        for obj in objects
+        if obj.parent in object_set
+    }
+    for obj in roots:
         world_transform = obj.matrix_world.copy()
         obj.parent = root
         obj.matrix_world = world_transform
+    if any(obj.parent is not parent for obj, parent in parent_edges.items()):
+        raise AssertionError("Tower fit flattened a source parent edge")
     root.scale = (scale, scale, scale)
     bpy.context.view_layer.update()
     minimum, maximum = mesh_bounds(objects)
@@ -1012,28 +1125,173 @@ def _tower_dependency_blocks(
     objects: list[bpy.types.Object],
     collections: list[bpy.types.Collection],
 ) -> list[object]:
-    blocks: list[object] = [*objects, *collections]
-    seen: set[int] = {id(block) for block in blocks}
-    for obj in objects:
-        for block in (obj.data, obj.animation_data.action if obj.animation_data else None):
-            if block is not None and id(block) not in seen:
-                seen.add(id(block))
-                blocks.append(block)
-        for slot in obj.material_slots:
-            material = slot.material
-            if material is None or id(material) in seen:
-                continue
-            seen.add(id(material))
-            blocks.append(material)
-            if material.node_tree is not None and id(material.node_tree) not in seen:
-                seen.add(id(material.node_tree))
-                blocks.append(material.node_tree)
-                for node in material.node_tree.nodes:
-                    for attribute in ("image", "node_tree"):
-                        dependency = getattr(node, attribute, None)
-                        if dependency is not None and id(dependency) not in seen:
-                            seen.add(id(dependency))
-                            blocks.append(dependency)
+    blocks: list[object] = []
+    queue: list[object] = [*objects, *collections]
+    seen: set[tuple[type, int]] = set()
+    local_rna_types = tuple(
+        candidate
+        for name in (
+            "Modifier",
+            "Constraint",
+            "Node",
+            "NodeSocket",
+            "ParticleSystem",
+            "NlaTrack",
+            "NlaStrip",
+            "FCurve",
+            "Driver",
+            "DriverVariable",
+            "DriverTarget",
+        )
+        if (candidate := getattr(bpy.types, name, None)) is not None
+    )
+
+    def enqueue(value: object | None) -> None:
+        if value is not None:
+            queue.append(value)
+
+    def enqueue_id_property(value: object) -> None:
+        if isinstance(value, bpy.types.ID):
+            enqueue(value)
+        elif isinstance(value, (list, tuple)):
+            for item in value:
+                enqueue_id_property(item)
+        else:
+            keys = getattr(value, "keys", None)
+            if callable(keys):
+                try:
+                    for identifier in keys():
+                        enqueue_id_property(value[identifier])
+                except (KeyError, TypeError, RuntimeError):
+                    pass
+
+    def animation_dependencies(owner: object) -> None:
+        animation = getattr(owner, "animation_data", None)
+        if animation is None:
+            return
+        enqueue(getattr(animation, "action", None))
+        for track in getattr(animation, "nla_tracks", ()):
+            enqueue(track)
+            for strip in track.strips:
+                enqueue(strip)
+                enqueue(getattr(strip, "action", None))
+        for fcurve in getattr(animation, "drivers", ()):
+            enqueue(fcurve)
+            driver = getattr(fcurve, "driver", None)
+            enqueue(driver)
+            if driver is not None:
+                for variable in driver.variables:
+                    enqueue(variable)
+                    for target in variable.targets:
+                        enqueue(target)
+                        enqueue(getattr(target, "id", None))
+
+    while queue:
+        block = queue.pop()
+        pointer = getattr(block, "as_pointer", None)
+        identity = pointer() if callable(pointer) else id(block)
+        key = (type(block), identity)
+        if key in seen:
+            continue
+        seen.add(key)
+        blocks.append(block)
+        animation_dependencies(block)
+
+        if isinstance(block, local_rna_types):
+            for prop in block.bl_rna.properties:
+                if prop.identifier in {"rna_type", "id_data"}:
+                    continue
+                try:
+                    value = getattr(block, prop.identifier)
+                except (AttributeError, ReferenceError, RuntimeError, TypeError):
+                    continue
+                if prop.type == "POINTER":
+                    enqueue(value)
+                elif prop.type == "COLLECTION":
+                    for item in value:
+                        enqueue(item)
+            keys = getattr(block, "keys", None)
+            if callable(keys):
+                try:
+                    identifiers = tuple(keys())
+                except TypeError:
+                    identifiers = ()
+                for identifier in identifiers:
+                    enqueue_id_property(block[identifier])
+
+        if isinstance(block, bpy.types.Collection):
+            for child in block.children:
+                enqueue(child)
+            for obj in block.objects:
+                enqueue(obj)
+        if isinstance(block, bpy.types.Object):
+            enqueue(block.data)
+            enqueue(block.parent)
+            enqueue(block.instance_collection)
+            for slot in block.material_slots:
+                enqueue(slot.material)
+            for modifier in block.modifiers:
+                enqueue(modifier)
+            for constraint in block.constraints:
+                enqueue(constraint)
+            for particle_system in block.particle_systems:
+                enqueue(particle_system)
+                enqueue(getattr(particle_system, "settings", None))
+            if block.pose is not None:
+                for bone in block.pose.bones:
+                    for constraint in bone.constraints:
+                        enqueue(constraint)
+        if isinstance(block, bpy.types.Material):
+            enqueue(block.node_tree)
+        if isinstance(block, bpy.types.NodeTree):
+            for node in block.nodes:
+                enqueue(node)
+                for socket in (*node.inputs, *node.outputs):
+                    enqueue(socket)
+                    default_value = getattr(socket, "default_value", None)
+                    if isinstance(default_value, bpy.types.ID):
+                        enqueue(default_value)
+        if isinstance(block, bpy.types.Mesh):
+            enqueue(block.shape_keys)
+            for material in block.materials:
+                enqueue(material)
+        if isinstance(block, bpy.types.Key):
+            for shape_key in block.key_blocks:
+                enqueue(shape_key)
+        if isinstance(block, bpy.types.ParticleSettings):
+            for slot in getattr(block, "texture_slots", ()):
+                enqueue(slot)
+        if isinstance(block, (bpy.types.Curve, bpy.types.MetaBall)):
+            for material in block.materials:
+                enqueue(material)
+
+        for attribute in (
+            "image",
+            "node_tree",
+            "node_group",
+            "object",
+            "target",
+            "mirror_object",
+            "offset_object",
+            "origin",
+            "curve_object",
+            "pole_target",
+            "space_object",
+            "camera",
+            "texture",
+            "material",
+            "collection",
+            "bevel_object",
+            "taper_object",
+            "instance_object",
+            "instance_collection",
+        ):
+            try:
+                dependency = getattr(block, attribute, None)
+            except (AttributeError, ReferenceError):
+                dependency = None
+            if dependency is not block:
+                enqueue(dependency)
     return blocks
 
 
@@ -1088,8 +1346,8 @@ def _assert_tower_asset_geometry(
     relative_path: str,
     collection: bpy.types.Collection,
 ) -> dict[str, float]:
-    meshes = [obj for obj in collection.all_objects if obj.type == "MESH"]
-    minimum, maximum = mesh_bounds(meshes)
+    geometry = [obj for obj in collection.all_objects if obj.type in RENDER_GEOMETRY_TYPES]
+    minimum, maximum = render_geometry_bounds(geometry)
     extent = maximum - minimum
     center = (minimum + maximum) / 2.0
     if max(extent.x, extent.y) > 2.45001 or extent.z > 2.65001:
@@ -1106,23 +1364,128 @@ def _assert_tower_asset_geometry(
     }
 
 
+def _tower_component(
+    collection: bpy.types.Collection,
+    source_name: str,
+) -> bpy.types.Object:
+    return _object_with_source_suffix(collection, source_name)
+
+
+def _geometry_center(obj: bpy.types.Object) -> Vector:
+    minimum, maximum = render_geometry_bounds([obj])
+    return (minimum + maximum) / 2.0
+
+
+def _assert_tower_component_layout(
+    relative_path: str,
+    collection: bpy.types.Collection,
+) -> None:
+    if relative_path == "towers/slow-se.png":
+        bottom_ring = _tower_component(collection, "Slow_Frame_Ring_Bottom")
+        top_ring = _tower_component(collection, "Slow_Frame_Ring_Top")
+        bottom_glass = _tower_component(collection, "Slow_Hourglass_Pink_Bottom")
+        top_glass = _tower_component(collection, "Slow_Hourglass_Pink_Top")
+        if _geometry_center(top_ring).z <= _geometry_center(bottom_ring).z + 0.25:
+            raise AssertionError("Slow tower cage rings do not form a vertical silhouette")
+        if _geometry_center(top_glass).z <= _geometry_center(bottom_glass).z + 0.15:
+            raise AssertionError("Slow tower hourglass top/bottom collapsed")
+        for index in range(1, 4):
+            support = _tower_component(collection, f"Slow_Frame_Support_{index}")
+            minimum, maximum = render_geometry_bounds([support])
+            if maximum.z - minimum.z <= 0.35:
+                raise AssertionError(f"Slow tower support {index} lost vertical extent")
+    elif relative_path == "towers/arrow-se.png":
+        string = _tower_component(collection, "Arrow_Bow_String")
+        if string.type != "CURVE":
+            raise AssertionError("Arrow bow string is not CURVE geometry")
+        shaft = _geometry_center(_tower_component(collection, "Arrow_Loaded_Shaft"))
+        head = _geometry_center(_tower_component(collection, "Arrow_Loaded_Head"))
+        fletching = _geometry_center(_tower_component(collection, "Arrow_Fletching_H"))
+        if not (head.y > shaft.y > fletching.y):
+            raise AssertionError("Arrow head/shaft/fletching ordering collapsed")
+
+
+def _object_with_source_suffix(
+    collection: bpy.types.Collection,
+    source_name: str,
+) -> bpy.types.Object:
+    suffix = "__" + source_name
+    matches = [obj for obj in collection.all_objects if obj.name.endswith(suffix)]
+    if len(matches) != 1:
+        raise AssertionError(
+            f"Expected one explicit character component {source_name}, found {len(matches)}"
+        )
+    return matches[0]
+
+
+def _explicit_head_width(
+    body: bpy.types.Object,
+) -> float:
+    if body.type != "MESH":
+        raise AssertionError("Explicit head metric requires a body mesh")
+    group = body.vertex_groups.get(HEAD_VERTEX_GROUP_NAME)
+    if group is None:
+        raise AssertionError(f"Missing explicit head vertex group on {body.name}")
+    lateral = body.matrix_world.to_3x3().col[0].normalized()
+    head_points: list[Vector] = []
+    for vertex in body.data.vertices:
+        if any(membership.group == group.index for membership in vertex.groups):
+            head_points.append(body.matrix_world @ vertex.co)
+    if len(head_points) < 2:
+        raise AssertionError(f"Explicit eye-anchored head geometry is empty for {body.name}")
+    lateral_positions = [point.dot(lateral) for point in head_points]
+    return max(lateral_positions) - min(lateral_positions)
+
+
+def _ensure_character_head_vertex_group(collection: bpy.types.Collection) -> None:
+    relative_path = collection.get("td_preview_asset")
+    if relative_path not in {"towers/huchu-se.png", "towers/deokbae-se.png"}:
+        return
+    character = "huchu" if relative_path == "towers/huchu-se.png" else "deokbae"
+    body_name, left_eye_name, right_eye_name = CHARACTER_HEAD_COMPONENTS[character]
+    body = _object_with_source_suffix(collection, body_name)
+    eyes = [
+        _object_with_source_suffix(collection, left_eye_name),
+        _object_with_source_suffix(collection, right_eye_name),
+    ]
+    if body.vertex_groups.get(HEAD_VERTEX_GROUP_NAME) is not None:
+        raise AssertionError(f"Imported body already contains reserved group {HEAD_VERTEX_GROUP_NAME}")
+    lateral = body.matrix_world.to_3x3().col[0].normalized()
+    back = body.matrix_world.to_3x3().col[1].normalized()
+    up = body.matrix_world.to_3x3().col[2].normalized()
+    eye_centers = []
+    for eye in eyes:
+        points = [eye.matrix_world @ Vector(corner) for corner in eye.bound_box]
+        minimum = Vector(tuple(min(point[index] for point in points) for index in range(3)))
+        maximum = Vector(tuple(max(point[index] for point in points) for index in range(3)))
+        eye_centers.append((minimum + maximum) / 2.0)
+    eye_center = (eye_centers[0] + eye_centers[1]) / 2.0
+    eye_span = abs((eye_centers[1] - eye_centers[0]).dot(lateral))
+    if eye_span <= 1e-4:
+        raise AssertionError("Explicit eye anchors have degenerate lateral span")
+    indices = []
+    for vertex in body.data.vertices:
+        relative = (body.matrix_world @ vertex.co) - eye_center
+        depth = relative.dot(back)
+        vertical = relative.dot(up)
+        if -eye_span <= depth <= 1.5 * eye_span and abs(vertical) <= 0.25 * eye_span:
+            indices.append(vertex.index)
+    if len(indices) < 2:
+        raise AssertionError(f"Explicit head vertex group is empty for {body.name}")
+    group = body.vertex_groups.new(name=HEAD_VERTEX_GROUP_NAME)
+    group.add(indices, 1.0, "REPLACE")
+
+
 def _character_metrics(collection: bpy.types.Collection) -> dict[str, float]:
     meshes = [obj for obj in collection.all_objects if obj.type == "MESH"]
-    minimum, maximum = mesh_bounds(meshes)
+    minimum, maximum = render_geometry_bounds(meshes)
     height = maximum.z - minimum.z
-    head_floor = minimum.z + height * 0.58
-    head_points: list[Vector] = []
-    for obj in meshes:
-        for vertex in obj.data.vertices:
-            point = obj.matrix_world @ vertex.co
-            if point.z >= head_floor:
-                head_points.append(point)
-    if not head_points:
-        raise AssertionError(f"No head vertices found for {collection.name}")
-    head_width = max(
-        max(point.x for point in head_points) - min(point.x for point in head_points),
-        max(point.y for point in head_points) - min(point.y for point in head_points),
-    )
+    character = "huchu" if collection.get("td_preview_asset") == "towers/huchu-se.png" else "deokbae"
+    body_name, left_eye_name, right_eye_name = CHARACTER_HEAD_COMPONENTS[character]
+    body = _object_with_source_suffix(collection, body_name)
+    _object_with_source_suffix(collection, left_eye_name)
+    _object_with_source_suffix(collection, right_eye_name)
+    head_width = _explicit_head_width(body)
     return {
         "height": float(height),
         "head_width": float(head_width),
@@ -1200,16 +1563,18 @@ def _append_tower_asset(
         predicate,
         collection_name,
     )
+    _assert_required_tower_components(relative_path, objects)
     collection = bpy.data.collections[collection_name]
     _tag(collection, "tower")
     collection["td_preview_asset"] = relative_path
     bpy.context.scene.collection.children.unlink(collection)
     _link_child(group, collection)
     _tag_tower_dependencies(objects, collection)
-    if relative_path.endswith(("huchu-se.png", "deokbae-se.png")):
-        _assert_clean_tower_dependencies(objects, [collection])
+    _ensure_character_head_vertex_group(collection)
+    _assert_clean_tower_dependencies(objects, [collection])
     fit_objects_to_tile(objects)
     _assert_tower_asset_geometry(relative_path, collection)
+    _assert_tower_component_layout(relative_path, collection)
     return collection, objects
 
 
@@ -1545,8 +1910,8 @@ def _validate_candidate(
             _assert_asset_geometry(relative_path, collection)
         else:
             _assert_tower_asset_geometry(relative_path, collection)
-            if relative_path.endswith(("huchu-se.png", "deokbae-se.png")):
-                _assert_clean_tower_dependencies(list(collection.all_objects), [collection])
+            _assert_tower_component_layout(relative_path, collection)
+            _assert_clean_tower_dependencies(list(collection.all_objects), [collection])
     character_metrics: dict[str, dict[str, float]] | None = None
     if group_name == "tower":
         _assert_only_td_rig(scene, group)
@@ -1557,6 +1922,20 @@ def _validate_candidate(
         character_metrics = json.loads(persisted_metrics)
         huchu = character_metrics["huchu"]
         deokbae = character_metrics["deokbae"]
+        collections_by_asset = {
+            collection.get("td_preview_asset"): collection
+            for collection in asset_collections
+        }
+        recomputed = {
+            "huchu": _character_metrics(collections_by_asset["towers/huchu-se.png"]),
+            "deokbae": _character_metrics(collections_by_asset["towers/deokbae-se.png"]),
+        }
+        for character, metrics in recomputed.items():
+            for key, value in metrics.items():
+                if abs(float(character_metrics[character][key]) - value) > 1e-5:
+                    raise AssertionError(
+                        f"Persisted {character} {key} does not match explicit geometry"
+                    )
         if huchu["height"] > deokbae["height"] * 1.02 + 1e-6:
             raise AssertionError("Persisted Huchu height ratio exceeds contract")
         if huchu["head_width"] > deokbae["head_width"] * 1.05 + 1e-6:
@@ -2393,6 +2772,277 @@ def _test_tower_predicates_and_purity() -> None:
     bpy.data.materials.remove(material)
 
 
+def _test_required_tower_components_and_hierarchy() -> None:
+    for relative_path, manifest, mutated_name in (
+        ("towers/slow-se.png", SLOW_COMPONENT_PARENTS, "Slow_Frame_Support_1"),
+        ("towers/arrow-se.png", ARROW_COMPONENT_PARENTS, "Arrow_Loaded_Shaft"),
+    ):
+        objects = [bpy.data.objects.new(name, None) for name in manifest]
+        by_name = {obj.name: obj for obj in objects}
+        for name, parent_name in manifest.items():
+            if parent_name is not None:
+                by_name[name].parent = by_name[parent_name]
+        try:
+            _assert_required_tower_components(relative_path, objects)
+            by_name[mutated_name].parent = by_name[next(name for name, parent in manifest.items() if parent is None)]
+            _expect_assertion(
+                f"flattened {relative_path} source hierarchy",
+                lambda: _assert_required_tower_components(relative_path, objects),
+            )
+        finally:
+            for obj in reversed(objects):
+                bpy.data.objects.remove(obj)
+
+
+def _test_tail_independent_head_metric() -> None:
+    mesh = bpy.data.meshes.new("ReviewCharacterBodyMesh")
+    mesh.from_pydata(
+        [
+            (-1.0, -1.0, 1.0),
+            (1.0, -1.0, 1.0),
+            (-0.8, -0.6, 1.8),
+            (0.8, -0.6, 1.8),
+            (-8.0, 2.0, 1.7),
+            (8.0, 2.0, 1.7),
+            (-1.0, 0.0, 0.0),
+            (1.0, 0.0, 0.0),
+            (0.0, -3.5, 1.25),
+        ],
+        [],
+        [],
+    )
+    body = bpy.data.objects.new("TDPreview_review__Huchu_v2", mesh)
+    eye_mesh = bpy.data.meshes.new("ReviewEyeMesh")
+    eye_mesh.from_pydata([(-0.05, 0.0, 0.0), (0.05, 0.0, 0.0)], [], [])
+    left = bpy.data.objects.new("TDPreview_review__Huchu_Eye3D_L", eye_mesh)
+    right = bpy.data.objects.new("TDPreview_review__Huchu_Eye3D_R", eye_mesh)
+    left.location = (-0.25, -1.0, 1.25)
+    right.location = (0.25, -1.0, 1.25)
+    collection = bpy.data.collections.new("ReviewCharacterCollection")
+    collection["td_preview_asset"] = "towers/huchu-se.png"
+    bpy.context.scene.collection.children.link(collection)
+    collection.objects.link(body)
+    collection.objects.link(left)
+    collection.objects.link(right)
+    group = body.vertex_groups.new(name=HEAD_VERTEX_GROUP_NAME)
+    group.add([0, 1, 2, 3, 8], 1.0, "REPLACE")
+    bpy.context.view_layer.update()
+    try:
+        before = _character_metrics(collection)["head_width"]
+        if abs(before - 2.0) > 1e-6:
+            raise AssertionError(f"Explicit head width used non-lateral geometry: {before}")
+        mesh.vertices[4].co.x = -80.0
+        mesh.vertices[5].co.x = 80.0
+        bpy.context.view_layer.update()
+        after_tail = _character_metrics(collection)["head_width"]
+        if abs(after_tail - 2.0) > 1e-6:
+            raise AssertionError("Tail movement changed explicit head width")
+        mesh.vertices[0].co.x = -1.25
+        mesh.vertices[1].co.x = 1.25
+        bpy.context.view_layer.update()
+        after_head = _character_metrics(collection)["head_width"]
+        if abs(after_head - 2.5) > 1e-6:
+            raise AssertionError("Head movement did not change explicit head width")
+    finally:
+        bpy.context.scene.collection.children.unlink(collection)
+        bpy.data.objects.remove(body)
+        bpy.data.objects.remove(left)
+        bpy.data.objects.remove(right)
+        bpy.data.meshes.remove(mesh)
+        bpy.data.meshes.remove(eye_mesh)
+        bpy.data.collections.remove(collection)
+
+
+def _test_recursive_tower_dependency_closure() -> None:
+    mesh = bpy.data.meshes.new("ReviewClosureMesh")
+    obj = bpy.data.objects.new("ReviewClosureObject", mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    material = bpy.data.materials.new("ReviewClosureMaterial")
+    material.use_nodes = True
+    mesh.materials.append(material)
+    outer = bpy.data.node_groups.new("ReviewOuterNodeGroup", "ShaderNodeTree")
+    nested = bpy.data.node_groups.new("ReviewNestedNodeGroup", "ShaderNodeTree")
+    image = bpy.data.images.new("ReviewBubbleNestedImage", 1, 1)
+    node = material.node_tree.nodes.new("ShaderNodeGroup")
+    node.node_tree = outer
+    nested_node = outer.nodes.new("ShaderNodeGroup")
+    nested_node.node_tree = nested
+    image_node = nested.nodes.new("ShaderNodeTexImage")
+    image_node.image = image
+    target = bpy.data.objects.new("ReviewConstraintTarget", None)
+    constraint = obj.constraints.new("COPY_LOCATION")
+    constraint.target = target
+    shape_key = obj.shape_key_add(name="ReviewShapeKey")
+    instance_collection = bpy.data.collections.new("ReviewInstanceCollection")
+    instance_child = bpy.data.objects.new("ReviewInstanceChild", None)
+    instance_collection.objects.link(instance_child)
+    instance = bpy.data.objects.new("ReviewInstanceObject", None)
+    instance.instance_type = "COLLECTION"
+    instance.instance_collection = instance_collection
+    action = bpy.data.actions.new("ReviewAction")
+    modifier_target_mesh = bpy.data.meshes.new("ReviewModifierTargetMesh")
+    modifier_target = bpy.data.objects.new("ReviewModifierTarget", modifier_target_mesh)
+    bpy.context.scene.collection.objects.link(modifier_target)
+    modifier = obj.modifiers.new("ReviewShrinkwrapModifier", "SHRINKWRAP")
+    modifier.target = modifier_target
+    texture = bpy.data.textures.new("ReviewTexture", type="CLOUDS")
+    displace = obj.modifiers.new("ReviewDisplaceModifier", "DISPLACE")
+    displace.texture = texture
+    geometry_tree = bpy.data.node_groups.new("ReviewGeometryTree", "GeometryNodeTree")
+    nested_geometry_tree = bpy.data.node_groups.new("ReviewNestedGeometryTree", "GeometryNodeTree")
+    geometry_node = geometry_tree.nodes.new("GeometryNodeGroup")
+    geometry_node.node_tree = nested_geometry_tree
+    geometry_modifier = obj.modifiers.new("ReviewGeometryModifier", "NODES")
+    geometry_modifier.node_group = geometry_tree
+    driver_target = bpy.data.objects.new("ReviewDriverTarget", None)
+    bpy.context.scene.collection.objects.link(driver_target)
+    driver_fcurve = obj.driver_add("location", 0)
+    variable = driver_fcurve.driver.variables.new()
+    variable.targets[0].id = driver_target
+    unrelated_collection = bpy.data.collections.new("UnrelatedWaterCollection")
+    unrelated_object = bpy.data.objects.new("UnrelatedWaterObject", None)
+    unrelated_collection.objects.link(unrelated_object)
+    bpy.context.scene.collection.children.link(unrelated_collection)
+    try:
+        _expect_assertion(
+            "nested image tower dependency",
+            lambda: _assert_clean_tower_dependencies([obj], []),
+        )
+        image.name = "ReviewNestedImage"
+
+        shape_key.name = "ReviewWaterShapeKey"
+        _expect_assertion(
+            "shape-key tower dependency",
+            lambda: _assert_clean_tower_dependencies([obj], []),
+        )
+        shape_key.name = "ReviewShapeKey"
+
+        target.name = "ReviewFlameConstraintTarget"
+        _expect_assertion(
+            "constraint target tower dependency",
+            lambda: _assert_clean_tower_dependencies([obj], []),
+        )
+        target.name = "ReviewConstraintTarget"
+
+        modifier_target.name = "ReviewWaterModifierTarget"
+        _expect_assertion(
+            "modifier target tower dependency",
+            lambda: _assert_clean_tower_dependencies([obj], []),
+        )
+        modifier_target.name = "ReviewModifierTarget"
+
+        texture.name = "ReviewFlameTexture"
+        _expect_assertion(
+            "modifier texture tower dependency",
+            lambda: _assert_clean_tower_dependencies([obj], []),
+        )
+        texture.name = "ReviewTexture"
+
+        nested_geometry_tree.name = "ReviewBubbleGeometryTree"
+        _expect_assertion(
+            "geometry-node tower dependency",
+            lambda: _assert_clean_tower_dependencies([obj], []),
+        )
+        nested_geometry_tree.name = "ReviewNestedGeometryTree"
+
+        driver_target.name = "ReviewOrbDriverTarget"
+        _expect_assertion(
+            "driver target tower dependency",
+            lambda: _assert_clean_tower_dependencies([obj], []),
+        )
+        driver_target.name = "ReviewDriverTarget"
+
+        instance_child.name = "ReviewOrbInstanceChild"
+        _expect_assertion(
+            "instance collection tower dependency",
+            lambda: _assert_clean_tower_dependencies([instance], []),
+        )
+        instance_child.name = "ReviewInstanceChild"
+
+        animation = obj.animation_data_create()
+        track = animation.nla_tracks.new()
+        track.strips.new("ReviewNlaStrip", 1, action)
+        action.name = "ReviewFireAction"
+        _expect_assertion(
+            "animation action tower dependency",
+            lambda: _assert_clean_tower_dependencies([obj], []),
+        )
+        action.name = "ReviewAction"
+        _assert_clean_tower_dependencies([obj], [])
+    finally:
+        obj.driver_remove("location", 0)
+        bpy.data.objects.remove(obj)
+        bpy.data.objects.remove(target)
+        bpy.data.objects.remove(modifier_target)
+        bpy.data.meshes.remove(modifier_target_mesh)
+        bpy.data.objects.remove(driver_target)
+        bpy.data.objects.remove(instance)
+        bpy.data.objects.remove(instance_child)
+        bpy.data.collections.remove(instance_collection)
+        bpy.data.objects.remove(unrelated_object)
+        bpy.data.collections.remove(unrelated_collection)
+        bpy.data.meshes.remove(mesh)
+        bpy.data.materials.remove(material)
+        bpy.data.textures.remove(texture)
+        bpy.data.node_groups.remove(outer)
+        bpy.data.node_groups.remove(nested)
+        bpy.data.node_groups.remove(geometry_tree)
+        bpy.data.node_groups.remove(nested_geometry_tree)
+        bpy.data.images.remove(image)
+        bpy.data.actions.remove(action)
+
+
+def _test_curve_render_bounds() -> None:
+    mesh = bpy.data.meshes.new("ReviewBoundsMesh")
+    mesh.from_pydata(
+        [
+            (-0.5, -0.5, 0.2),
+            (0.5, -0.5, 0.2),
+            (0.5, 0.5, 0.2),
+            (-0.5, 0.5, 0.2),
+            (-0.5, -0.5, 1.2),
+            (0.5, -0.5, 1.2),
+            (0.5, 0.5, 1.2),
+            (-0.5, 0.5, 1.2),
+        ],
+        [],
+        [(0, 1, 2, 3), (4, 7, 6, 5), (0, 4, 5, 1), (1, 5, 6, 2), (2, 6, 7, 3), (4, 0, 3, 7)],
+    )
+    mesh_obj = bpy.data.objects.new("ReviewBoundsMeshObject", mesh)
+    curve = bpy.data.curves.new("ReviewBoundsCurve", "CURVE")
+    curve.dimensions = "3D"
+    spline = curve.splines.new("POLY")
+    spline.points.add(1)
+    spline.points[0].co = (0.0, 0.0, 0.25, 1.0)
+    spline.points[1].co = (0.0, 0.0, 1.0, 1.0)
+    curve.bevel_depth = 0.05
+    curve_obj = bpy.data.objects.new("ReviewBoundsCurveObject", curve)
+    curve_obj.location.x = 4.0
+    collection = bpy.data.collections.new("ReviewBoundsCollection")
+    bpy.context.scene.collection.children.link(collection)
+    collection.objects.link(mesh_obj)
+    collection.objects.link(curve_obj)
+    bpy.context.view_layer.update()
+    try:
+        try:
+            _assert_tower_asset_geometry("towers/arrow-se.png", collection)
+        except AssertionError as error:
+            if "exceeds one-tile bounds" not in str(error):
+                raise AssertionError(f"Curve bounds failed for the wrong reason: {error}") from error
+        else:
+            raise AssertionError("Curve outside tile was omitted from tower geometry assertion")
+        curve_obj.location.x = 0.0
+        bpy.context.view_layer.update()
+        _assert_tower_asset_geometry("towers/arrow-se.png", collection)
+    finally:
+        bpy.context.scene.collection.children.unlink(collection)
+        bpy.data.objects.remove(mesh_obj)
+        bpy.data.objects.remove(curve_obj)
+        bpy.data.collections.remove(collection)
+        bpy.data.meshes.remove(mesh)
+        bpy.data.curves.remove(curve)
+
+
 def _test_tower_dependency_cleanup_order() -> None:
     curve = bpy.data.curves.new("ReviewTowerCleanupCurve", "CURVE")
     material = bpy.data.materials.new("ReviewTowerCleanupMaterial")
@@ -2471,6 +3121,10 @@ def _run_review_self_tests() -> None:
         ("foreign_material_group_invariants", _test_foreign_material_and_group_invariants),
         ("rig_normalization_owned_orphans", _test_rig_normalization_and_owned_orphans),
         ("tower_predicates_purity", _test_tower_predicates_and_purity),
+        ("required_tower_components_hierarchy", _test_required_tower_components_and_hierarchy),
+        ("tail_independent_head_metric", _test_tail_independent_head_metric),
+        ("recursive_tower_dependency_closure", _test_recursive_tower_dependency_closure),
+        ("curve_render_bounds", _test_curve_render_bounds),
         ("tower_dependency_cleanup_order", _test_tower_dependency_cleanup_order),
         ("current_only_render_visibility", _test_current_only_render_visibility),
     )
