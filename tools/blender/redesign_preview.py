@@ -14,6 +14,7 @@ import tempfile
 from pathlib import Path
 
 import bpy
+from bpy_extras.object_utils import world_to_camera_view
 from mathutils import Matrix, Vector
 
 
@@ -28,12 +29,16 @@ SCENE_NAME = "TDPreview_v1"
 GROUP_NAME = "TDPreview_Group_map"
 TOWER_GROUP_NAME = "TDPreview_Group_tower"
 MOTION_GROUP_NAME = "TDPreview_Group_motion"
+VFX_GROUP_NAME = "TDPreview_Group_vfx"
+PREVIEW_GROUPS = ("map", "tower", "motion", "vfx")
 RIG_COLLECTION_NAME = "TDPreview_Rig_v1"
 MATERIAL_PREFIX = "TDPreview_map_v1__"
 TOWER_MATERIAL_PREFIX = "TDPreview_tower_v1__"
 MOTION_MATERIAL_PREFIX = "TDPreview_motion_v1__"
+VFX_MATERIAL_PREFIX = "TDPreview_vfx_v1__"
 TOWER_GROUND_Z = 0.20
 MOTION_ROOT_YAW = math.radians(225.0)
+VFX_ANCHOR = (0.0, 0.0, 0.75)
 
 CAMERA_SPEC = {
     "name": "TD_Preview_Camera",
@@ -87,6 +92,7 @@ COLORS = {
 }
 
 _ACTIVE_ASSET_COLLECTION: bpy.types.Collection | None = None
+_ACTIVE_VFX_COLLECTION: bpy.types.Collection | None = None
 _STAGING_ROOT: Path | None = None
 _EXPECTED_PRESERVED_STATE: dict[str, object] = {}
 _LIFECYCLE_EVENTS: list[str] = []
@@ -1151,11 +1157,14 @@ def _assert_rig_exact(scene: bpy.types.Scene, rig: bpy.types.Collection) -> None
             raise AssertionError(f"Preview light is not exactly normalized: {name}")
 
 
-def _scene_preservation_signature(scene: bpy.types.Scene) -> dict[str, object]:
+def _scene_preservation_signature(
+    scene: bpy.types.Scene,
+    excluded_group_names: tuple[str, ...] = (MOTION_GROUP_NAME,),
+) -> dict[str, object]:
     def layer_collection_signature(
         layer: bpy.types.LayerCollection,
     ) -> dict[str, object] | None:
-        if layer.collection.name == MOTION_GROUP_NAME:
+        if layer.collection.name in excluded_group_names:
             return None
         children = [
             signature
@@ -1181,7 +1190,7 @@ def _scene_preservation_signature(scene: bpy.types.Scene) -> dict[str, object]:
         "direct_collections": sorted(
             child.name
             for child in scene.collection.children
-            if child.name != MOTION_GROUP_NAME
+            if child.name not in excluded_group_names
         ),
         "view_layers": {
             view_layer.name: layer_collection_signature(view_layer.layer_collection)
@@ -1230,7 +1239,7 @@ def _assert_motion_blend_or_recovery_ready(
             raise
     recovery_journals = [
         _journal_path(output_root, group)
-        for group in ("map", "tower", "motion")
+        for group in PREVIEW_GROUPS
     ]
     if not any(path.is_file() and not path.is_symlink() for path in recovery_journals):
         _assert_real_preview_blend(blend_output)
@@ -1526,6 +1535,51 @@ def _assert_motion_prerequisites(
     return current
 
 
+def _assert_vfx_prerequisites(
+    scene: bpy.types.Scene,
+    expected_state: dict[str, object] | None = None,
+    *,
+    validate_content: bool = True,
+) -> dict[str, object]:
+    base = _assert_motion_prerequisites(
+        scene,
+        validate_content=validate_content,
+    )
+    motion_group = _assert_prerequisite_group_manifest(
+        scene,
+        MOTION_GROUP_NAME,
+        "motion",
+        MOTION_ASSETS,
+        _motion_asset_collection_name,
+    )
+    motion_audit = _assert_persisted_motion_state(motion_group)
+    existing_vfx = bpy.data.collections.get(VFX_GROUP_NAME)
+    if existing_vfx is not None:
+        if (
+            existing_vfx.name not in {child.name for child in scene.collection.children}
+            or set(_collection_scene_names(existing_vfx)) != {scene.name}
+            or _collection_direct_scene_names(existing_vfx) != [scene.name]
+            or any(
+                existing_vfx.name in {child.name for child in parent.children}
+                for parent in bpy.data.collections
+            )
+        ):
+            raise AssertionError("Existing VFX group scene scope is invalid")
+        _assert_canonical_layer_collection(scene, existing_vfx, (existing_vfx.name,))
+        _assert_vfx_group_clean(existing_vfx)
+    current: dict[str, object] = {
+        "map": base["map"],
+        "tower": base["tower"],
+        "motion": _collection_signature(motion_group),
+        "motion_audit": motion_audit,
+        "rig": base["rig"],
+        "scene": _scene_preservation_signature(scene, (VFX_GROUP_NAME,)),
+    }
+    if expected_state is not None and current != expected_state:
+        raise AssertionError("Previously completed map/tower/motion/rig state changed")
+    return current
+
+
 def _assert_candidate_render_filepath(scene: bpy.types.Scene) -> None:
     raw = scene.render.filepath
     if not raw:
@@ -1717,12 +1771,15 @@ def _visible_meshes(scene: bpy.types.Scene) -> list[bpy.types.Object]:
     return [obj for obj in scene.objects if obj.type == "MESH" and not obj.hide_render]
 
 
-def render_still(output_path: Path) -> None:
+def render_still(output_path: Path, *, allow_empty: bool = False) -> None:
     scene = bpy.context.scene
     render_filepath = scene.render.filepath
     try:
         meshes = _visible_meshes(scene)
-        _world_bounds(meshes)
+        if meshes:
+            _world_bounds(meshes)
+        elif not allow_empty:
+            raise AssertionError("No visible meshes for nonempty render")
         output_path.parent.mkdir(parents=True, exist_ok=True)
         scene.render.resolution_x = FRAME_SIZE
         scene.render.resolution_y = FRAME_SIZE
@@ -1904,6 +1961,34 @@ MOTION_ASSETS = {
     "motion/fairy-fly-se.png": ("fairy", 8),
 }
 
+VFX_ASSETS = {
+    "vfx/arrow-8dir.png": ("arrow", 8, "loop"),
+    "vfx/fireball-flight.png": ("fireball", 4, "loop"),
+    "vfx/waterball-flight.png": ("waterball", 4, "loop"),
+    "vfx/arrow-impact.png": ("arrow", 4, "impact"),
+    "vfx/fire-burst.png": ("fire", 8, "impact"),
+    "vfx/aqua-burst.png": ("aqua", 8, "impact"),
+}
+
+VFX_DIRECTION_ORDER = ("E", "SE", "S", "SW", "W", "NW", "N", "NE")
+VFX_ARROW_YAWS = tuple(
+    math.radians(value)
+    for value in (
+        37.405357,
+        332.434272,
+        307.405357,
+        282.376441,
+        217.405357,
+        152.434272,
+        127.405357,
+        102.376441,
+    )
+)
+VFX_SCREEN_ANGLES = tuple(
+    math.radians(value)
+    for value in (0.0, -45.0, -90.0, -135.0, 180.0, 135.0, 90.0, 45.0)
+)
+
 MOTION_REQUIRED_OBJECTS = {
     "orc": {
         "Enemy_Orc_Root": ("EMPTY", None),
@@ -2080,7 +2165,14 @@ def _owned_asset_collection_for(
 
 def _owned_asset_slug(collection: bpy.types.Collection, group: str) -> str:
     relative_path = collection.get("td_preview_asset")
-    assets = TOWER_ASSETS if group == "tower" else MOTION_ASSETS if group == "motion" else None
+    if group == "tower":
+        assets = TOWER_ASSETS
+    elif group == "motion":
+        assets = MOTION_ASSETS
+    elif group == "vfx":
+        assets = VFX_ASSETS
+    else:
+        assets = None
     if not isinstance(relative_path, str) or assets is None or relative_path not in assets:
         raise AssertionError(f"Invalid {group} asset collection identity: {collection.name}")
     return Path(relative_path).stem.replace("-", "_")
@@ -3198,6 +3290,8 @@ def _validate_animation_png(
     path: Path,
     frame_size: int,
     frame_count: int,
+    *,
+    allow_final_empty: bool = False,
 ) -> dict[str, object]:
     image = None
     try:
@@ -3223,23 +3317,30 @@ def _validate_animation_png(
                         visible_y.append(y)
                     if (x in (0, frame_size - 1) or y in (0, frame_size - 1)) and alpha > 1e-6:
                         raise AssertionError(f"{path} frame {frame} border is not transparent")
-            if not visible_x:
-                raise AssertionError(f"{path} frame {frame} has no visible pixels")
             digest = _canonical_frame_digest(
                 pixels,
                 sheet_width,
                 frame_size,
                 frame,
             )
+            is_final = frame == frame_count - 1
+            if not visible_x:
+                if not (allow_final_empty and is_final):
+                    raise AssertionError(f"{path} frame {frame} has no visible pixels")
+                bounds = None
+            else:
+                if allow_final_empty and is_final:
+                    raise AssertionError(f"{path} final impact frame is not empty")
+                bounds = [min(visible_x), max(visible_x), min(visible_y), max(visible_y)]
             frames.append({
                 "frame": frame,
                 "digest": digest,
                 "visible_pixels": len(visible_x),
-                "bounds": [min(visible_x), max(visible_x), min(visible_y), max(visible_y)],
+                "bounds": bounds,
             })
         digests = [str(frame["digest"]) for frame in frames]
         if len(set(digests)) != frame_count:
-            raise AssertionError(f"{path} contains duplicate motion frames: {digests}")
+            raise AssertionError(f"{path} contains duplicate animation frames: {digests}")
         return {"size": [sheet_width, frame_size], "channels": 4, "frames": frames}
     finally:
         if image is not None:
@@ -3260,12 +3361,16 @@ def render_animation_sheet(
     relative_path: str,
     frame_count: int,
     pose_frame: object,
+    *,
+    group: str = "motion",
+    allow_final_empty: bool = False,
 ) -> dict[str, object]:
     if _STAGING_ROOT is None:
         raise AssertionError("No run staging root for motion frames")
-    expected = MOTION_ASSETS.get(relative_path)
+    contracts = MOTION_ASSETS if group == "motion" else VFX_ASSETS if group == "vfx" else None
+    expected = contracts.get(relative_path) if contracts is not None else None
     if expected is None or expected[1] != frame_count:
-        raise AssertionError(f"Unknown motion sheet contract: {relative_path}/{frame_count}")
+        raise AssertionError(f"Unknown {group} sheet contract: {relative_path}/{frame_count}")
     slug = Path(relative_path).stem
     frame_root = _STAGING_ROOT / ".frames"
     temp = frame_root / slug
@@ -3283,7 +3388,10 @@ def render_animation_sheet(
             master_frame = temp / "master" / f"{frame:02d}.png"
             mobile_frame = temp / "mobile" / f"{frame:02d}.png"
             try:
-                render_still(master_frame)
+                render_still(
+                    master_frame,
+                    allow_empty=allow_final_empty and frame == frame_count - 1,
+                )
                 resize_png(master_frame, mobile_frame, MOBILE_SIZE, MOBILE_SIZE)
             finally:
                 if restore is not None:
@@ -3295,8 +3403,18 @@ def render_animation_sheet(
         pack_frames(master_frames, master, FRAME_SIZE)
         pack_frames(mobile_frames, mobile, MOBILE_SIZE)
         return {
-            "master": _validate_animation_png(master, FRAME_SIZE, frame_count),
-            "mobile": _validate_animation_png(mobile, MOBILE_SIZE, frame_count),
+            "master": _validate_animation_png(
+                master,
+                FRAME_SIZE,
+                frame_count,
+                allow_final_empty=allow_final_empty,
+            ),
+            "mobile": _validate_animation_png(
+                mobile,
+                MOBILE_SIZE,
+                frame_count,
+                allow_final_empty=allow_final_empty,
+            ),
         }
     finally:
         try:
@@ -3610,6 +3728,36 @@ def _assert_motion_group_clean(group: bpy.types.Collection) -> None:
         raise AssertionError("Motion-owned temporary objects remain: " + ", ".join(residue))
 
 
+def _assert_persisted_motion_state(group: bpy.types.Collection) -> dict[str, object]:
+    _assert_motion_group_clean(group)
+    persisted_metrics = group.get("motion_metrics")
+    persisted_visibility = group.get("render_visibility_audit")
+    if not isinstance(persisted_metrics, str) or not isinstance(persisted_visibility, str):
+        raise AssertionError("Motion metrics/visibility audit were not persisted")
+    try:
+        motion_metrics = json.loads(persisted_metrics)
+        visibility_audit = json.loads(persisted_visibility)
+    except json.JSONDecodeError as error:
+        raise AssertionError("Motion persistence audit is invalid JSON") from error
+    if set(motion_metrics) != set(MOTION_ASSETS) or set(visibility_audit) != set(MOTION_ASSETS):
+        raise AssertionError("Motion persistence audit manifest mismatch")
+    for relative_path, (_, frame_count) in MOTION_ASSETS.items():
+        metric = motion_metrics[relative_path]
+        if (
+            abs(float(metric["root_yaw_degrees"]) - 225.0) > 1e-5
+            or abs(float(metric["root_yaw_radians"]) - MOTION_ROOT_YAW) > 1e-6
+            or len(metric["traces"]) != frame_count
+        ):
+            raise AssertionError(f"Persisted motion trace contract mismatch: {relative_path}")
+        anchors = {tuple(trace["root"]) for trace in metric["traces"]}
+        if len(anchors) != 1:
+            raise AssertionError(f"Persisted root anchor moved: {relative_path}")
+    return {
+        "motion_metrics": motion_metrics,
+        "render_visibility_audit": visibility_audit,
+    }
+
+
 def render_motion_group(scene: bpy.types.Scene) -> dict[str, object]:
     group = _prepare_motion_group(scene)
     preserved_visibility = _snapshot_preview_render_visibility()
@@ -3674,6 +3822,833 @@ def render_motion_group(scene: bpy.types.Scene) -> dict[str, object]:
     }
 
 
+def _vfx_asset_collection_name(relative_path: str) -> str:
+    return "TDPreview_vfx_" + Path(relative_path).stem.replace("-", "_")
+
+
+def _active_vfx_collection() -> bpy.types.Collection:
+    if _ACTIVE_VFX_COLLECTION is None:
+        raise AssertionError("No active VFX asset collection")
+    if (
+        _ACTIVE_VFX_COLLECTION.get("td_preview_owner") != OWNER
+        or _ACTIVE_VFX_COLLECTION.get("td_preview_group") != "vfx"
+        or _ACTIVE_VFX_COLLECTION.get("td_preview_asset") not in VFX_ASSETS
+    ):
+        raise AssertionError("Active VFX collection ownership mismatch")
+    return _ACTIVE_VFX_COLLECTION
+
+
+def _vfx_slug() -> str:
+    return _owned_asset_slug(_active_vfx_collection(), "vfx")
+
+
+def _vfx_material(
+    name: str,
+    color: tuple[float, float, float, float],
+    roughness: float = 0.42,
+    metallic: float = 0.0,
+    emission_strength: float = 0.0,
+) -> bpy.types.Material:
+    qualified_name = f"{VFX_MATERIAL_PREFIX}{_vfx_slug()}__{name}"
+    if bpy.data.materials.get(qualified_name) is not None:
+        raise AssertionError(f"VFX material leaked across frames: {qualified_name}")
+    material = bpy.data.materials.new(qualified_name)
+    _tag(material, "vfx")
+    material.diffuse_color = color
+    material.use_nodes = True
+    principled = next(
+        (node for node in material.node_tree.nodes if node.type == "BSDF_PRINCIPLED"),
+        None,
+    )
+    if principled is None:
+        raise AssertionError(f"Principled shader missing from VFX material {name}")
+    principled.inputs["Base Color"].default_value = color
+    principled.inputs["Roughness"].default_value = roughness
+    metallic_input = principled.inputs.get("Metallic")
+    if metallic_input is not None:
+        metallic_input.default_value = metallic
+    alpha_input = principled.inputs.get("Alpha")
+    if alpha_input is not None:
+        alpha_input.default_value = color[3]
+    emission_input = principled.inputs.get("Emission Color") or principled.inputs.get("Emission")
+    if emission_input is not None and emission_strength > 0.0:
+        emission_input.default_value = color
+    emission_strength_input = principled.inputs.get("Emission Strength")
+    if emission_strength_input is not None:
+        emission_strength_input.default_value = emission_strength
+    if color[3] < 1.0:
+        if hasattr(material, "surface_render_method"):
+            for method in ("DITHERED", "BLENDED"):
+                try:
+                    material.surface_render_method = method
+                    break
+                except (TypeError, ValueError):
+                    continue
+        elif hasattr(material, "blend_method"):
+            material.blend_method = "BLEND"
+    return material
+
+
+def _finish_vfx_mesh(
+    obj: bpy.types.Object,
+    name: str,
+    material: bpy.types.Material,
+) -> bpy.types.Object:
+    collection = _active_vfx_collection()
+    qualified_name = f"TDPreview_vfx_{_vfx_slug()}__{name}"
+    if bpy.data.objects.get(qualified_name) not in (None, obj):
+        raise AssertionError(f"VFX object name is occupied: {qualified_name}")
+    obj.name = qualified_name
+    bpy.ops.object.transform_apply(location=False, rotation=False, scale=True)
+    for linked in list(obj.users_collection):
+        linked.objects.unlink(obj)
+    collection.objects.link(obj)
+    _tag(obj, "vfx")
+    if obj.data is None:
+        raise AssertionError(f"VFX mesh object has no data: {qualified_name}")
+    obj.data.name = qualified_name + "_Data"
+    _tag(obj.data, "vfx")
+    obj.data.materials.append(material)
+    if set(obj.users_collection) != {collection}:
+        raise AssertionError(f"VFX object escaped its asset collection: {qualified_name}")
+    return obj
+
+
+def _rollback_new_vfx_mesh(
+    obj: bpy.types.Object,
+    data: bpy.types.Mesh | None,
+) -> None:
+    if bpy.data.objects.get(obj.name) is obj:
+        bpy.data.objects.remove(obj, do_unlink=True)
+    if data is not None and bpy.data.meshes.get(data.name) is data and data.users == 0:
+        bpy.data.meshes.remove(data)
+    _remove_unused_owned_vfx_data()
+
+
+def _vfx_add_box(
+    name: str,
+    location: tuple[float, float, float],
+    scale: tuple[float, float, float],
+    material: bpy.types.Material,
+    *,
+    rotation: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    bevel: float = 0.025,
+) -> bpy.types.Object:
+    bpy.ops.mesh.primitive_cube_add(location=location, rotation=rotation)
+    obj = bpy.context.object
+    if obj is None:
+        raise AssertionError(f"Failed to create VFX box {name}")
+    data = obj.data if isinstance(obj.data, bpy.types.Mesh) else None
+    obj.scale = scale
+    try:
+        obj = _finish_vfx_mesh(obj, name, material)
+        if bevel > 0.0:
+            modifier = obj.modifiers.new("VFXBevel", "BEVEL")
+            modifier.width = bevel
+            modifier.segments = 2
+        return obj
+    except BaseException:
+        _rollback_new_vfx_mesh(obj, data)
+        raise
+
+
+def _vfx_add_ico_sphere(
+    name: str,
+    location: tuple[float, float, float],
+    scale: tuple[float, float, float],
+    material: bpy.types.Material,
+    *,
+    rotation: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    subdivisions: int = 1,
+) -> bpy.types.Object:
+    bpy.ops.mesh.primitive_ico_sphere_add(
+        subdivisions=subdivisions,
+        radius=1.0,
+        location=location,
+        rotation=rotation,
+    )
+    obj = bpy.context.object
+    if obj is None:
+        raise AssertionError(f"Failed to create VFX sphere {name}")
+    data = obj.data if isinstance(obj.data, bpy.types.Mesh) else None
+    obj.scale = scale
+    try:
+        return _finish_vfx_mesh(obj, name, material)
+    except BaseException:
+        _rollback_new_vfx_mesh(obj, data)
+        raise
+
+
+def _vfx_add_cone(
+    name: str,
+    location: tuple[float, float, float],
+    radius: float,
+    depth: float,
+    material: bpy.types.Material,
+    *,
+    rotation: tuple[float, float, float] = (0.0, 0.0, 0.0),
+) -> bpy.types.Object:
+    bpy.ops.mesh.primitive_cone_add(
+        vertices=6,
+        radius1=radius,
+        radius2=0.0,
+        depth=depth,
+        location=location,
+        rotation=rotation,
+    )
+    obj = bpy.context.object
+    if obj is None:
+        raise AssertionError(f"Failed to create VFX cone {name}")
+    data = obj.data if isinstance(obj.data, bpy.types.Mesh) else None
+    try:
+        return _finish_vfx_mesh(obj, name, material)
+    except BaseException:
+        _rollback_new_vfx_mesh(obj, data)
+        raise
+
+
+def _vfx_new_root(name: str, location: tuple[float, float, float]) -> bpy.types.Object:
+    collection = _active_vfx_collection()
+    qualified_name = f"TDPreview_vfx_{_vfx_slug()}__{name}"
+    if bpy.data.objects.get(qualified_name) is not None:
+        raise AssertionError(f"VFX root name is occupied: {qualified_name}")
+    root = bpy.data.objects.new(qualified_name, None)
+    _tag(root, "vfx")
+    root.location = location
+    root.rotation_mode = "XYZ"
+    collection.objects.link(root)
+    return root
+
+
+def _parent_vfx_object(obj: bpy.types.Object, root: bpy.types.Object) -> None:
+    if set(obj.users_collection) != set(root.users_collection):
+        raise AssertionError("VFX parent and child collection membership differs")
+    obj.parent = root
+    obj.parent_type = "OBJECT"
+    obj.parent_bone = ""
+    obj.matrix_parent_inverse = Matrix.Identity(4)
+
+
+def build_arrow(yaw_radians: float) -> bpy.types.Object:
+    wood = _vfx_material("ArrowWood", (0.42, 0.20, 0.07, 1.0), 0.62)
+    metal = _vfx_material("ArrowMetal", (0.72, 0.80, 0.84, 1.0), 0.24, 0.55)
+    feather = _vfx_material("ArrowFeather", (0.94, 0.24, 0.14, 1.0), 0.48)
+    root = _vfx_new_root("ArrowRoot", VFX_ANCHOR)
+    shaft = _vfx_add_box("ArrowShaft", (0.0, 0.0, 0.0), (0.72, 0.035, 0.035), wood, bevel=0.015)
+    head = _vfx_add_cone(
+        "ArrowHead",
+        (0.89, 0.0, 0.0),
+        0.14,
+        0.34,
+        metal,
+        rotation=(0.0, math.pi / 2.0, 0.0),
+    )
+    feather_a = _vfx_add_box(
+        "ArrowFeatherA",
+        (-0.63, 0.0, 0.075),
+        (0.17, 0.095, 0.025),
+        feather,
+        bevel=0.018,
+    )
+    feather_b = _vfx_add_box(
+        "ArrowFeatherB",
+        (-0.63, 0.0, -0.075),
+        (0.17, 0.025, 0.095),
+        feather,
+        bevel=0.018,
+    )
+    for obj in (shaft, head, feather_a, feather_b):
+        _parent_vfx_object(obj, root)
+    root.rotation_euler.z = yaw_radians
+    bpy.context.view_layer.update()
+    return root
+
+
+def _fireball_state(progress: float) -> tuple[tuple[float, ...], ...]:
+    phase = (progress % 1.0) * math.tau
+    state: list[tuple[float, ...]] = []
+    for index in range(4):
+        angle = phase + (0.65, 2.40, 4.05, 5.25)[index]
+        x = -0.34 - index * 0.23
+        y = math.cos(angle) * (0.08 + index * 0.018) + (0.025 if index == 1 else 0.0)
+        z = math.sin(angle) * (0.11 + index * 0.012) + (0.035 if index == 2 else 0.0)
+        size = 0.20 - index * 0.027
+        state.append((x, y, z, size, angle))
+    return tuple(state)
+
+
+def build_fireball(progress: float) -> list[bpy.types.Object]:
+    core = _vfx_material("FireCore", (1.0, 0.25, 0.025, 1.0), 0.24, 0.0, 0.65)
+    shell = _vfx_material("FireShell", (1.0, 0.68, 0.08, 0.88), 0.30, 0.0, 0.35)
+    ember = _vfx_material("FireEmber", (1.0, 0.80, 0.16, 0.82), 0.38, 0.0, 0.40)
+    objects = [
+        _vfx_add_ico_sphere("FireCore", VFX_ANCHOR, (0.38, 0.34, 0.38), core, subdivisions=2),
+        _vfx_add_ico_sphere(
+            "FireShell",
+            (VFX_ANCHOR[0] - 0.08, VFX_ANCHOR[1] + 0.04, VFX_ANCHOR[2] + 0.06),
+            (0.28, 0.25, 0.26),
+            shell,
+            rotation=(0.18, -0.12, 0.24),
+            subdivisions=1,
+        ),
+    ]
+    for index, (x, y, z, size, angle) in enumerate(_fireball_state(progress)):
+        objects.append(
+            _vfx_add_ico_sphere(
+                f"FireTail{index}",
+                (VFX_ANCHOR[0] + x, VFX_ANCHOR[1] + y, VFX_ANCHOR[2] + z),
+                (size * 1.30, size * 0.70, size * 0.82),
+                ember if index % 2 else shell,
+                rotation=(angle, 0.16 * index, 0.08 * index),
+                subdivisions=1,
+            )
+        )
+    return objects
+
+
+def _waterball_state(progress: float) -> tuple[tuple[float, ...], ...]:
+    phase = (progress % 1.0) * math.tau
+    highlight = (
+        math.cos(phase) * 0.36,
+        math.sin(phase) * 0.30,
+        math.sin(phase + math.pi / 4.0) * 0.20,
+        phase,
+    )
+    drops: list[tuple[float, ...]] = [highlight]
+    for index, offset in enumerate((0.35, 2.45, 4.70)):
+        angle = phase + offset
+        radius = 0.50 + index * 0.08
+        drops.append(
+            (
+                math.cos(angle) * radius,
+                math.sin(angle) * (0.32 + index * 0.035),
+                math.sin(angle * 1.25) * 0.24,
+                angle,
+            )
+        )
+    return tuple(drops)
+
+
+def build_waterball(progress: float) -> list[bpy.types.Object]:
+    water = _vfx_material("WaterCore", (0.035, 0.48, 0.82, 0.95), 0.18, 0.05)
+    highlight = _vfx_material("WaterHighlight", (0.58, 0.94, 1.0, 0.90), 0.12, 0.0, 0.12)
+    objects = [
+        _vfx_add_ico_sphere("WaterCore", VFX_ANCHOR, (0.42, 0.38, 0.43), water, subdivisions=2),
+    ]
+    states = _waterball_state(progress)
+    hx, hy, hz, hangle = states[0]
+    objects.append(
+        _vfx_add_ico_sphere(
+            "WaterHighlight",
+            (VFX_ANCHOR[0] + hx, VFX_ANCHOR[1] + hy, VFX_ANCHOR[2] + hz),
+            (0.12, 0.08, 0.09),
+            highlight,
+            rotation=(hangle, 0.0, hangle * 0.5),
+            subdivisions=1,
+        )
+    )
+    for index, (x, y, z, angle) in enumerate(states[1:]):
+        objects.append(
+            _vfx_add_ico_sphere(
+                f"WaterDrop{index}",
+                (VFX_ANCHOR[0] + x, VFX_ANCHOR[1] + y, VFX_ANCHOR[2] + z),
+                (0.085 + index * 0.012, 0.07, 0.14 + index * 0.015),
+                highlight,
+                rotation=(angle * 0.35, angle, 0.0),
+                subdivisions=1,
+            )
+        )
+    return objects
+
+
+def build_impact(kind: str, progress: float) -> list[bpy.types.Object]:
+    if kind not in ("arrow", "fire", "aqua"):
+        raise ValueError(kind)
+    if not 0.0 <= progress <= 1.0:
+        raise AssertionError(f"Impact progress is outside [0,1]: {progress}")
+    if progress >= 1.0:
+        return []
+    fade = max(0.18, 1.0 - progress * 0.76)
+    expansion = progress * progress * (3.0 - 2.0 * progress)
+    objects: list[bpy.types.Object] = []
+    if kind == "arrow":
+        material = _vfx_material("ArrowImpact", (1.0, 0.72, 0.18, fade), 0.30, 0.12, 0.25)
+        center_scale = 0.22 * (1.0 - progress * 0.62)
+        objects.append(
+            _vfx_add_ico_sphere(
+                "ArrowImpactCore",
+                (0.0, 0.0, 0.48),
+                (center_scale, center_scale, center_scale),
+                material,
+                subdivisions=1,
+            )
+        )
+        for index, jitter in enumerate((0.0, 0.18, -0.12, 0.26, -0.22, 0.10)):
+            angle = index * math.tau / 6.0 + jitter
+            distance = 0.12 + expansion * (0.74 + 0.07 * (index % 3))
+            size = max(0.045, 0.17 * (1.0 - progress * 0.70))
+            objects.append(
+                _vfx_add_ico_sphere(
+                    f"ArrowImpactShard{index}",
+                    (
+                        math.cos(angle) * distance,
+                        math.sin(angle) * distance,
+                        0.48 + math.sin(angle * 1.5) * (0.08 + expansion * 0.20),
+                    ),
+                    (size * 1.75, size * 0.55, size * 0.60),
+                    material,
+                    rotation=(0.0, progress * 0.55, angle),
+                    subdivisions=1,
+                )
+            )
+    elif kind == "fire":
+        hot = _vfx_material("FireImpactHot", (1.0, 0.20 + progress * 0.28, 0.015, fade), 0.24, 0.0, 0.55)
+        spark = _vfx_material("FireImpactSpark", (1.0, 0.72, 0.08, fade * 0.88), 0.36, 0.0, 0.38)
+        core_scale = max(0.07, 0.34 * (1.0 - progress * 0.72))
+        objects.append(
+            _vfx_add_ico_sphere(
+                "FireImpactCore",
+                (0.0, 0.0, 0.48),
+                (core_scale * 1.12, core_scale, core_scale),
+                hot,
+                rotation=(0.17, progress * 0.8, -0.12),
+                subdivisions=2,
+            )
+        )
+        jitters = (0.13, -0.18, 0.31, -0.08, 0.22, -0.27, 0.05, 0.36, -0.14)
+        radii = (0.82, 1.10, 0.93, 1.24, 0.88, 1.16, 0.98, 1.28, 1.04)
+        for index, (jitter, radius_factor) in enumerate(zip(jitters, radii, strict=True)):
+            angle = index * math.tau / len(jitters) + jitter
+            distance = 0.14 + expansion * radius_factor
+            size = max(0.04, (0.16 - (index % 3) * 0.018) * (1.0 - progress * 0.68))
+            objects.append(
+                _vfx_add_ico_sphere(
+                    f"FireImpactSpark{index}",
+                    (
+                        math.cos(angle) * distance,
+                        math.sin(angle) * distance,
+                        0.38 + abs(math.sin(angle * 1.7)) * (0.18 + expansion * 0.48),
+                    ),
+                    (size * 1.55, size * 0.62, size * (0.72 + 0.22 * (index % 2))),
+                    spark if index % 3 else hot,
+                    rotation=(angle * 0.25, progress, angle),
+                    subdivisions=1,
+                )
+            )
+    else:
+        water = _vfx_material("AquaImpact", (0.02, 0.55, 0.90, fade * 0.94), 0.16, 0.0, 0.12)
+        foam = _vfx_material("AquaImpactFoam", (0.52, 0.93, 1.0, fade * 0.82), 0.20, 0.0, 0.10)
+        center_scale = max(0.06, 0.30 * (1.0 - progress * 0.76))
+        objects.append(
+            _vfx_add_ico_sphere(
+                "AquaImpactCore",
+                (0.0, 0.0, 0.32),
+                (center_scale * 1.45, center_scale * 1.45, center_scale * 0.62),
+                water,
+                subdivisions=2,
+            )
+        )
+        for index in range(8):
+            angle = index * math.tau / 8.0 + (0.08 if index % 2 else -0.05)
+            distance = 0.15 + expansion * (0.92 + 0.10 * (index % 3))
+            width = max(0.04, (0.13 - 0.008 * (index % 3)) * (1.0 - progress * 0.60))
+            height = max(0.07, (0.22 + 0.025 * (index % 2)) * (1.0 - progress * 0.52))
+            objects.append(
+                _vfx_add_ico_sphere(
+                    f"AquaSplashDrop{index}",
+                    (
+                        math.cos(angle) * distance,
+                        math.sin(angle) * distance,
+                        0.25 + abs(math.sin(angle)) * (0.18 + expansion * 0.60),
+                    ),
+                    (width, width * 0.72, height),
+                    foam if index % 2 else water,
+                    rotation=(math.sin(angle) * 0.38, math.cos(angle) * 0.38, angle),
+                    subdivisions=1,
+                )
+            )
+    return objects
+
+
+def _vfx_progress(frame: int, count: int, mode: str) -> float:
+    if count < 2 or not 0 <= frame < count:
+        raise AssertionError(f"Invalid VFX frame contract: {frame}/{count}")
+    if mode == "loop":
+        return frame / count
+    if mode == "impact":
+        return frame / (count - 1)
+    raise AssertionError(f"Unknown VFX progression mode: {mode}")
+
+
+def _angle_delta(left: float, right: float) -> float:
+    return math.atan2(math.sin(left - right), math.cos(left - right))
+
+
+def _arrow_projection_metrics(
+    scene: bpy.types.Scene,
+    root: bpy.types.Object,
+    direction_index: int,
+) -> dict[str, object]:
+    camera = scene.camera
+    if camera is None:
+        raise AssertionError("VFX arrow projection requires the preview camera")
+    head_world = root.matrix_world @ Vector((1.06, 0.0, 0.0))
+    tail_world = root.matrix_world @ Vector((-0.80, 0.0, 0.0))
+    anchor_world = root.matrix_world @ Vector((0.0, 0.0, 0.0))
+    head = world_to_camera_view(scene, camera, head_world)
+    tail = world_to_camera_view(scene, camera, tail_world)
+    anchor = world_to_camera_view(scene, camera, anchor_world)
+    projected = Vector((head.x - tail.x, head.y - tail.y))
+    if projected.length <= 1e-9:
+        raise AssertionError("Projected arrow heading is degenerate")
+    projected.normalize()
+    actual_angle = math.atan2(projected.y, projected.x)
+    target_angle = VFX_SCREEN_ANGLES[direction_index]
+    error = abs(_angle_delta(actual_angle, target_angle))
+    if error > math.radians(3.0):
+        raise AssertionError(
+            f"Arrow {VFX_DIRECTION_ORDER[direction_index]} projection error exceeds 3 degrees: "
+            f"{math.degrees(error)}"
+        )
+    collection = _active_vfx_collection()
+
+    def component(name: str) -> bpy.types.Object:
+        matches = [obj for obj in collection.objects if obj.name.endswith(f"__{name}")]
+        if len(matches) != 1 or matches[0].type != "MESH":
+            raise AssertionError(f"Arrow component manifest mismatch: {name}")
+        return matches[0]
+
+    def projected_center(obj: bpy.types.Object) -> Vector:
+        corners = [obj.matrix_world @ Vector(corner) for corner in obj.bound_box]
+        center = sum(corners[1:], corners[0].copy()) / len(corners)
+        projected_center_value = world_to_camera_view(scene, camera, center)
+        return Vector((projected_center_value.x, projected_center_value.y))
+
+    head_center = projected_center(component("ArrowHead"))
+    shaft_center = projected_center(component("ArrowShaft"))
+    feather_center = (
+        projected_center(component("ArrowFeatherA"))
+        + projected_center(component("ArrowFeatherB"))
+    ) / 2.0
+    anchor_xy = Vector((anchor.x, anchor.y))
+    cross_axis = Vector((-projected.y, projected.x))
+    component_points = {
+        "head": head_center,
+        "shaft": shaft_center,
+        "feather": feather_center,
+    }
+    along = {
+        name: float((point - anchor_xy).dot(projected))
+        for name, point in component_points.items()
+    }
+    cross_track = {
+        name: float((point - anchor_xy).dot(cross_axis))
+        for name, point in component_points.items()
+    }
+    if not (along["head"] > along["shaft"] > along["feather"]):
+        raise AssertionError(f"Arrow geometry is not ordered head>shaft>feather: {along}")
+    if any(abs(value) > 1e-5 for value in cross_track.values()):
+        raise AssertionError(f"Arrow geometry is off its projected heading axis: {cross_track}")
+    return {
+        "direction": VFX_DIRECTION_ORDER[direction_index],
+        "yaw_degrees": round(math.degrees(root.rotation_euler.z) % 360.0, 6),
+        "projected_vector": [round(projected.x, 7), round(projected.y, 7)],
+        "projected_angle_degrees": round(math.degrees(actual_angle), 6),
+        "target_angle_degrees": round(math.degrees(target_angle), 6),
+        "angle_error_degrees": round(math.degrees(error), 7),
+        "anchor": [round(anchor.x, 7), round(anchor.y, 7), round(anchor.z, 7)],
+        "component_projection": {
+            name: {
+                "center": [round(point.x, 7), round(point.y, 7)],
+                "along": round(along[name], 7),
+                "cross_track": round(cross_track[name], 7),
+            }
+            for name, point in component_points.items()
+        },
+    }
+
+
+def _remove_unused_owned_vfx_data() -> None:
+    for datablocks in (bpy.data.meshes, bpy.data.curves, bpy.data.materials, bpy.data.images):
+        for block in list(datablocks):
+            if (
+                block.get("td_preview_owner") == OWNER
+                and block.get("td_preview_group") == "vfx"
+                and block.users == 0
+            ):
+                datablocks.remove(block)
+
+
+def _clear_vfx_asset_objects(collection: bpy.types.Collection) -> None:
+    for obj in list(collection.objects):
+        if obj.get("td_preview_owner") != OWNER or obj.get("td_preview_group") != "vfx":
+            raise AssertionError(f"Refusing to remove foreign VFX object {obj.name}")
+        bpy.data.objects.remove(obj, do_unlink=True)
+    _remove_unused_owned_vfx_data()
+    if collection.objects or collection.children:
+        raise AssertionError(f"VFX asset cleanup left scene objects: {collection.name}")
+
+
+def _vfx_residue() -> dict[str, list[str]]:
+    result = {
+        "objects": [
+            obj.name
+            for obj in bpy.data.objects
+            if obj.get("td_preview_owner") == OWNER and obj.get("td_preview_group") == "vfx"
+        ],
+        "meshes": [
+            block.name
+            for block in bpy.data.meshes
+            if block.get("td_preview_owner") == OWNER and block.get("td_preview_group") == "vfx"
+        ],
+        "curves": [
+            block.name
+            for block in bpy.data.curves
+            if block.get("td_preview_owner") == OWNER and block.get("td_preview_group") == "vfx"
+        ],
+        "materials": [
+            block.name
+            for block in bpy.data.materials
+            if block.get("td_preview_owner") == OWNER and block.get("td_preview_group") == "vfx"
+        ],
+        "images": [
+            block.name
+            for block in bpy.data.images
+            if block.get("td_preview_owner") == OWNER and block.get("td_preview_group") == "vfx"
+        ],
+    }
+    return {kind: names for kind, names in result.items() if names}
+
+
+def _prepare_vfx_group(scene: bpy.types.Scene) -> bpy.types.Collection:
+    existing = bpy.data.collections.get(VFX_GROUP_NAME)
+    if existing is not None:
+        _remove_owned_collection(existing, "vfx")
+        _remove_unused_owned_vfx_data()
+    group = bpy.data.collections.new(VFX_GROUP_NAME)
+    _tag(group, "vfx")
+    _link_child(scene.collection, group)
+    for relative_path in VFX_ASSETS:
+        collection = bpy.data.collections.new(_vfx_asset_collection_name(relative_path))
+        _tag(collection, "vfx")
+        collection["td_preview_asset"] = relative_path
+        _link_child(group, collection)
+    return group
+
+
+def _assert_vfx_group_clean(group: bpy.types.Collection) -> None:
+    expected = {_vfx_asset_collection_name(path) for path in VFX_ASSETS}
+    if (
+        group.name != VFX_GROUP_NAME
+        or group.get("td_preview_owner") != OWNER
+        or group.get("td_preview_group") != "vfx"
+        or group.objects
+        or {collection.name for collection in group.children} != expected
+    ):
+        raise AssertionError("VFX group manifest mismatch")
+    for collection in group.children:
+        if (
+            collection.get("td_preview_owner") != OWNER
+            or collection.get("td_preview_group") != "vfx"
+            or collection.get("td_preview_asset") not in VFX_ASSETS
+            or collection.objects
+            or collection.children
+        ):
+            raise AssertionError(f"VFX asset collection was not cleaned: {collection.name}")
+    expected_collections = {group, *group.children}
+    owned_collections = {
+        collection
+        for collection in bpy.data.collections
+        if collection.get("td_preview_owner") == OWNER
+        and collection.get("td_preview_group") == "vfx"
+    }
+    if owned_collections != expected_collections:
+        raise AssertionError(
+            "VFX-owned collection manifest mismatch: "
+            + ", ".join(sorted(collection.name for collection in owned_collections))
+        )
+    duplicate_roots = [
+        collection.name
+        for collection in bpy.data.collections
+        if collection.name.startswith(VFX_GROUP_NAME)
+        and collection is not group
+    ]
+    if duplicate_roots:
+        raise AssertionError("Duplicate VFX persistent root: " + ", ".join(sorted(duplicate_roots)))
+    residue = _vfx_residue()
+    if residue:
+        raise AssertionError(f"VFX-owned temporary datablocks remain: {residue}")
+
+
+def _assert_vfx_frame_ownership(collection: bpy.types.Collection, *, allow_empty: bool) -> int:
+    geometry = [obj for obj in collection.objects if obj.type in RENDER_GEOMETRY_TYPES]
+    if not geometry and not allow_empty:
+        raise AssertionError(f"VFX frame has no geometry: {collection.name}")
+    for obj in collection.objects:
+        if (
+            set(obj.users_collection) != {collection}
+            or obj.get("td_preview_owner") != OWNER
+            or obj.get("td_preview_group") != "vfx"
+        ):
+            raise AssertionError(f"VFX frame object ownership mismatch: {obj.name}")
+        if obj.data is not None and (
+            obj.data.get("td_preview_owner") != OWNER
+            or obj.data.get("td_preview_group") != "vfx"
+        ):
+            raise AssertionError(f"VFX frame data ownership mismatch: {obj.name}")
+        for slot in obj.material_slots:
+            material = slot.material
+            if material is None or (
+                material.get("td_preview_owner") != OWNER
+                or material.get("td_preview_group") != "vfx"
+                or not material.name.startswith(VFX_MATERIAL_PREFIX)
+            ):
+                raise AssertionError(f"VFX frame material ownership mismatch: {obj.name}")
+    if geometry:
+        minimum, maximum = render_geometry_bounds(geometry)
+        if max(maximum.x - minimum.x, maximum.y - minimum.y, maximum.z - minimum.z) > 4.6:
+            raise AssertionError(f"VFX frame geometry exceeds fixed camera framing: {collection.name}")
+    return len(geometry)
+
+
+def _render_vfx_asset(
+    scene: bpy.types.Scene,
+    collection: bpy.types.Collection,
+    relative_path: str,
+    kind: str,
+    frame_count: int,
+    mode: str,
+) -> dict[str, object]:
+    global _ACTIVE_VFX_COLLECTION
+    traces: list[dict[str, object]] = []
+    _ACTIVE_VFX_COLLECTION = collection
+
+    def pose(frame: int, count: int) -> object:
+        _clear_vfx_asset_objects(collection)
+        progress = _vfx_progress(frame, count, mode)
+        is_final_empty = mode == "impact" and frame == count - 1
+        trace: dict[str, object] = {
+            "frame": frame,
+            "progress": round(progress, 10),
+            "mode": mode,
+        }
+        if relative_path == "vfx/arrow-8dir.png":
+            root = build_arrow(VFX_ARROW_YAWS[frame])
+            trace.update(_arrow_projection_metrics(scene, root, frame))
+        elif kind == "fireball":
+            build_fireball(progress)
+            trace["state"] = [list(values) for values in _fireball_state(progress)]
+        elif kind == "waterball":
+            build_waterball(progress)
+            trace["state"] = [list(values) for values in _waterball_state(progress)]
+        elif mode == "impact":
+            build_impact(kind, progress)
+        geometry_count = _assert_vfx_frame_ownership(
+            collection,
+            allow_empty=is_final_empty,
+        )
+        if is_final_empty and collection.objects:
+            raise AssertionError(f"Final impact frame contains objects: {relative_path}")
+        trace["geometry_count"] = geometry_count
+        trace["empty"] = geometry_count == 0
+        traces.append(trace)
+        return lambda: _clear_vfx_asset_objects(collection)
+
+    try:
+        sheets = render_animation_sheet(
+            relative_path,
+            frame_count,
+            pose,
+            group="vfx",
+            allow_final_empty=mode == "impact",
+        )
+    finally:
+        try:
+            _clear_vfx_asset_objects(collection)
+        finally:
+            _ACTIVE_VFX_COLLECTION = None
+    if len(traces) != frame_count:
+        raise AssertionError(f"VFX trace count mismatch: {relative_path}")
+    if mode == "impact":
+        if any(bool(trace["empty"]) for trace in traces[:-1]) or not bool(traces[-1]["empty"]):
+            raise AssertionError(f"VFX impact empty-frame contract mismatch: {relative_path}")
+    else:
+        if any(bool(trace["empty"]) for trace in traces):
+            raise AssertionError(f"VFX loop frame is empty: {relative_path}")
+    if kind == "fireball" and _fireball_state(0.0) != _fireball_state(1.0):
+        raise AssertionError("Fireball virtual loop terminal differs from frame zero")
+    if kind == "waterball" and _waterball_state(0.0) != _waterball_state(1.0):
+        raise AssertionError("Waterball virtual loop terminal differs from frame zero")
+    if relative_path == "vfx/arrow-8dir.png":
+        anchors = {tuple(trace["anchor"]) for trace in traces}
+        if len(anchors) != 1:
+            raise AssertionError("Arrow fixed projected anchor drifted")
+        if [trace["direction"] for trace in traces] != list(VFX_DIRECTION_ORDER):
+            raise AssertionError("Arrow direction trace ordering changed")
+    return {
+        "kind": kind,
+        "frame_count": frame_count,
+        "mode": mode,
+        "traces": traces,
+        "sheets": sheets,
+    }
+
+
+def render_vfx_group(scene: bpy.types.Scene) -> dict[str, object]:
+    group = _prepare_vfx_group(scene)
+    collections = {
+        collection.get("td_preview_asset"): collection
+        for collection in group.children
+    }
+    preserved_visibility = _snapshot_preview_render_visibility()
+    preserved_render_filepath = scene.render.filepath
+    metrics: dict[str, object] = {}
+    visibility_audit: dict[str, list[str]] = {}
+    try:
+        for relative_path, (kind, frame_count, mode) in VFX_ASSETS.items():
+            collection = collections[relative_path]
+            asset_visibility = _snapshot_preview_render_visibility()
+            try:
+                _isolate_preview_render_collection(group, collection)
+                visibility_audit[relative_path] = _assert_current_only_render_visibility(
+                    group,
+                    collection,
+                )
+                metrics[relative_path] = _render_vfx_asset(
+                    scene,
+                    collection,
+                    relative_path,
+                    kind,
+                    frame_count,
+                    mode,
+                )
+            finally:
+                _clear_vfx_asset_objects(collection)
+                _restore_preview_render_visibility(asset_visibility)
+        _assert_vfx_group_clean(group)
+    finally:
+        try:
+            _restore_preview_render_visibility(preserved_visibility)
+        finally:
+            scene.render.filepath = preserved_render_filepath
+    final_visibility = _snapshot_preview_render_visibility()
+    if any(final_visibility.get(name) != hidden for name, hidden in preserved_visibility.items()):
+        raise AssertionError("Previously persisted render visibility changed after VFX renders")
+    if any(
+        final_visibility.get(collection.name) is not False
+        for collection in (group, *group.children)
+    ):
+        raise AssertionError("VFX collection visibility did not restore to visible")
+    if scene.render.filepath != preserved_render_filepath:
+        raise AssertionError("VFX rendering changed the preserved render filepath")
+    group["render_visibility_audit"] = json.dumps(visibility_audit, sort_keys=True)
+    group["vfx_metrics"] = json.dumps(metrics, sort_keys=True)
+    return {
+        "vfx_metrics": metrics,
+        "render_visibility_audit": visibility_audit,
+    }
+
+
 def _validate_png(path: Path, expected_size: int) -> dict[str, int]:
     image = None
     try:
@@ -3722,6 +4697,8 @@ def _expected_file_names(group: str = "map") -> set[str]:
         relative_paths = TOWER_ASSETS
     elif group == "motion":
         relative_paths = MOTION_ASSETS
+    elif group == "vfx":
+        relative_paths = VFX_ASSETS
     else:
         raise AssertionError(f"Unsupported preview group manifest: {group}")
     return {Path(relative_path).name for relative_path in relative_paths}
@@ -3734,6 +4711,8 @@ def _group_directory(group: str) -> str:
         return "towers"
     if group == "motion":
         return "motion"
+    if group == "vfx":
+        return "vfx"
     raise AssertionError(f"Unsupported preview group directory: {group}")
 
 
@@ -3741,7 +4720,7 @@ def _validate_render_tree(
     root: Path,
     group: str = "map",
 ) -> dict[str, dict[str, object]]:
-    if group not in ("map", "tower", "motion"):
+    if group not in PREVIEW_GROUPS:
         raise AssertionError(f"Unsupported render tree group: {group}")
     expected = _expected_file_names(group)
     group_directory = _group_directory(group)
@@ -3753,13 +4732,24 @@ def _validate_render_tree(
             raise AssertionError(f"{variant} manifest mismatch: expected={sorted(expected)} actual={sorted(actual)}")
         if len(list(directory.iterdir())) != len(expected):
             raise AssertionError(f"{variant} {group_directory} directory contains non-manifest files")
-        if group == "motion":
+        if group in ("motion", "vfx"):
             frame_counts = {
                 Path(relative_path).name: frame_count
-                for relative_path, (_, frame_count) in MOTION_ASSETS.items()
+                for relative_path, contract in (
+                    MOTION_ASSETS.items() if group == "motion" else VFX_ASSETS.items()
+                )
+                for frame_count in (contract[1],)
             }
             result[variant] = {
-                name: _validate_animation_png(directory / name, size, frame_counts[name])
+                name: _validate_animation_png(
+                    directory / name,
+                    size,
+                    frame_counts[name],
+                    allow_final_empty=(
+                        group == "vfx"
+                        and VFX_ASSETS[f"vfx/{name}"][2] == "impact"
+                    ),
+                )
                 for name in sorted(expected)
             }
         else:
@@ -3773,8 +4763,8 @@ def _validate_render_tree(
 def _assert_owned_data_integrity() -> dict[str, int]:
     counts: dict[str, int] = {}
     datablock_sets = (
-        ("mesh", bpy.data.meshes, {"map", "tower", "motion"}),
-        ("material", bpy.data.materials, {"map", "tower", "motion"}),
+        ("mesh", bpy.data.meshes, {"map", "tower", "motion", "vfx"}),
+        ("material", bpy.data.materials, {"map", "tower", "motion", "vfx"}),
         ("curve", bpy.data.curves, {"tower", "motion"}),
         ("armature", bpy.data.armatures, {"tower", "motion"}),
         ("camera", bpy.data.cameras, {"common"}),
@@ -3818,8 +4808,10 @@ def _assert_owned_data_integrity() -> dict[str, int]:
                     expected_prefix = MATERIAL_PREFIX
                 elif group == "tower":
                     expected_prefix = TOWER_MATERIAL_PREFIX
-                else:
+                elif group == "motion":
                     expected_prefix = MOTION_MATERIAL_PREFIX
+                else:
+                    expected_prefix = VFX_MATERIAL_PREFIX
                 if not block.name.startswith(expected_prefix):
                     raise AssertionError(f"Owned {group} material is outside its namespace: {block.name}")
             else:
@@ -3832,10 +4824,10 @@ def _assert_owned_data_integrity() -> dict[str, int]:
         if obj.get("td_preview_owner") != OWNER:
             continue
         group = obj.get("td_preview_group")
-        if group not in ("map", "tower", "motion", "common"):
+        if group not in (*PREVIEW_GROUPS, "common"):
             raise AssertionError(f"Owned object has invalid data/group: {obj.name}")
         if obj.data is None:
-            if group not in ("tower", "motion") or obj.type != "EMPTY":
+            if group not in ("tower", "motion", "vfx") or obj.type != "EMPTY":
                 raise AssertionError(f"Owned object has invalid empty data: {obj.name}")
         elif obj.data.get("td_preview_owner") != OWNER or obj.data.get("td_preview_group") != group:
             raise AssertionError(f"Owned object/data ownership mismatch: {obj.name}")
@@ -3849,7 +4841,7 @@ def _validate_candidate(
     preserved_state: dict[str, object],
     group_name: str = "map",
 ) -> dict[str, object]:
-    if group_name not in ("map", "tower", "motion"):
+    if group_name not in PREVIEW_GROUPS:
         raise AssertionError(f"Unsupported candidate group: {group_name}")
     _open_mainfile_exact(candidate)
     scenes = [scene for scene in bpy.data.scenes if scene.name == SCENE_NAME]
@@ -3862,8 +4854,10 @@ def _validate_candidate(
         active_group_name = GROUP_NAME
     elif group_name == "tower":
         active_group_name = TOWER_GROUP_NAME
-    else:
+    elif group_name == "motion":
         active_group_name = MOTION_GROUP_NAME
+    else:
+        active_group_name = VFX_GROUP_NAME
     groups = [collection for collection in bpy.data.collections if collection.name == active_group_name]
     if len(rigs) != 1 or len(groups) != 1:
         raise AssertionError(f"Rig/{group_name} persistence mismatch: rigs={len(rigs)} groups={len(groups)}")
@@ -3877,14 +4871,19 @@ def _validate_candidate(
     elif group_name == "tower":
         builders = TOWER_ASSETS
         collection_namer = _tower_asset_collection_name
-    else:
+    elif group_name == "motion":
         builders = MOTION_ASSETS
         collection_namer = _motion_asset_collection_name
+    else:
+        builders = VFX_ASSETS
+        collection_namer = _vfx_asset_collection_name
     expected_names = {collection_namer(path) for path in builders}
     if len(asset_collections) != len(builders) or {collection.name for collection in asset_collections} != expected_names:
         raise AssertionError(f"{group_name} per-asset collection persistence mismatch")
     if group_name == "motion":
         _assert_motion_prerequisites(scene, preserved_state)
+    elif group_name == "vfx":
+        _assert_vfx_prerequisites(scene, preserved_state)
     else:
         current_preserved_state = _snapshot_preserved_groups(active_group_name)
         if current_preserved_state != preserved_state:
@@ -3913,13 +4912,14 @@ def _validate_candidate(
             _assert_clean_tower_dependencies(list(collection.all_objects), [collection])
         elif (
             collection.get("td_preview_owner") != OWNER
-            or collection.get("td_preview_group") != "motion"
+            or collection.get("td_preview_group") != group_name
             or collection.objects
             or collection.children
         ):
-            raise AssertionError(f"Persisted motion collection is not clean: {collection.name}")
+            raise AssertionError(f"Persisted {group_name} collection is not clean: {collection.name}")
     character_metrics: dict[str, dict[str, float]] | None = None
     motion_metrics: dict[str, object] | None = None
+    vfx_metrics: dict[str, object] | None = None
     if group_name == "tower":
         _assert_only_td_rig(scene, group)
         _assert_persisted_tower_visibility_audit(group)
@@ -3948,26 +4948,42 @@ def _validate_candidate(
         if huchu["head_width"] > deokbae["head_width"] * 1.05 + 1e-6:
             raise AssertionError("Persisted Huchu head-width ratio exceeds contract")
     elif group_name == "motion":
-        _assert_motion_group_clean(group)
-        persisted_metrics = group.get("motion_metrics")
+        motion_metrics = _assert_persisted_motion_state(group)["motion_metrics"]  # type: ignore[assignment]
+    elif group_name == "vfx":
+        _assert_vfx_group_clean(group)
+        persisted_metrics = group.get("vfx_metrics")
         persisted_visibility = group.get("render_visibility_audit")
         if not isinstance(persisted_metrics, str) or not isinstance(persisted_visibility, str):
-            raise AssertionError("Motion metrics/visibility audit were not persisted")
-        motion_metrics = json.loads(persisted_metrics)
-        visibility_audit = json.loads(persisted_visibility)
-        if set(motion_metrics) != set(MOTION_ASSETS) or set(visibility_audit) != set(MOTION_ASSETS):
-            raise AssertionError("Motion persistence audit manifest mismatch")
-        for relative_path, (_, frame_count) in MOTION_ASSETS.items():
-            metric = motion_metrics[relative_path]
+            raise AssertionError("VFX metrics/visibility audit were not persisted")
+        try:
+            vfx_metrics = json.loads(persisted_metrics)
+            visibility_audit = json.loads(persisted_visibility)
+        except json.JSONDecodeError as error:
+            raise AssertionError("VFX persistence audit is invalid JSON") from error
+        if set(vfx_metrics) != set(VFX_ASSETS) or set(visibility_audit) != set(VFX_ASSETS):
+            raise AssertionError("VFX persistence audit manifest mismatch")
+        for relative_path, (_, frame_count, mode) in VFX_ASSETS.items():
+            metric = vfx_metrics[relative_path]
+            traces = metric.get("traces")
             if (
-                abs(float(metric["root_yaw_degrees"]) - 225.0) > 1e-5
-                or abs(float(metric["root_yaw_radians"]) - MOTION_ROOT_YAW) > 1e-6
-                or len(metric["traces"]) != frame_count
+                metric.get("frame_count") != frame_count
+                or metric.get("mode") != mode
+                or not isinstance(traces, list)
+                or len(traces) != frame_count
             ):
-                raise AssertionError(f"Persisted motion trace contract mismatch: {relative_path}")
-            anchors = {tuple(trace["root"]) for trace in metric["traces"]}
-            if len(anchors) != 1:
-                raise AssertionError(f"Persisted root anchor moved: {relative_path}")
+                raise AssertionError(f"Persisted VFX trace contract mismatch: {relative_path}")
+            if mode == "impact":
+                if any(bool(trace["empty"]) for trace in traces[:-1]) or not bool(traces[-1]["empty"]):
+                    raise AssertionError(f"Persisted VFX impact terminal mismatch: {relative_path}")
+            elif any(bool(trace["empty"]) for trace in traces):
+                raise AssertionError(f"Persisted VFX loop frame is empty: {relative_path}")
+        arrow_traces = vfx_metrics["vfx/arrow-8dir.png"]["traces"]
+        if (
+            [trace["direction"] for trace in arrow_traces] != list(VFX_DIRECTION_ORDER)
+            or len({tuple(trace["anchor"]) for trace in arrow_traces}) != 1
+            or any(float(trace["angle_error_degrees"]) > 3.0 for trace in arrow_traces)
+        ):
+            raise AssertionError("Persisted VFX arrow direction/anchor contract mismatch")
     data_counts = _assert_owned_data_integrity()
     result: dict[str, object] = {
         "scene": scene.name,
@@ -3982,11 +4998,13 @@ def _validate_candidate(
         result["character_metrics"] = character_metrics
     if motion_metrics is not None:
         result["motion_metrics"] = motion_metrics
+    if vfx_metrics is not None:
+        result["vfx_metrics"] = vfx_metrics
     return result
 
 
 def _journal_path(output_root: Path = OUTPUT, group: str = "map") -> Path:
-    if group not in ("map", "tower", "motion"):
+    if group not in PREVIEW_GROUPS:
         raise AssertionError(f"Unsupported publish group: {group}")
     return output_root / f".{group}-publish-journal.json"
 
@@ -4004,7 +5022,7 @@ def _derive_publish_paths(
     group: str = "map",
 ) -> dict[str, Path]:
     validated = _validate_run_id(run_id)
-    if group not in ("map", "tower", "motion"):
+    if group not in PREVIEW_GROUPS:
         raise AssertionError(f"Unsupported publish group: {group}")
     return {
         "staging_root": output_root / f".staging-{group}-{validated}",
@@ -4151,7 +5169,7 @@ def _validate_publish_record(
 ) -> dict[str, Path]:
     if record.get("kind") != "td-preview-map-v1" or record.get("version") != 2:
         raise AssertionError("Refusing unknown preview publish journal")
-    if record.get("group", "map") not in ("map", "tower", "motion"):
+    if record.get("group", "map") not in PREVIEW_GROUPS:
         raise AssertionError("Refusing invalid preview publish group")
     if record.get("phase") not in ("prepared", "maps_promoted", "blend_promoted"):
         raise AssertionError("Refusing invalid preview publish phase")
@@ -4398,7 +5416,7 @@ def _recover_stale_publish_at(
 
 
 def _recover_stale_publish() -> None:
-    for group in ("map", "tower", "motion"):
+    for group in PREVIEW_GROUPS:
         _recover_stale_publish_at(OUTPUT, BLEND_OUTPUT, _source_hashes, group)
 
 
@@ -4460,7 +5478,7 @@ def _acquire_publish_lock(
     output_root: Path = OUTPUT,
 ) -> tuple[Path, int]:
     _validate_run_id(run_id)
-    if group not in ("map", "tower", "motion"):
+    if group not in PREVIEW_GROUPS:
         raise AssertionError(f"Unsupported publish lock group: {group}")
     output_root.mkdir(parents=True, exist_ok=True)
     if output_root.is_symlink() or not output_root.is_dir():
@@ -4517,7 +5535,7 @@ def _release_publish_lock(
 
 def _assert_no_publish_residue() -> None:
     residue: list[Path] = []
-    for group in ("map", "tower", "motion"):
+    for group in PREVIEW_GROUPS:
         journal = _journal_path(OUTPUT, group)
         if journal.exists():
             residue.append(journal)
@@ -4539,7 +5557,7 @@ def _assert_no_publish_residue() -> None:
 
 def _snapshot_preserved_output_groups(active_group: str) -> dict[str, dict[str, str]]:
     result: dict[str, dict[str, str]] = {}
-    for group in ("map", "tower", "motion"):
+    for group in PREVIEW_GROUPS:
         if group == active_group:
             continue
         directory = _group_directory(group)
@@ -4559,7 +5577,7 @@ def _assert_preserved_output_groups(snapshot: dict[str, dict[str, str]]) -> None
 
 def render_group(group: str) -> None:
     global _STAGING_ROOT, _EXPECTED_PRESERVED_STATE
-    if group not in ("map", "tower", "motion"):
+    if group not in PREVIEW_GROUPS:
         raise ValueError(f"Unsupported preview group: {group}")
     if _PREFLIGHT_SNAPSHOT is None:
         raise AssertionError("render_group requires the main child preflight snapshot")
@@ -4570,7 +5588,7 @@ def render_group(group: str) -> None:
         "post_self_test_ok",
     ]:
         raise AssertionError("render_group lifecycle order is invalid")
-    if group == "motion":
+    if group in ("motion", "vfx"):
         _assert_motion_blend_or_recovery_ready()
     _assert_preflight_snapshot(
         _PREFLIGHT_SNAPSHOT,
@@ -4591,7 +5609,7 @@ def render_group(group: str) -> None:
             require_initial_path=True,
         )
         preserved_output_hashes = _snapshot_preserved_output_groups(group)
-        if group == "motion":
+        if group in ("motion", "vfx"):
             _assert_real_preview_blend(BLEND_OUTPUT)
         if BLEND_OUTPUT.exists():
             protected_sources = {
@@ -4601,15 +5619,18 @@ def render_group(group: str) -> None:
             if BLEND_OUTPUT.resolve() in protected_sources:
                 raise AssertionError("Target blend overlaps protected source allow-list")
             _open_mainfile_exact(BLEND_OUTPUT)
-        if group == "motion":
+        if group in ("motion", "vfx"):
             scenes = [scene for scene in bpy.data.scenes if scene.name == SCENE_NAME]
             if len(scenes) != 1:
                 raise AssertionError(
-                    f"Motion requires exactly one existing {SCENE_NAME} scene, found {len(scenes)}"
+                    f"{group} requires exactly one existing {SCENE_NAME} scene, found {len(scenes)}"
                 )
             scene = scenes[0]
             _assert_candidate_render_filepath(scene)
-            _EXPECTED_PRESERVED_STATE = _assert_motion_prerequisites(scene)
+            if group == "motion":
+                _EXPECTED_PRESERVED_STATE = _assert_motion_prerequisites(scene)
+            else:
+                _EXPECTED_PRESERVED_STATE = _assert_vfx_prerequisites(scene)
             bpy.context.window.scene = scene
         else:
             scene = _preview_scene()
@@ -4629,8 +5650,12 @@ def render_group(group: str) -> None:
                 build_result = render_map_group(scene)
             elif group == "tower":
                 build_result = render_tower_group(scene)
-            else:
+            elif group == "motion":
                 build_result = render_motion_group(scene)
+            elif group == "vfx":
+                build_result = render_vfx_group(scene)
+            else:
+                raise AssertionError(f"Unhandled preview group: {group}")
             render_validation = _validate_render_tree(staging_root, group)
             if _source_hashes() != source_hashes_before:
                 raise AssertionError("Protected source blend hash changed during render")
@@ -4672,7 +5697,7 @@ def render_group(group: str) -> None:
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--group", choices=("map", "tower", "motion"), required=True)
+    parser.add_argument("--group", choices=PREVIEW_GROUPS, required=True)
     parser.add_argument("--run-id", required=True)
     args = parser.parse_args(argv)
     try:
@@ -6235,7 +7260,7 @@ def _test_candidate_render_filepath_audit() -> None:
     scene = bpy.context.scene
     original = scene.render.filepath
     try:
-        for group in ("map", "tower", "motion"):
+        for group in PREVIEW_GROUPS:
             scene.render.filepath = ""
             _assert_candidate_render_filepath(scene)
             scene.render.filepath = f"renders/{group}/preview.png"
@@ -6318,6 +7343,262 @@ def _test_render_filepath_restore() -> None:
             _STAGING_ROOT = original_staging
 
 
+def _test_vfx_manifest_and_progression() -> None:
+    expected_assets = {
+        "vfx/arrow-8dir.png": ("arrow", 8, "loop"),
+        "vfx/fireball-flight.png": ("fireball", 4, "loop"),
+        "vfx/waterball-flight.png": ("waterball", 4, "loop"),
+        "vfx/arrow-impact.png": ("arrow", 4, "impact"),
+        "vfx/fire-burst.png": ("fire", 8, "impact"),
+        "vfx/aqua-burst.png": ("aqua", 8, "impact"),
+    }
+    if globals().get("VFX_ASSETS") != expected_assets:
+        raise AssertionError("VFX manifest must contain six assets and 36 frames")
+    if globals().get("VFX_DIRECTION_ORDER") != (
+        "E", "SE", "S", "SW", "W", "NW", "N", "NE"
+    ):
+        raise AssertionError("VFX arrow direction order is not screen-space clockwise")
+    if sum(contract[1] for contract in VFX_ASSETS.values()) != 36:
+        raise AssertionError("VFX manifest frame total must be 36")
+    for _, frame_count, mode in VFX_ASSETS.values():
+        progress = [_vfx_progress(frame, frame_count, mode) for frame in range(frame_count)]
+        if progress[0] != 0.0 or progress != sorted(progress):
+            raise AssertionError(f"VFX {mode} progression is not monotonic from zero")
+        if mode == "loop" and progress[-1] != (frame_count - 1) / frame_count:
+            raise AssertionError("VFX loop stored a duplicate virtual terminal frame")
+        if mode == "impact" and progress[-1] != 1.0:
+            raise AssertionError("VFX impact does not reach its empty terminal frame")
+    if _fireball_state(0.0) != _fireball_state(1.0):
+        raise AssertionError("Fireball loop terminal differs from frame zero")
+    if _waterball_state(0.0) != _waterball_state(1.0):
+        raise AssertionError("Waterball loop terminal differs from frame zero")
+    if len(VFX_ARROW_YAWS) != 8 or len(VFX_SCREEN_ANGLES) != 8:
+        raise AssertionError("VFX arrow direction/yaw manifest must contain eight entries")
+
+
+def _test_vfx_arrow_projection_and_cleanup() -> None:
+    global _ACTIVE_VFX_COLLECTION
+    original_scene = bpy.context.window.scene
+    scene = bpy.data.scenes.new("ReviewVFXArrowProjection")
+    collection = bpy.data.collections.new("ReviewVFXArrowAsset")
+    _tag(collection, "vfx")
+    collection["td_preview_asset"] = "vfx/arrow-8dir.png"
+    scene.collection.children.link(collection)
+    camera_data = bpy.data.cameras.new("ReviewVFXArrowCameraData")
+    camera_data.type = "ORTHO"
+    camera_data.ortho_scale = float(CAMERA_SPEC["ortho_scale"])
+    camera = bpy.data.objects.new("ReviewVFXArrowCamera", camera_data)
+    scene.collection.objects.link(camera)
+    scene.render.resolution_x = FRAME_SIZE
+    scene.render.resolution_y = FRAME_SIZE
+    scene.render.resolution_percentage = 100
+    scene.render.pixel_aspect_x = 1.0
+    scene.render.pixel_aspect_y = 1.0
+    camera.location = CAMERA_SPEC["location"]
+    look_at(camera, CAMERA_SPEC["target"])
+    scene.camera = camera
+    bpy.context.window.scene = scene
+    _ACTIVE_VFX_COLLECTION = collection
+    metrics: list[dict[str, object]] = []
+    try:
+        for index, yaw in enumerate(VFX_ARROW_YAWS):
+            root = build_arrow(yaw)
+            metrics.append(_arrow_projection_metrics(scene, root, index))
+            _assert_vfx_frame_ownership(collection, allow_empty=False)
+            _clear_vfx_asset_objects(collection)
+        if len({tuple(metric["anchor"]) for metric in metrics}) != 1:
+            raise AssertionError("Review arrow anchor changed between directions")
+        for metric in metrics:
+            components = metric["component_projection"]
+            along = [components[name]["along"] for name in ("head", "shaft", "feather")]
+            if not (along[0] > along[1] > along[2]):
+                raise AssertionError("Review arrow component ordering changed")
+            if any(
+                abs(float(components[name]["cross_track"])) > 1e-5
+                for name in components
+            ):
+                raise AssertionError("Review arrow component left the heading axis")
+    finally:
+        try:
+            _clear_vfx_asset_objects(collection)
+        finally:
+            _ACTIVE_VFX_COLLECTION = None
+            bpy.context.window.scene = original_scene
+            bpy.data.objects.remove(camera, do_unlink=True)
+            bpy.data.cameras.remove(camera_data)
+            bpy.data.collections.remove(collection)
+            bpy.data.scenes.remove(scene)
+    if _vfx_residue():
+        raise AssertionError(f"Arrow review cleanup left VFX datablocks: {_vfx_residue()}")
+
+
+def _write_review_vfx_edge_frame(path: Path, size: int) -> None:
+    image = bpy.data.images.new("ReviewVFXEdgeFrame", width=size, height=size, alpha=True)
+    try:
+        pixels = [0.0] * (size * size * 4)
+        pixels[(size // 2 * size) * 4 : (size // 2 * size) * 4 + 4] = [1.0, 0.2, 0.1, 1.0]
+        image.pixels.foreach_set(pixels)
+        image.update()
+        image.filepath_raw = str(path)
+        image.file_format = "PNG"
+        image.save()
+    finally:
+        bpy.data.images.remove(image)
+
+
+def _test_vfx_sheet_terminal_border_and_uniqueness() -> None:
+    with tempfile.TemporaryDirectory(prefix="td-preview-vfx-sheet-") as temporary:
+        root = Path(temporary)
+        frames = [root / f"frame-{index}.png" for index in range(4)]
+        for index, path in enumerate(frames[:3]):
+            _write_review_motion_frame(
+                path,
+                8,
+                (0.25 + index * 0.20, 0.35, 0.85 - index * 0.16, 1.0),
+            )
+        _write_review_motion_frame(frames[3], 8, (0.0, 0.0, 0.0, 0.0))
+        sheet = root / "impact-sheet.png"
+        pack_frames(frames, sheet, 8)
+        validation = _validate_animation_png(
+            sheet,
+            8,
+            4,
+            allow_final_empty=True,
+        )
+        if validation["frames"][-1]["visible_pixels"] != 0 or validation["frames"][-1]["bounds"] is not None:
+            raise AssertionError("VFX impact terminal frame is not exactly empty")
+        _expect_assertion(
+            "empty terminal in a loop sheet",
+            lambda: _validate_animation_png(sheet, 8, 4),
+        )
+        edge = root / "edge.png"
+        _write_review_vfx_edge_frame(edge, 8)
+        edge_sheet = root / "edge-sheet.png"
+        pack_frames((frames[0], frames[1], frames[2], edge), edge_sheet, 8)
+        _expect_assertion(
+            "VFX frame edge bleed",
+            lambda: _validate_animation_png(
+                edge_sheet,
+                8,
+                4,
+                allow_final_empty=False,
+            ),
+        )
+
+
+def _test_vfx_failure_cleanup_and_collection_manifest() -> None:
+    global _ACTIVE_VFX_COLLECTION
+    scene = bpy.context.scene
+    group = _prepare_vfx_group(scene)
+    collection = next(
+        child
+        for child in group.children
+        if child.get("td_preview_asset") == "vfx/fireball-flight.png"
+    )
+    original_add = globals()["_vfx_add_ico_sphere"]
+    calls = 0
+
+    def fail_after_partial(*args: object, **kwargs: object) -> bpy.types.Object:
+        nonlocal calls
+        calls += 1
+        if calls == 3:
+            raise AssertionError("Injected VFX builder failure")
+        return original_add(*args, **kwargs)
+
+    _ACTIVE_VFX_COLLECTION = collection
+    try:
+        build_fireball(0.25)
+        _assert_vfx_frame_ownership(collection, allow_empty=False)
+        _clear_vfx_asset_objects(collection)
+        foreign_mesh = bpy.data.meshes.new("ReviewVFXFactoryCollisionMesh")
+        foreign_object = bpy.data.objects.new(
+            "TDPreview_vfx_fireball_flight__FireCore",
+            foreign_mesh,
+        )
+        scene.collection.objects.link(foreign_object)
+        before_collision_objects = set(bpy.data.objects)
+        before_collision_meshes = set(bpy.data.meshes)
+        try:
+            _expect_assertion(
+                "VFX primitive qualified-name collision",
+                lambda: build_fireball(0.25),
+            )
+            _clear_vfx_asset_objects(collection)
+            if (
+                set(bpy.data.objects) != before_collision_objects
+                or set(bpy.data.meshes) != before_collision_meshes
+            ):
+                raise AssertionError("VFX factory collision leaked an object or mesh")
+        finally:
+            _clear_vfx_asset_objects(collection)
+            bpy.data.objects.remove(foreign_object, do_unlink=True)
+            bpy.data.meshes.remove(foreign_mesh)
+        globals()["_vfx_add_ico_sphere"] = fail_after_partial
+        _expect_assertion(
+            "injected VFX partial builder failure",
+            lambda: build_fireball(0.5),
+        )
+    finally:
+        globals()["_vfx_add_ico_sphere"] = original_add
+        _clear_vfx_asset_objects(collection)
+        _ACTIVE_VFX_COLLECTION = None
+    duplicate = bpy.data.collections.new(VFX_GROUP_NAME)
+    _tag(duplicate, "vfx")
+    try:
+        _expect_assertion(
+            "duplicate VFX persistent root",
+            lambda: _assert_vfx_group_clean(group),
+        )
+    finally:
+        bpy.data.collections.remove(duplicate)
+    _assert_vfx_group_clean(group)
+    _remove_owned_collection(group, "vfx")
+    _remove_unused_owned_vfx_data()
+    if _vfx_residue():
+        raise AssertionError(f"VFX failure cleanup left datablocks: {_vfx_residue()}")
+
+
+def _test_vfx_transaction_recovery() -> None:
+    with tempfile.TemporaryDirectory(prefix="td-preview-vfx-recovery-") as temporary:
+        sandbox = Path(temporary)
+        output = sandbox / "assets/renders/redesign-preview-v1"
+        blend = sandbox / "assets/blender/td-redesign-preview-v1.blend"
+        run_id = "VFXRecovery123"
+        paths = _derive_publish_paths(run_id, output, blend, "vfx")
+        for variant in ("master", "mobile"):
+            _write_marker_tree(output / variant / "vfx", "old")
+            _write_marker_tree(paths["staging_root"] / variant / "vfx", "new")
+        blend.parent.mkdir(parents=True, exist_ok=True)
+        blend.write_bytes(b"old-blend")
+        paths["candidate"].write_bytes(b"new-blend")
+        record = _create_publish_record(
+            paths["staging_root"],
+            paths["candidate"],
+            run_id,
+            output,
+            blend,
+            {"source": "stable"},
+            "vfx",
+        )
+        _write_journal_atomic(record, output)
+        paths["backup_root"].mkdir(parents=True, exist_ok=False)
+        _promote_maps(record, output, blend)
+        record["phase"] = "maps_promoted"
+        _write_journal_atomic(record, output)
+        _recover_stale_publish_at(
+            output,
+            blend,
+            current_source_hashes=lambda: {"source": "stable"},
+            group="vfx",
+        )
+        for variant in ("master", "mobile"):
+            _assert_marker(output / variant / "vfx", "old")
+        if blend.read_bytes() != b"old-blend":
+            raise AssertionError("VFX recovery did not restore the prior blend")
+        lock = _acquire_publish_lock("VFXLockReview123", "vfx", output)
+        _release_publish_lock(lock, output)
+
+
 def _run_review_self_tests() -> None:
     print("TD_PREVIEW_SELF_TEST_START", flush=True)
     if _LIFECYCLE_EVENTS != ["preflight_ok"]:
@@ -6351,6 +7632,11 @@ def _run_review_self_tests() -> None:
         ("motion_prerequisite_scene_signatures", _test_motion_prerequisite_scene_and_signatures),
         ("candidate_render_filepath_audit", _test_candidate_render_filepath_audit),
         ("render_filepath_restore", _test_render_filepath_restore),
+        ("vfx_manifest_progression", _test_vfx_manifest_and_progression),
+        ("vfx_arrow_projection_cleanup", _test_vfx_arrow_projection_and_cleanup),
+        ("vfx_sheet_terminal_border_unique", _test_vfx_sheet_terminal_border_and_uniqueness),
+        ("vfx_failure_cleanup_manifest", _test_vfx_failure_cleanup_and_collection_manifest),
+        ("vfx_transaction_recovery", _test_vfx_transaction_recovery),
     )
     failures: list[str] = []
     for name, test in tests:
