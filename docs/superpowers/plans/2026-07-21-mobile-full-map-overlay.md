@@ -31,7 +31,7 @@
 - Consumes: `computeCanvasLayout(viewport: Viewport): CanvasLayout`
 - Produces: 같은 API와 원근 비율을 유지하면서 `mapArea`가 뷰포트 가로 최대 99%, 세로 최대 98%를 사용하는 레이아웃
 
-- [ ] **Step 1: Write the failing layout test**
+- [x] **Step 1: Write the failing layout test**
 
 `tests/game/layout.test.ts`의 가로 화면 테스트를 다음 계약으로 변경한다.
 
@@ -59,13 +59,13 @@ it('maximizes the full perspective board inside an 844 by 390 landscape viewport
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: `npx vitest run tests/game/layout.test.ts`
 
 Expected: FAIL because current `MAP_HEIGHT_RATIO = 0.90` produces `mapArea.height = 351`, not `382.2`.
 
-- [ ] **Step 3: Increase only the map usage bounds**
+- [x] **Step 3: Increase only the map usage bounds**
 
 Change the two constants in `src/game/render/layout.ts` without altering the projection scales.
 
@@ -77,13 +77,13 @@ const FAR_SCALE = 0.88;
 const NEAR_SCALE = 1.05;
 ```
 
-- [ ] **Step 4: Run focused tests and verify GREEN**
+- [x] **Step 4: Run focused tests and verify GREEN**
 
 Run: `npx vitest run tests/game/layout.test.ts tests/game/projection.test.ts tests/app/input.test.ts`
 
 Expected: 3 test files pass with zero failures.
 
-- [ ] **Step 5: Commit the map layout change**
+- [x] **Step 5: Commit the map layout change**
 
 ```bash
 git add src/game/render/layout.ts tests/game/layout.test.ts
@@ -102,7 +102,7 @@ git commit -m "feat: maximize the mobile game map"
 - Consumes: existing `.game-shell`, `.game-stage`, `.game-hud`, `.game-hud__stats`, `.game-hud__controls`, `.tower-tray`, `.placement-status`, and `.placement-actions` DOM classes from `createHud`
 - Produces: stage/canvas full-viewport bounds, top overlay HUD groups, bottom overlay tower tray, and 44px minimum controls
 
-- [ ] **Step 1: Add a failing browser layout contract**
+- [x] **Step 1: Add a failing browser layout contract**
 
 Add this test before the existing touch-flow test in `e2e/game.spec.ts`.
 
@@ -139,13 +139,13 @@ test('844x390 uses a full-screen board with non-overlapping overlay controls', a
 });
 ```
 
-- [ ] **Step 2: Run the focused E2E test and verify RED**
+- [x] **Step 2: Run the focused E2E test and verify RED**
 
 Run: `npx playwright test e2e/game.spec.ts -g "full-screen board"`
 
 Expected: FAIL because `.game-stage` currently occupies only the grid middle row and its height is smaller than 390px.
 
-- [ ] **Step 3: Convert the shell and stage to full-screen layers**
+- [x] **Step 3: Convert the shell and stage to full-screen layers**
 
 Replace the shell and stage positioning rules in `src/styles.css` with:
 
@@ -173,7 +173,7 @@ Replace the shell and stage positioning rules in `src/styles.css` with:
 }
 ```
 
-- [ ] **Step 4: Convert top HUD groups to translucent overlays**
+- [x] **Step 4: Convert top HUD groups to translucent overlays**
 
 Replace the current `.game-hud` and group rules with:
 
@@ -211,7 +211,7 @@ Replace the current `.game-hud` and group rules with:
 }
 ```
 
-- [ ] **Step 5: Convert the tower tray and placement UI to bottom overlays**
+- [x] **Step 5: Convert the tower tray and placement UI to bottom overlays**
 
 Replace `.tower-tray` positioning and adjust placement offsets:
 
@@ -246,13 +246,13 @@ Replace `.tower-tray` positioning and adjust placement offsets:
 
 Keep `.tower-card` minimum touch size through the existing `.game-control` 44×44px contract. Update the compact-height media query to keep `.game-hud { min-height: 44px; }` and `.tower-tray { min-height: 58px; }` without restoring grid rows.
 
-- [ ] **Step 6: Verify E2E and existing touch flow GREEN**
+- [x] **Step 6: Verify E2E and existing touch flow GREEN**
 
 Run: `npx playwright test e2e/game.spec.ts -g "full-screen board|touch flow"`
 
 Expected: both tests pass; the stage and canvas are 844×390, buttons remain at least 44×44px, and touch placement still succeeds.
 
-- [ ] **Step 7: Run static and TypeScript checks**
+- [x] **Step 7: Run static and TypeScript checks**
 
 Run: `npx vitest run tests/game/layout.test.ts tests/game/projection.test.ts tests/app/input.test.ts tests/app/hud.test.ts`
 
@@ -262,7 +262,7 @@ Run: `npx tsc -b --pretty false`
 
 Expected: exit code 0 with no diagnostics.
 
-- [ ] **Step 8: Commit the overlay layout**
+- [x] **Step 8: Commit the overlay layout**
 
 ```bash
 git add src/styles.css e2e/game.spec.ts
@@ -285,7 +285,7 @@ git commit -m "feat: overlay controls on the full mobile map"
 - Consumes: Vite public-file copy behavior and canonical base `/huchu-duckbae-tower-defense/`
 - Produces: `manifest.webmanifest` with relative `start_url`/`scope`, standalone display mode, landscape orientation, and three PNG icons
 
-- [ ] **Step 1: Write the failing standalone metadata test**
+- [x] **Step 1: Write the failing standalone metadata test**
 
 Extend `tests/scaffold.test.ts` with imports and a second test:
 
@@ -324,13 +324,13 @@ it('configures an installable standalone game at the canonical subpath', () => {
 });
 ```
 
-- [ ] **Step 2: Run the focused test and verify RED**
+- [x] **Step 2: Run the focused test and verify RED**
 
 Run: `npx vitest run tests/scaffold.test.ts`
 
 Expected: FAIL because `index.html` has no manifest/Apple metadata and the manifest is `null`.
 
-- [ ] **Step 3: Create the relative-scope manifest**
+- [x] **Step 3: Create the relative-scope manifest**
 
 Create `public/manifest.webmanifest` with exactly:
 
@@ -362,7 +362,7 @@ Create `public/manifest.webmanifest` with exactly:
 }
 ```
 
-- [ ] **Step 4: Add HTML metadata using Vite-rewritten public paths**
+- [x] **Step 4: Add HTML metadata using Vite-rewritten public paths**
 
 Add these entries after the existing viewport and theme color in `index.html`:
 
@@ -374,7 +374,7 @@ Add these entries after the existing viewport and theme color in `index.html`:
 <link rel="apple-touch-icon" href="/icons/app-icon-180.png" />
 ```
 
-- [ ] **Step 5: Generate deterministic icon sizes from the approved Huchu tower render**
+- [x] **Step 5: Generate deterministic icon sizes from the approved Huchu tower render**
 
 Create the output directory and generate three PNGs from the 256px transparent Huchu master render without modifying the source:
 
@@ -393,13 +393,13 @@ sips -g pixelWidth -g pixelHeight public/icons/app-icon-180.png public/icons/app
 
 Expected: each width and height equals its filename size.
 
-- [ ] **Step 6: Verify focused metadata tests GREEN**
+- [x] **Step 6: Verify focused metadata tests GREEN**
 
 Run: `npx vitest run tests/scaffold.test.ts`
 
 Expected: all scaffold tests pass.
 
-- [ ] **Step 7: Verify Vite production path rewriting**
+- [x] **Step 7: Verify Vite production path rewriting**
 
 Run: `npm run build`
 
@@ -409,7 +409,7 @@ Run: `rg -n "/huchu-duckbae-tower-defense/(manifest.webmanifest|icons/app-icon-1
 
 Expected: manifest, Apple icon, JS, and CSS all use the canonical base.
 
-- [ ] **Step 8: Commit install metadata and icons**
+- [x] **Step 8: Commit install metadata and icons**
 
 ```bash
 git add index.html public/manifest.webmanifest public/icons tests/scaffold.test.ts
@@ -429,19 +429,19 @@ git commit -m "feat: add standalone mobile install mode"
 - Consumes: Tasks 1-3 plus the existing backlog implementation commits and pending Blender VFX files
 - Produces: fresh unit/build/E2E evidence and a reviewed 844×390 screenshot ready for the existing merge/deploy workflow
 
-- [ ] **Step 1: Run all unit tests and production build**
+- [x] **Step 1: Run all unit tests and production build**
 
 Run: `npm run check`
 
 Expected: all Vitest files pass and Vite production build exits 0.
 
-- [ ] **Step 2: Run the full mobile E2E suite and refresh QA screenshots**
+- [x] **Step 2: Run the full mobile E2E suite and refresh QA screenshots**
 
 Run: `UPDATE_QA_SCREENSHOTS=1 npm run test:e2e`
 
 Expected: all Playwright tests pass, `docs/qa/landscape-844x390.png` is refreshed, and captured browser console errors remain empty.
 
-- [ ] **Step 3: Inspect the 844×390 screenshot**
+- [x] **Step 3: Inspect the 844×390 screenshot**
 
 Open `docs/qa/landscape-844x390.png` and verify:
 
@@ -453,13 +453,13 @@ Open `docs/qa/landscape-844x390.png` and verify:
 
 If any item fails, add one focused E2E assertion that reproduces the issue, observe RED, apply the smallest CSS/layout correction, then rerun the focused test and screenshot.
 
-- [ ] **Step 4: Revalidate the pending VFX asset group**
+- [x] **Step 4: Revalidate the pending VFX asset group**
 
 Run: `npm run assets:preview:validate -- --group vfx`
 
 Expected: `VALIDATED 6 assets / 12 PNG files`.
 
-- [ ] **Step 5: Check the complete diff and repository hygiene**
+- [x] **Step 5: Check the complete diff and repository hygiene**
 
 Run: `git diff --check`
 
@@ -469,14 +469,14 @@ Run: `git status --short`
 
 Expected: only the explicitly approved VFX files, updated QA screenshot, and plan checkbox changes remain uncommitted; no unexpected source or build output appears.
 
-- [ ] **Step 6: Commit the verified QA evidence**
+- [x] **Step 6: Commit the verified QA evidence**
 
 ```bash
 git add docs/qa/landscape-844x390.png docs/superpowers/plans/2026-07-21-mobile-full-map-overlay.md
 git commit -m "test: verify the full-map mobile layout"
 ```
 
-- [ ] **Step 7: Resume the existing backlog deployment plan**
+- [x] **Step 7: Resume the existing backlog deployment plan**
 
 Return to `docs/superpowers/plans/2026-07-21-backlog-visual-polish-batch.md` for VFX commit, root backlog preservation, final `npm run check`, full E2E, merge to `main`, push, GitHub Actions success, and public URL/asset HTTP 200 verification.
 
