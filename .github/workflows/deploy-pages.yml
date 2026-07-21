@@ -40,8 +40,8 @@ jobs:
 
       - name: Assemble Pages artifact
         run: |
-          mkdir -p pages/tower-defense
-          cp -R dist/. pages/tower-defense/
+          mkdir -p pages
+          cp -R dist/. pages/
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

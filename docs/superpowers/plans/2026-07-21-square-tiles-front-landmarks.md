@@ -17,7 +17,7 @@
 - 보드의 최대 사용 영역은 캔버스 너비 96%, 높이 90%이며 잘림 없이 중앙 정렬한다.
 - 시작점 구조물은 그리지 않고 첫 경로 셀을 단색 모래 길로만 유지한다.
 - 보물상자는 Blender로 다시 생성하며 타일 베이스와 배경을 포함하지 않고 정면을 본다.
-- Vite base `/huchu-duckbae/tower-defense/`와 게임 수치·웨이브·비용을 변경하지 않는다.
+- Vite base `/huchu-duckbae-tower-defense/`와 게임 수치·웨이브·비용을 변경하지 않는다.
 - 새 런타임 의존성을 추가하지 않는다.
 
 ---
@@ -383,4 +383,3 @@ git status --short
 ```
 
 Expected: all unit tests, build, and 4 E2E tests PASS; `git status --short` prints nothing.
-

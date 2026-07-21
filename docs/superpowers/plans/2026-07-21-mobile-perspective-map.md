@@ -16,7 +16,7 @@
 - 원근 배율은 위쪽 0.75, 아래쪽 1.10이며 캐릭터 기준 배율 1.25를 한 번만 곱한다.
 - 비길 타일은 `#4f8c65`/`#5d9a70`, 길은 무늬 없는 `#e4c99f`를 사용한다.
 - 몬스터와 후추·덕배는 항상 카메라 정면을 보며, 화살 타워와 화살 투사체만 목표 방향을 추적한다.
-- Vite base `/huchu-duckbae/tower-defense/`와 기존 게임 데이터·배치 규칙·전투 수치를 변경하지 않는다.
+- Vite base `/huchu-duckbae-tower-defense/`와 기존 게임 데이터·배치 규칙·전투 수치를 변경하지 않는다.
 - 새 런타임 의존성을 추가하지 않는다.
 
 ---
@@ -1349,10 +1349,10 @@ Run:
 
 ```bash
 npm run check
-rg -n '/huchu-duckbae/tower-defense/assets/' dist/index.html
+rg -n '/huchu-duckbae-tower-defense/assets/' dist/index.html
 ```
 
-Expected: all Vitest files pass, TypeScript/Vite build exits 0, and the built JS/CSS asset paths begin with `/huchu-duckbae/tower-defense/`.
+Expected: all Vitest files pass, TypeScript/Vite build exits 0, and the built JS/CSS asset paths begin with `/huchu-duckbae-tower-defense/`.
 
 - [ ] **Step 2: Run the mobile browser flow and refresh the QA screenshot**
 
