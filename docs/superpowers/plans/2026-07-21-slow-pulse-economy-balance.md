@@ -184,7 +184,7 @@ Run: `npm run check`
 
 Expected: 모든 Vitest 테스트와 production build 통과.
 
-- [ ] **Step 2: 빌드 base와 변경 범위 검증**
+- [x] **Step 2: 빌드 base와 변경 범위 검증**
 
 Run: `rg -o '/huchu-duckbae-tower-defense/[^\" ]+' dist/index.html`
 
