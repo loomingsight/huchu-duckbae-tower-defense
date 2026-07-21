@@ -1,5 +1,7 @@
 import { TOWER_CATALOG, TOWER_TYPES, type TowerType } from '../game/towers/towerCatalog';
 
+export const GAME_NAME = '후추덕배 타워 디펜스';
+
 export type GamePhase = 'loading' | 'ready' | 'playing' | 'paused' | 'victory' | 'defeat';
 export type GameSpeed = 1 | 2;
 
@@ -209,7 +211,7 @@ export function createHud(root: HTMLElement): HudElements {
       </div>
       <section class="game-overlay" data-state-overlay role="dialog" aria-modal="true" aria-labelledby="game-state-title">
         <div class="game-overlay__panel">
-          <p class="game-overlay__eyebrow">후추 디펜스</p>
+          <p class="game-overlay__eyebrow">${GAME_NAME}</p>
           <h1 id="game-state-title" data-state-title>게임 준비 중</h1>
           <p data-state-body>캐릭터를 불러오고 있어요.</p>
           <div class="game-result" data-result-panel hidden></div>

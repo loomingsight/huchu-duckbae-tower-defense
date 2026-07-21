@@ -3,11 +3,16 @@ import { describe, expect, it } from 'vitest';
 import {
   createHudView,
   createModalFocusManager,
+  GAME_NAME,
   TOWER_CARDS,
   type ModalFocusTarget,
 } from '../../src/app/hud';
 
 describe('mobile HUD view', () => {
+  it('uses the approved game name', () => {
+    expect(GAME_NAME).toBe('후추덕배 타워 디펜스');
+  });
+
   it('exposes the four tower names, role icons, and prices', () => {
     expect(TOWER_CARDS).toEqual([
       { type: 'slow', name: '슬로우 타워', roleIcon: '🌀', cost: 80 },
