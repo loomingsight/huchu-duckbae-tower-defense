@@ -6,9 +6,17 @@ import { spawnEnemy } from '../../src/game/simulation/updateWaves';
 import { STAGE_1_WAVES } from '../../src/game/waves/stage1Waves';
 
 describe('enemy catalog and movement', () => {
-  it('defines the faster fairy and the sturdier golem', () => {
-    expect(ENEMY_CATALOG.fairy.speed).toBeGreaterThan(ENEMY_CATALOG.slime.speed);
-    expect(ENEMY_CATALOG.golem.hp).toBeGreaterThan(ENEMY_CATALOG.orc.hp);
+  it('uses the approved durability and movement pressure', () => {
+    expect(Object.fromEntries(Object.entries(ENEMY_CATALOG).map(([type, enemy]) => [
+      type,
+      { hp: enemy.hp, speed: enemy.speed },
+    ]))).toEqual({
+      slime: { hp: 50.4, speed: 1.15 },
+      fairy: { hp: 38.4, speed: 2.28 },
+      orc: { hp: 132, speed: 1.035 },
+      golem: { hp: 384, speed: 0.52 },
+      minotaur: { hp: 2160, speed: 0.48 },
+    });
   });
 
   it('uses the approved rewards and total stage-one economy', () => {
@@ -45,8 +53,8 @@ describe('enemy catalog and movement', () => {
     const state = createGame();
     spawnEnemy(state, 'golem', 5);
 
-    expect(state.enemies[0].maxHp).toBe(320 * 1.4);
-    expect(state.enemies[0].hp).toBe(320 * 1.4);
+    expect(state.enemies[0].maxHp).toBeCloseTo(384 * 1.4);
+    expect(state.enemies[0].hp).toBeCloseTo(384 * 1.4);
   });
 
   it('grants an enemy reward only once after it is killed', () => {

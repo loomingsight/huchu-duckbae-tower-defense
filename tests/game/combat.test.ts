@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { updateProjectiles } from '../../src/game/combat/updateProjectiles';
 import { updateSlow } from '../../src/game/combat/updateSlow';
 import { updateTowers } from '../../src/game/combat/updateTowers';
+import { ENEMY_CATALOG } from '../../src/game/enemies/enemyCatalog';
 import { createGame } from '../../src/game/simulation/createGame';
 import { placeTower } from '../../src/game/simulation/placeTower';
 import { updateGame } from '../../src/game/simulation/updateGame';
@@ -26,10 +27,10 @@ describe('tower combat', () => {
 
     updateGame(state, 0.2);
 
-    expect(state.enemies[0].hp).toBe(24);
+    expect(state.enemies[0].hp).toBeCloseTo(ENEMY_CATALOG.slime.hp - 18);
     expect(state.enemies[0].lastHitAtSeconds).toBeCloseTo(0.2);
     expect(state.enemies[1].lastHitAtSeconds).toBeNull();
-    expect(state.enemies[1].hp).toBe(42);
+    expect(state.enemies[1].hp).toBe(ENEMY_CATALOG.slime.hp);
     expect(state.hitEvents).toHaveLength(1);
     expect(state.hitEvents[0]).toMatchObject({ towerType: 'arrow', radius: 0 });
   });
@@ -48,7 +49,11 @@ describe('tower combat', () => {
 
     updateGame(state, dt);
 
-    expect(state.enemies.map(({ hp }) => hp)).toEqual([320 - damage, 320 - damage, 320]);
+    expect(state.enemies.map(({ hp }) => hp)).toEqual([
+      ENEMY_CATALOG.golem.hp - damage,
+      ENEMY_CATALOG.golem.hp - damage,
+      ENEMY_CATALOG.golem.hp,
+    ]);
     expect(state.hitEvents[0]).toMatchObject({ towerType: type, radius: splash });
   });
 
@@ -77,7 +82,7 @@ describe('tower combat', () => {
 
     expect(state.enemies[0].speedMultiplier).toBe(0.62);
     expect(state.enemies[0].progress).toBeCloseTo(1.15 * 0.62);
-    expect(state.enemies[0].hp).toBe(42);
+    expect(state.enemies[0].hp).toBe(ENEMY_CATALOG.slime.hp);
     expect(state.projectiles).toEqual([]);
   });
 
@@ -201,7 +206,11 @@ describe('tower combat', () => {
 
     updateProjectiles(state, 1 / 60);
 
-    expect(state.enemies.map(({ hp }) => hp)).toEqual([306, 306, 320]);
+    expect(state.enemies.map(({ hp }) => hp)).toEqual([
+      ENEMY_CATALOG.golem.hp - 14,
+      ENEMY_CATALOG.golem.hp - 14,
+      ENEMY_CATALOG.golem.hp,
+    ]);
   });
 
   it.each([
@@ -265,7 +274,7 @@ describe('tower combat', () => {
     updateGame(state, -1);
     updateGame(state, 0);
 
-    expect(state.enemies[0].hp).toBe(42);
+    expect(state.enemies[0].hp).toBe(ENEMY_CATALOG.slime.hp);
     expect(state.enemies[0].progress).toBe(2);
     expect(state.projectiles).toEqual([]);
   });
