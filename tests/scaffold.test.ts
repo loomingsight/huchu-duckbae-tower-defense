@@ -47,4 +47,27 @@ describe('project scaffold', () => {
       expect(existsSync(`public/icons/app-icon-${size}.png`)).toBe(true);
     }
   });
+
+  it('uses compact side rails and an 80-percent tower tray on mobile landscape', () => {
+    const css = readFileSync('src/styles.css', 'utf8');
+
+    expect(css).toContain(
+      '@media (orientation: landscape) and (max-width: 1024px) and (max-height: 430px)',
+    );
+    expect(css).toContain(`.game-hud__stats,
+  .game-hud__controls {
+    min-height: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 3px;
+    padding: 3px;
+  }`);
+    expect(css).toContain(`width: min(496px, calc(80% - env(safe-area-inset-left) - env(safe-area-inset-right)));
+    gap: 4px;
+    min-height: 50px;
+    padding: 4px;`);
+    expect(css).toContain('bottom: calc(max(4px, env(safe-area-inset-bottom)) + 60px);');
+    expect(css).toContain('bottom: calc(max(4px, env(safe-area-inset-bottom)) + 120px);');
+    expect(css).toMatch(/\.game-control\s*\{[^}]*min-width: 44px;[^}]*min-height: 44px;/s);
+  });
 });
