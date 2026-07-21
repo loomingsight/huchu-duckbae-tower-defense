@@ -4,8 +4,8 @@ import { createCanvasRenderer, type CanvasRenderer } from '../game/render/canvas
 import {
   createFrameEventBuffer,
   createGoldPop,
-  createSlowPulse,
   effectsForHits,
+  slowPulseEffects,
   updateEffects,
   type RuntimeEffect,
 } from '../game/render/effects';
@@ -319,7 +319,10 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
           },
         paused: snapshot.phase === 'paused',
         timeSeconds: snapshot.elapsedSeconds,
-        effects: nextEffects,
+        effects: [
+          ...nextEffects,
+          ...slowPulseEffects(snapshot.game.towers, snapshot.elapsedSeconds),
+        ],
       });
       for (const cue of frame.cueTypes) sound.play(cue);
       effects = nextEffects;
@@ -519,11 +522,6 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         return;
       }
       hud.placementStatus.textContent = '타워를 설치했어요. 같은 타워를 계속 배치할 수 있어요.';
-      const placedTower = snapshot.game.towers.at(-1);
-      if (placedTower?.type === 'slow') {
-        const pulse = createSlowPulse(placedTower.position);
-        if (pulse !== null) effects.push(pulse);
-      }
       sound.play('placement');
       runtime.setSelectedCell(null);
       runtime.renderNow();

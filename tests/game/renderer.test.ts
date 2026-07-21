@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { enemyPosition } from '../../src/game/combat/targeting';
 import { createCanvasRenderer, type GameSnapshot } from '../../src/game/render/canvasRenderer';
 import { drawEntities } from '../../src/game/render/drawEntities';
-import { effectsForHits } from '../../src/game/render/effects';
+import { effectsForHits, slowPulseEffects } from '../../src/game/render/effects';
 import { computeCanvasLayout } from '../../src/game/render/layout';
 import { projectWorldPoint, visualScaleAt } from '../../src/game/render/projection';
 import {
@@ -49,8 +49,8 @@ describe('entity depth rendering', () => {
     const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
     const state = snapshot({
       towers: [
-        { id: 1, type: 'slow', cell: { col: 1, row: 1 }, position: { x: 1.5, y: 1.5 }, cooldownRemaining: 0 },
-        { id: 2, type: 'huchu', cell: { col: 8, row: 6 }, position: { x: 8.5, y: 6.5 }, cooldownRemaining: 0 },
+        { id: 1, type: 'slow', cell: { col: 1, row: 1 }, position: { x: 1.5, y: 1.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
+        { id: 2, type: 'huchu', cell: { col: 8, row: 6 }, position: { x: 8.5, y: 6.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
       ],
       enemies: [
         { id: 1, type: 'slime', hp: 20, maxHp: 42, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: 0 },
@@ -91,6 +91,7 @@ describe('entity depth rendering', () => {
         cell: { col: 1, row: 1 },
         position: { x: 1.5, y: 1.5 },
         cooldownRemaining: 0,
+        placedAtSeconds: 0,
       }],
     });
 
@@ -135,8 +136,8 @@ describe('entity depth rendering', () => {
     const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
     drawEntities(context, layout, snapshot({
       towers: [
-        { id: 1, type: 'slow', cell: { col: 1, row: 0 }, position: { x: 1.5, y: 0.5 }, cooldownRemaining: 0 },
-        { id: 2, type: 'slow', cell: { col: 1, row: 8 }, position: { x: 1.5, y: 8.5 }, cooldownRemaining: 0 },
+        { id: 1, type: 'slow', cell: { col: 1, row: 0 }, position: { x: 1.5, y: 0.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
+        { id: 2, type: 'slow', cell: { col: 1, row: 8 }, position: { x: 1.5, y: 8.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
       ],
     }), createTestAssets());
     const widths = calls
@@ -207,6 +208,34 @@ describe('entity depth rendering', () => {
 });
 
 describe('renderer layer order', () => {
+  it('draws a scheduled slow pulse below the owning tower', () => {
+    const { context, calls } = createRecordingContext();
+    const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
+    const state = snapshot({
+      towers: [{
+        id: 1,
+        type: 'slow',
+        cell: { col: 1, row: 1 },
+        position: { x: 1.5, y: 1.5 },
+        cooldownRemaining: 0,
+        placedAtSeconds: 0,
+      }],
+    });
+
+    renderer.render(state, {
+      timeSeconds: 3.25,
+      effects: slowPulseEffects(state.towers, 3.25),
+    });
+
+    const pulse = calls.findIndex((call) => (
+      call.method === 'stroke'
+      && String(call.strokeStyle).startsWith('rgba(170, 132, 255,')
+    ));
+    const towerBody = calls.findIndex((call) => imageTag(call) === 'tower-slow');
+    expect(pulse).toBeGreaterThan(-1);
+    expect(pulse).toBeLessThan(towerBody);
+  });
+
   it('forwards placement guide cells to the map layer', () => {
     const { context, calls } = createRecordingContext();
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
@@ -269,7 +298,7 @@ describe('renderer layer order', () => {
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
     renderer.render(snapshot({
       towers: [
-        { id: 1, type: 'slow', cell: { col: 1, row: 1 }, position: { x: 1.5, y: 1.5 }, cooldownRemaining: 0 },
+        { id: 1, type: 'slow', cell: { col: 1, row: 1 }, position: { x: 1.5, y: 1.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
       ],
       enemies: [
         { id: 1, type: 'slime', hp: 42, maxHp: 42, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
@@ -292,7 +321,7 @@ describe('renderer layer order', () => {
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
     const state = snapshot({
       towers: [
-        { id: 1, type: 'slow', cell: { col: 1, row: 1 }, position: { x: 1.5, y: 1.5 }, cooldownRemaining: 0 },
+        { id: 1, type: 'slow', cell: { col: 1, row: 1 }, position: { x: 1.5, y: 1.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
       ],
       enemies: [
         { id: 1, type: 'slime', hp: 20, maxHp: 42, progress: 0, speedMultiplier: 0.62, rewarded: false, lastHitAtSeconds: 0 },
@@ -415,7 +444,7 @@ describe('renderer boundaries', () => {
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
     const state = deepFreeze(snapshot({
       towers: [
-        { id: 1, type: 'arrow', cell: { col: 1, row: 1 }, position: { x: 1.5, y: 1.5 }, cooldownRemaining: 0 },
+        { id: 1, type: 'arrow', cell: { col: 1, row: 1 }, position: { x: 1.5, y: 1.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
       ],
       enemies: [
         { id: 1, type: 'slime', hp: 20, maxHp: 42, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
@@ -432,7 +461,7 @@ describe('renderer boundaries', () => {
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
     const state = snapshot({
       towers: [
-        { id: 1, type: 'huchu', cell: { col: 1, row: 1 }, position: { x: Number.POSITIVE_INFINITY, y: 1.5 }, cooldownRemaining: 0 },
+        { id: 1, type: 'huchu', cell: { col: 1, row: 1 }, position: { x: Number.POSITIVE_INFINITY, y: 1.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
       ],
       enemies: [
         { id: 1, type: 'slime', hp: Number.NaN, maxHp: 0, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: 0 },
@@ -465,7 +494,7 @@ describe('renderer boundaries', () => {
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
     const state = snapshot({
       towers: [
-        { id: 1, type: 'huchu', cell: { col: 1, row: 1 }, position: { x: Number.MAX_VALUE, y: 1.5 }, cooldownRemaining: 0 },
+        { id: 1, type: 'huchu', cell: { col: 1, row: 1 }, position: { x: Number.MAX_VALUE, y: 1.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
       ],
       projectiles: [
         { id: 1, towerType: 'huchu', position: { x: Number.MAX_VALUE, y: 2.5 }, targetId: 1, damage: 72, speed: 5, splash: 1.25 },

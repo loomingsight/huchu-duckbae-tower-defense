@@ -2,12 +2,30 @@ import { describe, expect, it, vi } from 'vitest';
 import { SoundEngine, type AudioContextLike } from '../../src/game/audio/SoundEngine';
 import { FIXED_STEP_SECONDS } from '../../src/game/config';
 import { createFixedStepLoop } from '../../src/game/core/fixedStepLoop';
-import type { GameHitEvent } from '../../src/game/simulation/createGame';
+import type { GameHitEvent, GameTower } from '../../src/game/simulation/createGame';
 import {
   createSlowPulse,
   effectForHit,
+  SLOW_PULSE_DURATION_SECONDS,
+  SLOW_PULSE_INTERVAL_SECONDS,
+  slowPulseEffects,
   updateEffects,
 } from '../../src/game/render/effects';
+
+function tower(
+  type: 'slow' | 'arrow',
+  placedAtSeconds: number,
+  id = 1,
+): GameTower & { placedAtSeconds: number } {
+  return {
+    id,
+    type,
+    cell: { col: id, row: 1 },
+    position: { x: id + 0.5, y: 1.5 },
+    cooldownRemaining: 0,
+    placedAtSeconds,
+  };
+}
 
 describe('runtime effects', () => {
   it('removes an effect once its finite lifetime has elapsed', () => {
@@ -43,6 +61,54 @@ describe('runtime effects', () => {
       'aqua-splash', 'fire-burst', 'arrow-impact', 'slow-pulse',
     ]);
     expect(updateEffects([aqua!, fire!, arrow!, slow!], 1)).toEqual([]);
+  });
+
+  it('uses the approved slow-pulse interval and duration', () => {
+    expect(SLOW_PULSE_INTERVAL_SECONDS).toBe(3);
+    expect(SLOW_PULSE_DURATION_SECONDS).toBe(0.6);
+    expect(slowPulseEffects).toBeTypeOf('function');
+  });
+
+  it('shows a slow pulse immediately and at every three-second boundary', () => {
+    expect(slowPulseEffects).toBeTypeOf('function');
+    if (typeof slowPulseEffects !== 'function') return;
+    const slowTower = tower('slow', 0);
+
+    expect(slowPulseEffects([slowTower], 0)).toEqual([{
+      kind: 'slow-pulse',
+      position: { x: 1.5, y: 1.5 },
+      age: 0,
+      duration: 0.6,
+    }]);
+    expect(slowPulseEffects([slowTower], 0.599)[0].age).toBeCloseTo(0.599);
+    expect(slowPulseEffects([slowTower], 0.6)).toEqual([]);
+    expect(slowPulseEffects([slowTower], 3)[0].age).toBeCloseTo(0);
+    expect(slowPulseEffects([slowTower], 3.599)[0].age).toBeCloseTo(0.599);
+    expect(slowPulseEffects([slowTower], 3.6)).toEqual([]);
+    expect(slowPulseEffects([slowTower], 6)[0].age).toBeCloseTo(0);
+  });
+
+  it('keeps tower pulse phases independent and excludes non-slow towers', () => {
+    expect(slowPulseEffects).toBeTypeOf('function');
+    if (typeof slowPulseEffects !== 'function') return;
+    const towers = [
+      tower('slow', 0, 1),
+      tower('slow', 1, 2),
+      tower('arrow', 3, 3),
+    ];
+    const before = structuredClone(towers);
+
+    expect(slowPulseEffects(towers, 3.25).map((effect) => effect.position.x)).toEqual([1.5]);
+    expect(slowPulseEffects(towers, 4.25).map((effect) => effect.position.x)).toEqual([2.5]);
+    expect(towers).toEqual(before);
+  });
+
+  it('normalizes invalid clocks and times before the tower was placed', () => {
+    expect(slowPulseEffects).toBeTypeOf('function');
+    if (typeof slowPulseEffects !== 'function') return;
+
+    expect(slowPulseEffects([tower('slow', Number.NaN)], Number.NaN)[0].age).toBe(0);
+    expect(slowPulseEffects([tower('slow', 5)], 4)[0].age).toBe(0);
   });
 
   it('buffers every fixed-step hit, coalesces cue types, and clears after consumption or restart', async () => {

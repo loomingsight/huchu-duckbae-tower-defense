@@ -78,7 +78,7 @@ Run: `npx vitest run tests/game/placement.test.ts tests/game/enemies.test.ts tes
 
 Expected: focused suites 전부 통과.
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add src/game/simulation/createGame.ts src/game/towers/towerCatalog.ts src/game/enemies/enemyCatalog.ts tests/game/placement.test.ts tests/game/enemies.test.ts tests/app/hud.test.ts tests/game/combat.test.ts
@@ -103,11 +103,11 @@ git commit -m "balance: tighten stage one economy"
 - Produces: `SLOW_PULSE_DURATION_SECONDS = 0.6`
 - Produces: `slowPulseEffects(towers, elapsedSeconds): RuntimeEffect[]`
 
-- [ ] **Step 1: 설치 시간 기록 실패 테스트 작성**
+- [x] **Step 1: 설치 시간 기록 실패 테스트 작성**
 
 `state.elapsedSeconds = 4.25`에서 슬로우 타워를 설치하고 생성된 타워의 `placedAtSeconds`가 `4.25`인지 검증한다. `NaN`, 음수 시간은 `0`으로 저장하며 실패한 설치에는 타워가 추가되지 않아야 한다.
 
-- [ ] **Step 2: 파동 시간 경계 실패 테스트 작성**
+- [x] **Step 2: 파동 시간 경계 실패 테스트 작성**
 
 ```ts
 expect(slowPulseEffects([slowTower], 0)).toHaveLength(1);
@@ -120,13 +120,13 @@ expect(slowPulseEffects([slowTower], 6)).toHaveLength(1);
 
 서로 다른 설치 시각의 슬로우 타워는 독립 phase를 가지고, 일반 타워는 결과에서 제외되며, 입력 객체가 변하지 않는지 함께 검증한다.
 
-- [ ] **Step 3: RED 확인**
+- [x] **Step 3: RED 확인**
 
 Run: `npx vitest run tests/game/placement.test.ts tests/game/effects.test.ts`
 
 Expected: `placedAtSeconds`, 반복 파동 상수와 순수 함수가 없어 실패한다.
 
-- [ ] **Step 4: 설치 시각과 순수 파동 계산 구현**
+- [x] **Step 4: 설치 시각과 순수 파동 계산 구현**
 
 ```ts
 export const SLOW_PULSE_INTERVAL_SECONDS = 3;
@@ -143,15 +143,15 @@ export function slowPulseEffects(
 
 `placeTower()`는 성공 시 정규화된 `state.elapsedSeconds`를 타워에 기록한다. 모든 테스트용 `GameTower` literal에는 의도에 맞는 `placedAtSeconds`를 추가한다.
 
-- [ ] **Step 5: 렌더 파이프라인에 임시 파동 합성**
+- [x] **Step 5: 렌더 파이프라인에 임시 파동 합성**
 
 `GameApp.render()`에서 `slowPulseEffects(snapshot.towers, snapshot.elapsedSeconds)`를 계산하고 일반 effect와 합쳐 renderer에만 전달한다. `confirmPlacement()`의 수동 `createSlowPulse()` 호출은 제거한다. 반복 파동을 runtime effect buffer에 넣지 않아 프레임마다 누적되거나 설치 직후 두 겹으로 그려지지 않게 한다.
 
-- [ ] **Step 6: 렌더 순서 회귀 테스트**
+- [x] **Step 6: 렌더 순서 회귀 테스트**
 
 기존 recording context로 보라색 stroke가 타워 sprite보다 먼저 호출되는지 확인한다. 파동이 없는 phase에서는 보라색 stroke가 없어야 한다.
 
-- [ ] **Step 7: GREEN 확인**
+- [x] **Step 7: GREEN 확인**
 
 Run: `npx vitest run tests/game/placement.test.ts tests/game/effects.test.ts tests/game/renderer.test.ts tests/game/targeting.test.ts`
 

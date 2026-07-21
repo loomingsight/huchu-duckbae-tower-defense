@@ -23,6 +23,7 @@ export type GameTower = {
   cell: Cell;
   position: Vec2;
   cooldownRemaining: number;
+  placedAtSeconds: number;
 };
 
 export type GameProjectile = {

@@ -1,5 +1,8 @@
-import type { GameHitEvent } from '../simulation/createGame';
+import type { GameHitEvent, GameTower } from '../simulation/createGame';
 import type { Vec2 } from '../types';
+
+export const SLOW_PULSE_INTERVAL_SECONDS = 3;
+export const SLOW_PULSE_DURATION_SECONDS = 0.6;
 
 export type TimedEffect = Readonly<{
   age: number;
@@ -122,5 +125,27 @@ export function createGoldPop(position: Readonly<Vec2>, value: number): RuntimeE
 
 export function createSlowPulse(position: Readonly<Vec2>): RuntimeEffect | null {
   if (!Number.isFinite(position.x) || !Number.isFinite(position.y)) return null;
-  return { kind: 'slow-pulse', position: { ...position }, age: 0, duration: 0.6 };
+  return {
+    kind: 'slow-pulse',
+    position: { ...position },
+    age: 0,
+    duration: SLOW_PULSE_DURATION_SECONDS,
+  };
+}
+
+export function slowPulseEffects(
+  towers: readonly Readonly<GameTower>[],
+  elapsedSeconds: number,
+): RuntimeEffect[] {
+  const now = Number.isFinite(elapsedSeconds) && elapsedSeconds >= 0 ? elapsedSeconds : 0;
+  return towers.flatMap((tower) => {
+    if (tower.type !== 'slow') return [];
+    const placedAt = Number.isFinite(tower.placedAtSeconds) && tower.placedAtSeconds >= 0
+      ? tower.placedAtSeconds
+      : 0;
+    const age = Math.max(0, now - placedAt) % SLOW_PULSE_INTERVAL_SECONDS;
+    if (age >= SLOW_PULSE_DURATION_SECONDS) return [];
+    const effect = createSlowPulse(tower.position);
+    return effect === null ? [] : [{ ...effect, age }];
+  });
 }

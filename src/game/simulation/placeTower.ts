@@ -37,6 +37,9 @@ export function placeTower(
     cell: { ...cell },
     position: cellCenter(cell),
     cooldownRemaining: 0,
+    placedAtSeconds: Number.isFinite(state.elapsedSeconds) && state.elapsedSeconds >= 0
+      ? state.elapsedSeconds
+      : 0,
   });
   state.nextTowerId += 1;
   return { ok: true };

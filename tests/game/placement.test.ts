@@ -32,6 +32,25 @@ describe('tower placement', () => {
     expect(createGame().gold).toBe(INITIAL_GOLD);
   });
 
+  it('records the game clock on a successfully placed tower', () => {
+    const state = createGame();
+    state.elapsedSeconds = 4.25;
+
+    expect(placeTower(state, 'slow', { col: 2, row: 1 }).ok).toBe(true);
+    expect(state.towers[0].placedAtSeconds).toBe(4.25);
+  });
+
+  it.each([Number.NaN, Number.POSITIVE_INFINITY, -1])(
+    'normalizes invalid placement time %s to zero',
+    (elapsedSeconds) => {
+      const state = createGame();
+      state.elapsedSeconds = elapsedSeconds;
+
+      expect(placeTower(state, 'slow', { col: 2, row: 1 }).ok).toBe(true);
+      expect(state.towers[0].placedAtSeconds).toBe(0);
+    },
+  );
+
   it('rejects a tower when there is insufficient gold', () => {
     const state = createGame();
     state.gold = TOWER_CATALOG.arrow.cost - 1;
