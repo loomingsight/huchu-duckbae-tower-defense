@@ -1,24 +1,24 @@
 import { describe, expect, it } from 'vitest';
 
-import { movementDirection } from '../../src/game/render/drawEntities';
+import { screenDiagonalDirection } from '../../src/game/render/drawEntities';
 import { arrowFrameForScreenVector } from '../../src/game/render/drawEffects';
 
-describe('movementDirection', () => {
+describe('screenDiagonalDirection', () => {
   it.each([
     [{ x: 1, y: -1 }, 'ne'],
     [{ x: 1, y: 1 }, 'se'],
     [{ x: -1, y: 1 }, 'sw'],
     [{ x: -1, y: -1 }, 'nw'],
-  ] as const)('maps vector %o to %s in game coordinates', (vector, expected) => {
-    expect(movementDirection(vector)).toBe(expected);
+  ] as const)('maps screen vector %o to %s', (vector, expected) => {
+    expect(screenDiagonalDirection(vector)).toBe(expected);
   });
 
-  it('uses deterministic diagonal directions for axis-aligned and zero vectors', () => {
-    expect(movementDirection({ x: 1, y: 0 })).toBe('se');
-    expect(movementDirection({ x: 0, y: 1 })).toBe('sw');
-    expect(movementDirection({ x: -1, y: 0 })).toBe('nw');
-    expect(movementDirection({ x: 0, y: -1 })).toBe('ne');
-    expect(movementDirection({ x: 0, y: 0 })).toBe('se');
+  it('uses deterministic diagonals for axis-aligned and zero vectors', () => {
+    expect(screenDiagonalDirection({ x: 1, y: 0 })).toBe('se');
+    expect(screenDiagonalDirection({ x: 0, y: 1 })).toBe('sw');
+    expect(screenDiagonalDirection({ x: -1, y: 0 })).toBe('nw');
+    expect(screenDiagonalDirection({ x: 0, y: -1 })).toBe('ne');
+    expect(screenDiagonalDirection({ x: 0, y: 0 })).toBe('se');
   });
 });
 

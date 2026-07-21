@@ -19,10 +19,10 @@ export function taggedImage(tag: string, naturalWidth = 128): HTMLImageElement {
 
 export function createTestAssets(): GameAssets {
   const directions = (tag: string) => ({
-    ne: taggedImage(tag),
-    se: taggedImage(tag),
-    sw: taggedImage(tag),
-    nw: taggedImage(tag),
+    ne: taggedImage(`${tag}-ne`),
+    se: taggedImage(`${tag}-se`),
+    sw: taggedImage(`${tag}-sw`),
+    nw: taggedImage(`${tag}-nw`),
   });
 
   return {

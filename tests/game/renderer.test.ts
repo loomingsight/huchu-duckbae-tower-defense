@@ -4,7 +4,7 @@ import { createCanvasRenderer, type GameSnapshot } from '../../src/game/render/c
 import { drawEntities } from '../../src/game/render/drawEntities';
 import { effectsForHits } from '../../src/game/render/effects';
 import { computeCanvasLayout } from '../../src/game/render/layout';
-import { worldToScreen } from '../../src/game/render/drawMap';
+import { projectWorldPoint, visualScaleAt } from '../../src/game/render/projection';
 import {
   createRecordingContext,
   createTestAssets,
@@ -61,13 +61,13 @@ describe('entity depth rendering', () => {
 
     const bodyCalls = calls.filter((call) => (
       call.method === 'drawImage'
-      && ['tower-slow', 'tower-huchu', 'enemy-slime', 'motion-orc'].includes(imageTag(call) ?? '')
+      && ['tower-slow', 'tower-huchu', 'enemy-slime-se', 'motion-orc'].includes(imageTag(call) ?? '')
     ));
     expect(bodyCalls.map(imageTag)).toEqual([
       'tower-slow',
-      'enemy-slime',
-      'motion-orc',
+      'enemy-slime-se',
       'tower-huchu',
+      'motion-orc',
     ]);
     const firstHpBar = calls.findIndex((call) => (
       call.method === 'fillRect' && call.fillStyle === 'rgba(44, 38, 32, 0.78)'
@@ -77,7 +77,7 @@ describe('entity depth rendering', () => {
 
   it.each([
     ['slow', 'tower-slow', 86 / 128],
-    ['arrow', 'tower-arrow', 82 / 128],
+    ['arrow', 'tower-arrow-se', 82 / 128],
     ['deokbae', 'tower-deokbae', 80 / 128],
     ['huchu', 'tower-huchu', 79 / 128],
   ] as const)('anchors the visible base of the %s tower to the front edge of its tile', (type, tag, groundAnchorY) => {
@@ -97,12 +97,52 @@ describe('entity depth rendering', () => {
 
     const translateCall = calls.find((call) => call.method === 'translate');
     const drawCall = calls.find((call) => imageTag(call) === tag);
-    const spriteSize = layout.tileWidth * 2.6;
+    const scale = visualScaleAt(layout, 1.5);
+    const spriteSize = layout.tileWidth * 2.6 * scale;
     const visibleBaseY = Number(translateCall?.args[1])
       + Number(drawCall?.args[6])
       + spriteSize * groundAnchorY;
-    const tileCenter = worldToScreen(layout, { x: 1.5, y: 1.5 });
-    expect(visibleBaseY).toBeCloseTo(tileCenter.y + layout.tileHeight / 2);
+    const tileFront = projectWorldPoint(layout, { x: 1.5, y: 2 });
+    expect(visibleBaseY).toBeCloseTo(tileFront.y);
+  });
+
+  it('keeps static enemies front-facing and always uses front motion sheets', () => {
+    const { context, calls } = createRecordingContext();
+    const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
+    const state = snapshot({
+      enemies: [
+        { id: 1, type: 'slime', hp: 42, maxHp: 42, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 2, type: 'golem', hp: 320, maxHp: 320, progress: 6, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 3, type: 'orc', hp: 110, maxHp: 110, progress: 11, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 4, type: 'fairy', hp: 32, maxHp: 32, progress: 16, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+      ],
+    });
+
+    drawEntities(context, layout, state, createTestAssets(), { timeSeconds: 0.5 });
+    const tags = calls.filter((call) => call.method === 'drawImage').map(imageTag);
+    expect(tags).toContain('enemy-slime-se');
+    expect(tags).toContain('enemy-golem-se');
+    expect(tags).toContain('motion-orc');
+    expect(tags).toContain('motion-fairy');
+    expect(tags.some((tag) => (
+      tag === 'enemy-slime-ne' || tag === 'enemy-slime-sw' || tag === 'enemy-slime-nw'
+    ))).toBe(false);
+  });
+
+  it('renders a near tower larger than the same tower on a far row', () => {
+    const { context, calls } = createRecordingContext();
+    const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
+    drawEntities(context, layout, snapshot({
+      towers: [
+        { id: 1, type: 'slow', cell: { col: 1, row: 0 }, position: { x: 1.5, y: 0.5 }, cooldownRemaining: 0 },
+        { id: 2, type: 'slow', cell: { col: 1, row: 8 }, position: { x: 1.5, y: 8.5 }, cooldownRemaining: 0 },
+      ],
+    }), createTestAssets());
+    const widths = calls
+      .filter((call) => imageTag(call) === 'tower-slow')
+      .map((call) => Number(call.args[7]));
+    expect(widths).toHaveLength(2);
+    expect(widths[1]).toBeGreaterThan(widths[0]);
   });
 });
 
@@ -333,7 +373,7 @@ describe('renderer boundaries', () => {
     const renderer = createCanvasRenderer(canvas, createTestAssets());
 
     const layout = renderer.resize({ width: 844, height: 390, dpr: 3 });
-    const center = worldToScreen(layout, { x: 0.5, y: 0.5 });
+    const center = projectWorldPoint(layout, { x: 0.5, y: 0.5 });
 
     expect(layout.dpr).toBe(2);
     expect(canvas.width).toBe(1688);

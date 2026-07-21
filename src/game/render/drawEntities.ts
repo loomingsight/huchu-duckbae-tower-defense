@@ -1,12 +1,15 @@
 import { enemyPosition, selectTarget } from '../combat/targeting';
-import { STAGE_1 } from '../map/stage1';
+import { cellCenter } from '../core/geometry';
 import type { GameEnemy, GameTower } from '../simulation/createGame';
 import type { TowerType } from '../towers/towerCatalog';
 import type { Cell, Vec2 } from '../types';
-import { cellCenter } from '../core/geometry';
 import type { GameAssets, LoadedSprite } from './assetLoader';
 import type { CanvasLayout } from './layout';
-import { isRenderablePoint, worldToScreen } from './drawMap';
+import {
+  isRenderableWorldPoint,
+  projectWorldPoint,
+  visualScaleAt,
+} from './projection';
 import { MOTION_SPRITES, type SpriteDirection } from './spriteManifest';
 import { drawSpriteFrame } from './spriteSheet';
 
@@ -26,27 +29,14 @@ export type DrawEntitiesOptions = Readonly<{
   previewTower?: TowerPreview | null;
 }>;
 
-export function movementDirection(vector: Readonly<Vec2>): SpriteDirection {
+export function screenDiagonalDirection(vector: Readonly<Vec2>): SpriteDirection {
   const x = Number.isFinite(vector.x) ? vector.x : 0;
   const y = Number.isFinite(vector.y) ? vector.y : 0;
   if (x === 0 && y === 0) return 'se';
-  const screenX = x - y;
-  const screenY = x + y;
-  if (screenX === 0) return screenY < 0 ? 'nw' : 'se';
-  if (screenY === 0) return screenX < 0 ? 'sw' : 'ne';
-  if (screenX > 0) return screenY < 0 ? 'ne' : 'se';
-  return screenY < 0 ? 'nw' : 'sw';
-}
-
-function enemyMovement(enemy: Readonly<GameEnemy>): Vec2 {
-  const lastIndex = STAGE_1.pathCells.length - 1;
-  const progress = Number.isFinite(enemy.progress)
-    ? Math.max(0, Math.min(enemy.progress, lastIndex))
-    : 0;
-  const currentIndex = Math.min(Math.floor(progress), lastIndex - 1);
-  const current = STAGE_1.pathCells[currentIndex];
-  const next = STAGE_1.pathCells[currentIndex + 1];
-  return { x: next.col - current.col, y: next.row - current.row };
+  if (x === 0) return y < 0 ? 'ne' : 'sw';
+  if (y === 0) return x < 0 ? 'nw' : 'se';
+  if (x > 0) return y < 0 ? 'ne' : 'se';
+  return y < 0 ? 'nw' : 'sw';
 }
 
 function drawFallback(
@@ -88,21 +78,25 @@ function towerSprite(
   tower: Readonly<GameTower>,
   snapshot: RenderEntitiesSnapshot,
   assets: GameAssets,
+  layout: CanvasLayout,
 ): LoadedSprite {
   if (tower.type !== 'arrow') return assets.towers[tower.type];
   const target = selectTarget(tower, snapshot.enemies);
-  const position = target === undefined ? undefined : enemyPosition(target);
-  const vector = position === undefined
-    ? { x: 0, y: 1 }
-    : { x: position.x - tower.position.x, y: position.y - tower.position.y };
-  return assets.towers.arrow[movementDirection(vector)];
+  const targetPosition = target === undefined ? undefined : enemyPosition(target);
+  if (targetPosition === undefined) return assets.towers.arrow.se;
+  const towerScreen = projectWorldPoint(layout, tower.position);
+  const targetScreen = projectWorldPoint(layout, targetPosition);
+  return assets.towers.arrow[screenDiagonalDirection({
+    x: targetScreen.x - towerScreen.x,
+    y: targetScreen.y - towerScreen.y,
+  })];
 }
 
 function drawEnemyHp(
   ctx: CanvasRenderingContext2D,
   layout: CanvasLayout,
   enemy: Readonly<GameEnemy>,
-  center: Readonly<Vec2>,
+  position: Readonly<Vec2>,
   timeSeconds: number,
 ): void {
   const isBoss = enemy.type === 'minotaur';
@@ -110,10 +104,12 @@ function drawEnemyHp(
     && timeSeconds - enemy.lastHitAtSeconds <= 2.5;
   if (!isBoss && !recentlyHit) return;
 
-  const width = layout.tileWidth * (isBoss ? 1.35 : 0.9);
-  const height = Math.max(4, layout.tileWidth * 0.09);
+  const center = projectWorldPoint(layout, position);
+  const scale = visualScaleAt(layout, position.y);
+  const width = layout.tileWidth * scale * (isBoss ? 1.35 : 0.9);
+  const height = Math.max(4, layout.tileWidth * scale * 0.09);
   const x = center.x - width / 2;
-  const y = center.y - layout.tileWidth * (isBoss ? 1.24 : 1.02);
+  const y = center.y - layout.tileWidth * scale * (isBoss ? 1.24 : 1.02);
   const hpRatio = Number.isFinite(enemy.hp)
     && Number.isFinite(enemy.maxHp)
     && enemy.maxHp > 0
@@ -122,7 +118,7 @@ function drawEnemyHp(
 
   if (isBoss) {
     ctx.fillStyle = '#f0d7ff';
-    ctx.font = `900 ${Math.max(8, layout.tileWidth * 0.2)}px system-ui, sans-serif`;
+    ctx.font = `900 ${Math.max(8, layout.tileWidth * scale * 0.2)}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     ctx.fillText('BOSS', center.x, y - 2);
@@ -142,14 +138,19 @@ const TOWER_COLORS = {
   deokbae: '#d9673d',
   huchu: '#35acc7',
 } as const;
-// Bottom-most visible pixel in each approved 128px tower render.
 const TOWER_GROUND_ANCHOR_Y = {
   slow: 86 / 128,
   arrow: 82 / 128,
   deokbae: 80 / 128,
   huchu: 79 / 128,
 } as const;
-const ENEMY_SIZES = { slime: 2.05, fairy: 2.32, orc: 2.38, golem: 2.5, minotaur: 2.85 } as const;
+const ENEMY_SIZES = {
+  slime: 2.05,
+  fairy: 2.32,
+  orc: 2.38,
+  golem: 2.5,
+  minotaur: 2.85,
+} as const;
 const ENEMY_COLORS = {
   slime: '#78c96d',
   fairy: '#77cbd6',
@@ -167,8 +168,10 @@ type EntityBody = Readonly<{
   preview?: TowerPreview;
 }>;
 
-function compareBodies(left: EntityBody, right: EntityBody): number {
-  return (left.position.x + left.position.y) - (right.position.x + right.position.y)
+function compareBodies(layout: CanvasLayout, left: EntityBody, right: EntityBody): number {
+  const leftY = projectWorldPoint(layout, left.position).y;
+  const rightY = projectWorldPoint(layout, right.position).y;
+  return leftY - rightY
     || (left.kind === right.kind ? 0 : left.kind === 'enemy' ? 1 : -1)
     || left.id - right.id;
 }
@@ -178,18 +181,20 @@ function drawTowerBody(
   layout: CanvasLayout,
   type: TowerType,
   sprite: LoadedSprite,
-  center: Readonly<Vec2>,
+  cell: Readonly<Cell>,
   alpha: number,
 ): void {
+  const ground = projectWorldPoint(layout, { x: cell.col + 0.5, y: cell.row + 1 });
+  const size = layout.tileWidth * 2.6 * visualScaleAt(layout, cell.row + 0.5);
   ctx.save();
-  ctx.translate(center.x, center.y + layout.tileHeight / 2);
+  ctx.translate(ground.x, ground.y);
   ctx.globalAlpha = alpha;
   drawAnchoredSprite(
     ctx,
     sprite,
     0,
     128,
-    layout.tileWidth * 2.6,
+    size,
     TOWER_COLORS[type],
     TOWER_LABELS[type],
     TOWER_GROUND_ANCHOR_Y[type],
@@ -205,19 +210,21 @@ function drawEnemyBody(
   assets: GameAssets,
   timeSeconds: number,
 ): void {
-  const direction = movementDirection(enemyMovement(enemy));
   const motion = enemy.type === 'orc'
     ? MOTION_SPRITES.orc
     : enemy.type === 'fairy' ? MOTION_SPRITES.fairy : null;
-  const useMotionSheet = direction === 'se' && motion !== null;
   const phase = timeSeconds * (motion?.fps ?? 7) + enemy.id * 0.37;
-  const frame = useMotionSheet ? Math.floor(phase) % motion.frames : 0;
-  const sprite = useMotionSheet
-    ? assets.motion[enemy.type as 'orc' | 'fairy']
-    : assets.enemies[enemy.type][direction];
-  const bounce = Math.sin(phase * Math.PI * 2) * layout.tileHeight * (enemy.type === 'fairy' ? 0.22 : 0.09);
+  const frame = motion === null ? 0 : Math.floor(phase) % motion.frames;
+  const sprite = motion === null
+    ? assets.enemies[enemy.type].se
+    : assets.motion[enemy.type as 'orc' | 'fairy'];
+  const depthScale = visualScaleAt(layout, position.y);
+  const bounce = Math.sin(phase * Math.PI * 2)
+    * layout.tileHeight
+    * depthScale
+    * (enemy.type === 'fairy' ? 0.22 : 0.09);
   const squash = enemy.type === 'slime' ? 1 + Math.sin(phase * Math.PI * 2) * 0.08 : 1;
-  const center = worldToScreen(layout, position);
+  const center = projectWorldPoint(layout, position);
 
   ctx.save();
   ctx.translate(center.x, center.y - bounce);
@@ -226,8 +233,8 @@ function drawEnemyBody(
     ctx,
     sprite,
     frame,
-    useMotionSheet ? 128 : 96,
-    layout.tileWidth * ENEMY_SIZES[enemy.type],
+    motion === null ? 96 : 128,
+    layout.tileWidth * ENEMY_SIZES[enemy.type] * depthScale,
     ENEMY_COLORS[enemy.type],
     enemy.type.slice(0, 1).toUpperCase(),
   );
@@ -243,28 +250,27 @@ export function drawEntities(
 ): void {
   const bodies: EntityBody[] = [];
   for (const tower of snapshot.towers) {
-    if (isRenderablePoint(layout, tower.position)) {
+    if (isRenderableWorldPoint(layout, tower.position)) {
       bodies.push({ kind: 'tower', id: tower.id, position: tower.position, tower });
     }
   }
   for (const enemy of snapshot.enemies) {
     const position = enemyPosition(enemy);
-    if (position !== undefined && isRenderablePoint(layout, position)) {
+    if (position !== undefined && isRenderableWorldPoint(layout, position)) {
       bodies.push({ kind: 'enemy', id: enemy.id, position, enemy });
     }
   }
   const preview = options.previewTower;
   if (preview !== null && preview !== undefined) {
     const position = cellCenter(preview.cell);
-    if (isRenderablePoint(layout, position)) {
+    if (isRenderableWorldPoint(layout, position)) {
       bodies.push({ kind: 'preview', id: Number.MAX_SAFE_INTEGER, position, preview });
     }
   }
-  bodies.sort(compareBodies);
+  bodies.sort((left, right) => compareBodies(layout, left, right));
 
   const timeSeconds = Number.isFinite(options.timeSeconds) ? options.timeSeconds ?? 0 : 0;
   for (const body of bodies) {
-    const center = worldToScreen(layout, body.position);
     if (body.kind === 'enemy' && body.enemy !== undefined) {
       drawEnemyBody(ctx, layout, body.enemy, body.position, assets, timeSeconds);
     } else if (body.kind === 'tower' && body.tower !== undefined) {
@@ -272,8 +278,8 @@ export function drawEntities(
         ctx,
         layout,
         body.tower.type,
-        towerSprite(body.tower, snapshot, assets),
-        center,
+        towerSprite(body.tower, snapshot, assets, layout),
+        body.tower.cell,
         1,
       );
     } else if (body.preview !== undefined) {
@@ -285,7 +291,7 @@ export function drawEntities(
         layout,
         body.preview.type,
         sprite,
-        center,
+        body.preview.cell,
         body.preview.valid ? 0.68 : 0.38,
       );
     }
@@ -293,13 +299,7 @@ export function drawEntities(
 
   for (const body of bodies) {
     if (body.kind === 'enemy' && body.enemy !== undefined) {
-      drawEnemyHp(
-        ctx,
-        layout,
-        body.enemy,
-        worldToScreen(layout, body.position),
-        timeSeconds,
-      );
+      drawEnemyHp(ctx, layout, body.enemy, body.position, timeSeconds);
     }
   }
 }
