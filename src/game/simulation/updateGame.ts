@@ -4,13 +4,14 @@ import { updateSlow } from '../combat/updateSlow';
 import { updateTowers } from '../combat/updateTowers';
 import { updateEnemies } from './updateEnemies';
 import { updateWaves } from './updateWaves';
-import { STAGE_1_WAVES } from '../waves/stage1Waves';
+import { getStageDefinition } from '../stages/stageCatalog';
 
 export function updateGame(state: GameState, dt: number): void {
   state.hitEvents = [];
   if (state.outcome !== 'playing') return;
 
   const safeDt = Number.isFinite(dt) && dt >= 0 ? dt : 0;
+  const stage = getStageDefinition(state.stageId);
   state.elapsedSeconds += safeDt;
   const hadEnemies = state.enemies.length > 0;
   updateSlow(state);
@@ -23,7 +24,7 @@ export function updateGame(state: GameState, dt: number): void {
   ));
   if (state.baseHp === 0) return;
 
-  const currentWave = STAGE_1_WAVES[state.wave.index];
+  const currentWave = stage.waves[state.wave.index];
   const clearedCompletedWave = hadEnemies
     && state.enemies.length === 0
     && currentWave !== undefined
@@ -31,7 +32,7 @@ export function updateGame(state: GameState, dt: number): void {
   updateWaves(state, clearedCompletedWave ? 0 : safeDt);
 
   if (state.outcome === 'playing' && state.wave.allSpawned && state.enemies.length === 0) {
-    state.stats.completedWaves = STAGE_1_WAVES.length;
+    state.stats.completedWaves = stage.waves.length;
     state.outcome = 'victory';
   }
 }

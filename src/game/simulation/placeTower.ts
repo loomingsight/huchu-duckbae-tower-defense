@@ -1,5 +1,5 @@
 import { cellCenter } from '../core/geometry';
-import { STAGE_1 } from '../map/stage1';
+import { getStageDefinition } from '../stages/stageCatalog';
 import { TOWER_CATALOG, type TowerType } from '../towers/towerCatalog';
 import type { Cell } from '../types';
 import type { GameState } from './createGame';
@@ -15,7 +15,8 @@ export function validateTowerPlacement(
 ): PlaceTowerResult {
   const definition = TOWER_CATALOG[type];
   if (state.gold < definition.cost) return { ok: false, reason: 'insufficient-gold' };
-  if (!STAGE_1.isBuildableCell(cell, state.towers.map((tower) => tower.cell))) {
+  const map = getStageDefinition(state.stageId).map;
+  if (!map.isBuildableCell(cell, state.towers.map((tower) => tower.cell))) {
     return { ok: false, reason: 'not-buildable' };
   }
   return { ok: true };

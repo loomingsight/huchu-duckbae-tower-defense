@@ -1,4 +1,5 @@
 import type { EnemyType } from '../enemies/enemyCatalog';
+import { normalizeStageId, type StageId } from '../stages/stageCatalog';
 import type { TowerType } from '../towers/towerCatalog';
 import type { Cell, Vec2 } from '../types';
 
@@ -54,6 +55,7 @@ export type WaveState = {
 };
 
 export type GameState = {
+  stageId: StageId;
   elapsedSeconds: number;
   gold: number;
   baseHp: number;
@@ -75,8 +77,9 @@ export type GameState = {
   };
 };
 
-export function createGame(_seed?: number): GameState {
+export function createGame(stageId: unknown = 1): GameState {
   return {
+    stageId: normalizeStageId(stageId),
     elapsedSeconds: 0,
     gold: INITIAL_GOLD,
     baseHp: 20,

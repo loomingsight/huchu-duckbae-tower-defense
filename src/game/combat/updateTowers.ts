@@ -16,7 +16,7 @@ export function updateTowers(state: GameState, dt: number): void {
     tower.cooldownRemaining = remainingAfterElapsed;
     if (remainingAfterElapsed > COOLDOWN_EPSILON) continue;
 
-    const target = selectTarget(tower, state.enemies);
+    const target = selectTarget(tower, state.enemies, state.stageId);
     if (target === undefined) {
       tower.cooldownRemaining = 0;
       continue;

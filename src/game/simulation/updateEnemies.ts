@@ -1,11 +1,11 @@
 import { ENEMY_CATALOG } from '../enemies/enemyCatalog';
-import { STAGE_1 } from '../map/stage1';
+import { getStageDefinition } from '../stages/stageCatalog';
 import type { GameState } from './createGame';
-
-const ROUTE_LENGTH = STAGE_1.pathCells.length - 1;
 
 export function updateEnemies(state: GameState, dt: number): void {
   const safeDt = Number.isFinite(dt) && dt >= 0 ? dt : 0;
+  const stage = getStageDefinition(state.stageId);
+  const routeLength = stage.map.pathCells.length - 1;
   const survivors = [];
 
   for (const enemy of state.enemies) {
@@ -20,8 +20,8 @@ export function updateEnemies(state: GameState, dt: number): void {
       continue;
     }
 
-    enemy.progress += definition.speed * enemy.speedMultiplier * safeDt;
-    if (enemy.progress >= ROUTE_LENGTH) {
+    enemy.progress += definition.speed * stage.speedMultiplier * enemy.speedMultiplier * safeDt;
+    if (enemy.progress >= routeLength) {
       state.baseHp = Math.max(0, state.baseHp - definition.leak);
       state.stats.leakedEnemies += 1;
       continue;

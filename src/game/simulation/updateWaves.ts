@@ -1,5 +1,6 @@
 import { ENEMY_CATALOG, type EnemyType } from '../enemies/enemyCatalog';
-import { isValidWaveGroup, STAGE_1_WAVES } from '../waves/stage1Waves';
+import { getStageDefinition } from '../stages/stageCatalog';
+import { isValidWaveGroup } from '../waves/stage1Waves';
 import type { GameState } from './createGame';
 
 export const INTER_WAVE_DELAY_SECONDS = 5;
@@ -8,7 +9,8 @@ const TIME_EPSILON = 1e-12;
 
 export function spawnEnemy(state: GameState, type: EnemyType, waveIndex: number): void {
   const definition = ENEMY_CATALOG[type];
-  const scaledHp = definition.hp * (1 + waveIndex * 0.08);
+  const stage = getStageDefinition(state.stageId);
+  const scaledHp = definition.hp * stage.hpMultiplier * (1 + waveIndex * 0.08);
   state.enemies.push({
     id: state.nextEnemyId,
     type,
@@ -30,17 +32,18 @@ export function updateWaves(state: GameState, dt: number): void {
   if (!Number.isFinite(dt) || dt < 0) return;
 
   let remaining = dt;
+  const stage = getStageDefinition(state.stageId);
   let canSpawnAtCurrentTime = remaining > 0;
   let steps = 0;
   while (steps < MAX_WAVE_SPAWNS_PER_UPDATE) {
-    const currentWave = STAGE_1_WAVES[state.wave.index];
+    const currentWave = stage.waves[state.wave.index];
     if (currentWave === undefined) {
       state.wave.allSpawned = true;
       return;
     }
 
     if (state.wave.groupIndex >= currentWave.groups.length) {
-      if (state.wave.index === STAGE_1_WAVES.length - 1) {
+      if (state.wave.index === stage.waves.length - 1) {
         state.wave.allSpawned = true;
         return;
       }
@@ -94,7 +97,7 @@ export function updateWaves(state: GameState, dt: number): void {
       state.wave.spawnedInGroup = 0;
       state.wave.spawnCooldown = 0;
     } else {
-      state.wave.spawnCooldown = group.spawnInterval;
+      state.wave.spawnCooldown = group.spawnInterval * stage.spawnIntervalMultiplier;
     }
   }
 }
