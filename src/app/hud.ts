@@ -1,4 +1,5 @@
 import {
+  getStageDefinition,
   normalizeStageId,
   STAGE_IDS,
   type StageId,
@@ -98,6 +99,97 @@ export type StagePickerItem = Readonly<{
   selected: boolean;
   locked: boolean;
 }>;
+
+export type StageSelectStatus = 'locked' | 'available' | 'cleared';
+
+export type StageSelectRecord = Readonly<{
+  bestScore: number;
+  bestClearSeconds: number | null;
+}>;
+
+export type StageSelectItem = StagePickerItem & Readonly<{
+  name: string;
+  status: StageSelectStatus;
+  statusText: string;
+  recordText: string;
+  ariaLabel: string;
+}>;
+
+function normalizedRecordScore(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : 0;
+}
+
+function normalizedClearSeconds(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : null;
+}
+
+function clearTimeParts(seconds: number): Readonly<{ minutes: number; seconds: number }> {
+  return {
+    minutes: Math.floor(seconds / 60),
+    seconds: seconds % 60,
+  };
+}
+
+export function formatStageClearTime(value: unknown): string {
+  const totalSeconds = normalizedClearSeconds(value);
+  if (totalSeconds === null) return '--:--';
+  const parts = clearTimeParts(totalSeconds);
+  return `${parts.minutes}:${String(parts.seconds).padStart(2, '0')}`;
+}
+
+function accessibleClearTime(seconds: number): string {
+  const parts = clearTimeParts(seconds);
+  return `${parts.minutes}분 ${parts.seconds}초`;
+}
+
+export function createStageSelectView(
+  selectedStageId: unknown,
+  highestUnlockedStage: unknown,
+  records: Readonly<Partial<Record<StageId, StageSelectRecord>>> = {},
+): readonly StageSelectItem[] {
+  const selected = normalizeStageId(selectedStageId);
+  const highestUnlocked = normalizeStageId(highestUnlockedStage);
+  return STAGE_IDS.map((id) => {
+    const definition = getStageDefinition(id);
+    const locked = id > highestUnlocked;
+    const record = records[id];
+    const bestScore = normalizedRecordScore(record?.bestScore);
+    const bestClearSeconds = normalizedClearSeconds(record?.bestClearSeconds);
+    const status: StageSelectStatus = locked
+      ? 'locked'
+      : bestClearSeconds === null ? 'available' : 'cleared';
+    const statusText = status === 'locked'
+      ? '잠김'
+      : status === 'cleared' ? '클리어' : '도전 가능';
+    const scoreText = bestScore.toLocaleString('ko-KR');
+    const recordText = locked
+      ? '잠김'
+      : bestClearSeconds !== null
+        ? `최고 ${scoreText}점 · 최단 ${formatStageClearTime(bestClearSeconds)}`
+        : bestScore > 0 ? `최고 ${scoreText}점 · 미클리어` : '기록 없음';
+    const selectedText = id === selected ? ', 선택됨' : '';
+    const ariaRecord = bestClearSeconds !== null
+      ? `최고 ${scoreText}점, 최단 ${accessibleClearTime(bestClearSeconds)}`
+      : bestScore > 0 ? `최고 ${scoreText}점, 미클리어` : '기록 없음';
+    const ariaLabel = locked
+      ? `스테이지 ${id} ${definition.name} 잠김`
+      : `스테이지 ${id} ${definition.name}${selectedText}, ${statusText}, ${ariaRecord}`;
+    return {
+      id,
+      name: definition.name,
+      selected: id === selected,
+      locked,
+      status,
+      statusText,
+      recordText,
+      ariaLabel,
+    };
+  });
+}
 
 export function createStagePickerView(
   selectedStageId: unknown,
@@ -267,19 +359,27 @@ export function createHud(root: HTMLElement): HudElements {
         <span aria-hidden="true">↻</span>
         <strong id="orientation-title">가로 화면으로 돌려 주세요</strong>
       </div>
-      <section class="game-overlay" data-state-overlay role="dialog" aria-modal="true" aria-labelledby="game-state-title">
-        <div class="game-overlay__panel">
-          <p class="game-overlay__eyebrow">${GAME_NAME}</p>
+      <section class="stage-select-screen" data-state-overlay role="dialog" aria-modal="true" aria-labelledby="game-state-title">
+        <div class="stage-select-screen__panel">
+          <p class="stage-select-screen__eyebrow">${GAME_NAME}</p>
           <h1 id="game-state-title" data-state-title>게임 준비 중</h1>
           <p data-state-body>캐릭터를 불러오고 있어요.</p>
           <div class="stage-picker" data-stage-picker aria-label="스테이지 선택" hidden>
-            ${STAGE_IDS.map((id) => `
+            ${STAGE_IDS.map((id) => {
+              const stage = getStageDefinition(id);
+              return `
               <button class="game-control stage-picker__button" data-stage-id="${id}"
-                type="button" aria-label="스테이지 ${id}" aria-pressed="false">${id}</button>
-            `).join('')}
+                data-stage-status="locked" type="button" aria-label="스테이지 ${id} ${stage.name} 잠김"
+                aria-pressed="false">
+                <span class="stage-picker__number">STAGE ${id}</span>
+                <strong class="stage-picker__name">${stage.name}</strong>
+                <span class="stage-picker__status">잠김</span>
+                <small class="stage-picker__record">잠김</small>
+              </button>
+            `; }).join('')}
           </div>
           <div class="game-result" data-result-panel hidden></div>
-          <button class="game-control game-overlay__action" data-state-action type="button" disabled>잠시만요</button>
+          <button class="game-control stage-select-screen__action" data-state-action type="button" disabled>잠시만요</button>
         </div>
       </section>
     </main>
@@ -331,16 +431,19 @@ export function renderStagePicker(
   elements: HudElements,
   selectedStageId: unknown,
   highestUnlockedStage: unknown,
+  records: Readonly<Partial<Record<StageId, StageSelectRecord>>>,
   visible: boolean,
 ): void {
   elements.stagePicker.hidden = !visible;
-  for (const item of createStagePickerView(selectedStageId, highestUnlockedStage)) {
+  if (!visible) return;
+  for (const item of createStageSelectView(selectedStageId, highestUnlockedStage, records)) {
     const button = elements.stageButtons[item.id];
     button.disabled = item.locked;
-    button.setAttribute('aria-label', item.locked
-      ? `스테이지 ${item.id} 잠김`
-      : `스테이지 ${item.id}`);
+    button.dataset.stageStatus = item.status;
+    button.setAttribute('aria-label', item.ariaLabel);
     button.setAttribute('aria-pressed', String(item.selected));
+    requiredElement<HTMLElement>(button, '.stage-picker__status').textContent = item.statusText;
+    requiredElement<HTMLElement>(button, '.stage-picker__record').textContent = item.recordText;
   }
 }
 

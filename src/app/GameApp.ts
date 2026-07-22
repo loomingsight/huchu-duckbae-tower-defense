@@ -263,13 +263,13 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
 
     function overlayBody(snapshot: GameRuntimeSnapshot): string {
       if (snapshot.phase === 'ready') {
-        return '타워를 고르고 빈 칸을 탭해 적을 막으세요.';
+        return '스테이지를 고르고 게임 시작을 눌러 주세요.';
       }
       if (snapshot.phase === 'victory') {
-        return '간식 창고와 친구들을 멋지게 지켜냈어요!';
+        return '기록을 확인하고 다음 도전을 선택해 주세요.';
       }
       if (snapshot.phase === 'defeat') {
-        return '다음에는 더 오래 지킬 수 있어요.';
+        return '기록을 확인하고 다시 도전할 스테이지를 골라 주세요.';
       }
       return '';
     }
@@ -344,6 +344,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         hud,
         selectedStageId,
         preferences.highestUnlockedStage,
+        preferences.stageRecords,
         pickerVisible,
       );
       const overlayKey = [

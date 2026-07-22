@@ -5,6 +5,7 @@ import type {
   GameTower,
 } from '../simulation/createGame';
 import type { StageId } from '../stages/stageCatalog';
+import { TOWER_CATALOG } from '../towers/towerCatalog';
 import type { Vec2 } from '../types';
 import type { GameAssets, LoadedSprite } from './assetLoader';
 import type { RuntimeEffect } from './effects';
@@ -149,6 +150,14 @@ function effectProgress(effect: RuntimeEffect): number {
   return Math.min(1, Math.max(0, effect.age / effect.duration));
 }
 
+export function slowPulseRadius(progress: number): number {
+  const startRadius = 0.35;
+  const normalized = Number.isFinite(progress)
+    ? Math.max(0, Math.min(1, progress))
+    : 0;
+  return startRadius + (TOWER_CATALOG.slow.range - startRadius) * normalized;
+}
+
 function drawRuntimeEffect(
   ctx: CanvasRenderingContext2D,
   layout: CanvasLayout,
@@ -206,7 +215,7 @@ function drawSlowPulses(
     const progress = effectProgress(effect);
     if (!tracePoints(
       ctx,
-      projectWorldRing(layout, effect.position, 0.35 + progress * 0.8),
+      projectWorldRing(layout, effect.position, slowPulseRadius(progress)),
     )) continue;
     ctx.strokeStyle = `rgba(170, 132, 255, ${1 - progress})`;
     ctx.lineWidth = Math.max(1.5, 2 / layout.dpr);

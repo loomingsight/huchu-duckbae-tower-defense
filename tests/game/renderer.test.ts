@@ -3,11 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { enemyPosition } from '../../src/game/combat/targeting';
 import { cellCenter } from '../../src/game/core/geometry';
 import { createCanvasRenderer, type GameSnapshot } from '../../src/game/render/canvasRenderer';
-import { drawEntities } from '../../src/game/render/drawEntities';
+import { drawEntities, towerSizeFactor } from '../../src/game/render/drawEntities';
+import { slowPulseRadius } from '../../src/game/render/drawEffects';
 import { effectsForHits, slowPulseEffects } from '../../src/game/render/effects';
 import { computeCanvasLayout } from '../../src/game/render/layout';
 import { projectWorldPoint, visualScaleAt } from '../../src/game/render/projection';
 import { getStageDefinition } from '../../src/game/stages/stageCatalog';
+import { TOWER_CATALOG } from '../../src/game/towers/towerCatalog';
 import {
   createRecordingContext,
   createTestAssets,
@@ -47,6 +49,13 @@ function deepFreeze<T>(value: T): T {
 }
 
 describe('entity depth rendering', () => {
+  it('renders the slow tower ten percent smaller without changing other tower scales', () => {
+    expect(towerSizeFactor('slow')).toBe(1.8);
+    expect(towerSizeFactor('arrow')).toBe(2);
+    expect(towerSizeFactor('deokbae')).toBe(2);
+    expect(towerSizeFactor('huchu')).toBe(2);
+  });
+
   it('positions enemies on the selected stage path', () => {
     const { context, calls } = createRecordingContext();
     const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
@@ -129,7 +138,7 @@ describe('entity depth rendering', () => {
     const translateCall = calls.find((call) => call.method === 'translate');
     const drawCall = calls.find((call) => imageTag(call) === tag);
     const scale = visualScaleAt(layout, 1.5);
-    const spriteSize = layout.tileWidth * 2.0 * scale;
+    const spriteSize = layout.tileWidth * towerSizeFactor(type) * scale;
     const visibleBaseY = Number(translateCall?.args[1])
       + Number(drawCall?.args[6])
       + spriteSize * groundAnchorY;
@@ -237,6 +246,13 @@ describe('entity depth rendering', () => {
 });
 
 describe('renderer layer order', () => {
+  it('expands a slow pulse from its center to the configured tower range', () => {
+    expect(slowPulseRadius(0)).toBe(0.35);
+    expect(slowPulseRadius(1)).toBe(TOWER_CATALOG.slow.range);
+    expect(slowPulseRadius(-1)).toBe(0.35);
+    expect(slowPulseRadius(2)).toBe(TOWER_CATALOG.slow.range);
+  });
+
   it('renders the active stage map instead of the stage-one map', () => {
     const { context, calls } = createRecordingContext();
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());

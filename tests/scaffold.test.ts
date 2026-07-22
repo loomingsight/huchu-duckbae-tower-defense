@@ -71,10 +71,21 @@ describe('project scaffold', () => {
     expect(css).toMatch(/\.game-control\s*\{[^}]*min-width: 44px;[^}]*min-height: 44px;/s);
   });
 
-  it('keeps the six-stage picker compact with accessible touch targets', () => {
+  it('renders an opaque independent stage-select screen with accessible 3-by-2 cards', () => {
     const css = readFileSync('src/styles.css', 'utf8');
+    const hud = readFileSync('src/app/hud.ts', 'utf8');
 
-    expect(css).toMatch(/\.stage-picker\s*\{[^}]*grid-template-columns: repeat\(6, 44px\);/s);
-    expect(css).toMatch(/\.stage-picker__button\s*\{[^}]*min-width: 44px;[^}]*min-height: 44px;/s);
+    expect(hud).toContain('<section class="stage-select-screen"');
+    expect(hud).toContain('stage-picker__number');
+    expect(hud).toContain('stage-picker__name');
+    expect(hud).toContain('stage-picker__status');
+    expect(hud).toContain('stage-picker__record');
+    expect(css).toMatch(/\.stage-select-screen\s*\{[^}]*background: #[0-9a-fA-F]{6};/s);
+    expect(css).toMatch(/\.stage-picker\s*\{[^}]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);/s);
+    const cardSize = css.match(
+      /\.stage-picker__button\s*\{[^}]*min-width: (\d+)px;[^}]*min-height: (\d+)px;/s,
+    );
+    expect(Number(cardSize?.[1])).toBeGreaterThanOrEqual(44);
+    expect(Number(cardSize?.[2])).toBeGreaterThanOrEqual(44);
   });
 });

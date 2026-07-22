@@ -152,6 +152,11 @@ const TOWER_GROUND_ANCHOR_Y = {
   deokbae: 80 / 128,
   huchu: 79 / 128,
 } as const;
+
+export function towerSizeFactor(type: TowerType): number {
+  return type === 'slow' ? 1.8 : 2.0;
+}
+
 const ENEMY_SIZES = {
   slime: 2.05,
   fairy: 2.32,
@@ -193,7 +198,7 @@ function drawTowerBody(
   alpha: number,
 ): void {
   const ground = projectWorldPoint(layout, { x: cell.col + 0.5, y: cell.row + 1 });
-  const size = layout.tileWidth * 2.0 * visualScaleAt(layout, cell.row + 0.5);
+  const size = layout.tileWidth * towerSizeFactor(type) * visualScaleAt(layout, cell.row + 0.5);
   ctx.save();
   ctx.translate(ground.x, ground.y);
   ctx.globalAlpha = alpha;

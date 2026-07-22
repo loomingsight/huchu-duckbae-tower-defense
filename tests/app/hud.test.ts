@@ -4,6 +4,7 @@ import {
   createHudView,
   createModalFocusManager,
   createStagePickerView,
+  createStageSelectView,
   GAME_NAME,
   stageActionLabel,
   TOWER_CARDS,
@@ -142,6 +143,53 @@ describe('mobile HUD view', () => {
       { id: 5, selected: false, locked: true },
       { id: 6, selected: false, locked: true },
     ]);
+  });
+
+  it('builds stage cards with names, progression states, and saved records', () => {
+    const cards = createStageSelectView(2, 2, {
+      1: { bestScore: 8400, bestClearSeconds: 95 },
+      2: { bestScore: 2200, bestClearSeconds: null },
+    });
+
+    expect(cards.slice(0, 3)).toEqual([
+      {
+        id: 1,
+        name: '초록 들판',
+        selected: false,
+        locked: false,
+        status: 'cleared',
+        statusText: '클리어',
+        recordText: '최고 8,400점 · 최단 1:35',
+        ariaLabel: '스테이지 1 초록 들판, 클리어, 최고 8,400점, 최단 1분 35초',
+      },
+      {
+        id: 2,
+        name: '굽이 개울',
+        selected: true,
+        locked: false,
+        status: 'available',
+        statusText: '도전 가능',
+        recordText: '최고 2,200점 · 미클리어',
+        ariaLabel: '스테이지 2 굽이 개울, 선택됨, 도전 가능, 최고 2,200점, 미클리어',
+      },
+      {
+        id: 3,
+        name: '바람 언덕',
+        selected: false,
+        locked: true,
+        status: 'locked',
+        statusText: '잠김',
+        recordText: '잠김',
+        ariaLabel: '스테이지 3 바람 언덕 잠김',
+      },
+    ]);
+  });
+
+  it('shows an unlocked stage without a score as having no record', () => {
+    const stage = createStageSelectView(1, 1, {})[0];
+
+    expect(stage.recordText).toBe('기록 없음');
+    expect(stage.ariaLabel).toContain('기록 없음');
   });
 
   it('uses the approved progression action labels', () => {
