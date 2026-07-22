@@ -1,5 +1,5 @@
 import { cellCenter } from '../core/geometry';
-import { STAGE_1 } from '../map/stage1';
+import type { StageMap } from '../map/createStageMap';
 import type { Cell } from '../types';
 import type { GameAssets, LoadedSprite } from './assetLoader';
 import type { CanvasLayout } from './layout';
@@ -35,8 +35,6 @@ export type MapSelection = {
   valid?: boolean;
 };
 
-const PATH_KEYS = new Set(STAGE_1.pathCells.map((cell) => `${cell.col}:${cell.row}`));
-
 function tracePoints(
   ctx: CanvasRenderingContext2D,
   points: readonly ScreenPoint[],
@@ -60,9 +58,13 @@ function traceCell(
   return tracePoints(ctx, projectCellPolygon(layout, cell));
 }
 
-function drawBoardThickness(ctx: CanvasRenderingContext2D, layout: CanvasLayout): void {
-  const left = projectWorldPoint(layout, { x: 0, y: STAGE_1.height });
-  const right = projectWorldPoint(layout, { x: STAGE_1.width, y: STAGE_1.height });
+function drawBoardThickness(
+  ctx: CanvasRenderingContext2D,
+  layout: CanvasLayout,
+  map: StageMap,
+): void {
+  const left = projectWorldPoint(layout, { x: 0, y: map.height });
+  const right = projectWorldPoint(layout, { x: map.width, y: map.height });
   const thickness = Math.max(5, layout.projection.rowStep * 0.22);
   if (!tracePoints(ctx, [
     left,
@@ -93,6 +95,7 @@ function drawCell(
 function drawPlacementGuide(
   ctx: CanvasRenderingContext2D,
   layout: CanvasLayout,
+  map: StageMap,
   cells: readonly Readonly<Cell>[],
 ): void {
   for (const cell of cells) {
@@ -100,9 +103,9 @@ function drawPlacementGuide(
       !Number.isInteger(cell.col)
       || !Number.isInteger(cell.row)
       || cell.col < 0
-      || cell.col >= STAGE_1.width
+      || cell.col >= map.width
       || cell.row < 0
-      || cell.row >= STAGE_1.height
+      || cell.row >= map.height
       || !traceCell(ctx, layout, cell)
     ) continue;
     ctx.fillStyle = COLORS.placementGuide;
@@ -131,6 +134,7 @@ function drawLandmark(
 function drawSelection(
   ctx: CanvasRenderingContext2D,
   layout: CanvasLayout,
+  map: StageMap,
   selection: MapSelection,
 ): void {
   if (selection.cell == null) return;
@@ -139,15 +143,15 @@ function drawSelection(
     !Number.isInteger(cell.col)
     || !Number.isInteger(cell.row)
     || cell.col < 0
-    || cell.col >= STAGE_1.width
+    || cell.col >= map.width
     || cell.row < 0
-    || cell.row >= STAGE_1.height
+    || cell.row >= map.height
   ) return;
 
   if (selection.range !== undefined && Number.isFinite(selection.range) && selection.range > 0) {
     const center = cellCenter(cell);
-    for (let row = 0; row < STAGE_1.height; row += 1) {
-      for (let col = 0; col < STAGE_1.width; col += 1) {
+    for (let row = 0; row < map.height; row += 1) {
+      for (let col = 0; col < map.width; col += 1) {
         if (Math.hypot(col - cell.col, row - cell.row) > selection.range) continue;
         if (!traceCell(ctx, layout, { col, row })) continue;
         ctx.fillStyle = COLORS.range;
@@ -173,6 +177,7 @@ export function drawMap(
   ctx: CanvasRenderingContext2D,
   layout: CanvasLayout,
   assets: GameAssets,
+  map: StageMap,
   selection: MapSelection = {},
 ): void {
   ctx.fillStyle = COLORS.ground;
@@ -182,16 +187,16 @@ export function drawMap(
     layout.gameArea.width,
     layout.gameArea.height,
   );
-  drawBoardThickness(ctx, layout);
+  drawBoardThickness(ctx, layout, map);
 
-  for (let row = 0; row < STAGE_1.height; row += 1) {
-    for (let col = 0; col < STAGE_1.width; col += 1) {
-      drawCell(ctx, layout, { col, row }, PATH_KEYS.has(`${col}:${row}`));
+  for (let row = 0; row < map.height; row += 1) {
+    for (let col = 0; col < map.width; col += 1) {
+      drawCell(ctx, layout, { col, row }, map.isPathCell({ col, row }));
     }
   }
 
-  drawPlacementGuide(ctx, layout, selection.buildableCells ?? []);
-  const chest = STAGE_1.pathCells[STAGE_1.pathCells.length - 1];
+  drawPlacementGuide(ctx, layout, map, selection.buildableCells ?? []);
+  const chest = map.pathCells[map.pathCells.length - 1];
   drawLandmark(ctx, layout, assets.map.snackChest, chest, 2.05, 0.86);
-  drawSelection(ctx, layout, selection);
+  drawSelection(ctx, layout, map, selection);
 }

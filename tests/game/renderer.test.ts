@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import { enemyPosition } from '../../src/game/combat/targeting';
+import { cellCenter } from '../../src/game/core/geometry';
 import { createCanvasRenderer, type GameSnapshot } from '../../src/game/render/canvasRenderer';
 import { drawEntities } from '../../src/game/render/drawEntities';
 import { effectsForHits, slowPulseEffects } from '../../src/game/render/effects';
 import { computeCanvasLayout } from '../../src/game/render/layout';
 import { projectWorldPoint, visualScaleAt } from '../../src/game/render/projection';
+import { getStageDefinition } from '../../src/game/stages/stageCatalog';
 import {
   createRecordingContext,
   createTestAssets,
@@ -15,6 +17,7 @@ import {
 
 function snapshot(overrides: Partial<GameSnapshot> = {}): GameSnapshot {
   return {
+    stageId: 1,
     gold: 450,
     baseHp: 20,
     outcome: 'playing',
@@ -44,6 +47,32 @@ function deepFreeze<T>(value: T): T {
 }
 
 describe('entity depth rendering', () => {
+  it('positions enemies on the selected stage path', () => {
+    const { context, calls } = createRecordingContext();
+    const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
+    const stage = getStageDefinition(6);
+    const progress = stage.map.pathCells.length - 1;
+    const state = snapshot({
+      stageId: 6,
+      enemies: [{
+        id: 0,
+        type: 'slime',
+        hp: 42,
+        maxHp: 42,
+        progress,
+        speedMultiplier: 1,
+        rewarded: false,
+        lastHitAtSeconds: null,
+      }],
+    });
+
+    drawEntities(context, layout, state, createTestAssets(), { timeSeconds: 0 });
+
+    const translate = calls.find((call) => call.method === 'translate');
+    const expected = projectWorldPoint(layout, cellCenter(stage.map.pathCells.at(-1)!));
+    expect(translate?.args).toEqual([expected.x, expected.y]);
+  });
+
   it('globally sorts tower and enemy bodies by screen y before drawing HP bars', () => {
     const { context, calls } = createRecordingContext();
     const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
@@ -208,6 +237,60 @@ describe('entity depth rendering', () => {
 });
 
 describe('renderer layer order', () => {
+  it('renders the active stage map instead of the stage-one map', () => {
+    const { context, calls } = createRecordingContext();
+    const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
+    const stage = getStageDefinition(6);
+
+    renderer.render(snapshot({ stageId: 6 }));
+
+    expect(calls.filter((call) => (
+      call.method === 'fill' && call.fillStyle === '#e4c99f'
+    ))).toHaveLength(stage.map.pathCells.length);
+  });
+
+  it('aims arrow towers and projectiles along the selected stage path', () => {
+    const { context, calls } = createRecordingContext();
+    const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
+    const stage = getStageDefinition(6);
+    const targetId = 1;
+
+    renderer.render(snapshot({
+      stageId: 6,
+      towers: [{
+        id: 1,
+        type: 'arrow',
+        cell: { col: 18, row: 2 },
+        position: { x: 18.5, y: 2.5 },
+        cooldownRemaining: 0,
+        placedAtSeconds: 0,
+      }],
+      enemies: [{
+        id: targetId,
+        type: 'slime',
+        hp: 42,
+        maxHp: 42,
+        progress: stage.map.pathCells.length - 1,
+        speedMultiplier: 1,
+        rewarded: false,
+        lastHitAtSeconds: null,
+      }],
+      projectiles: [{
+        id: 1,
+        towerType: 'arrow',
+        position: { x: 18.5, y: 2.5 },
+        targetId,
+        damage: 18,
+        speed: 8,
+        splash: 0,
+      }],
+    }), { timeSeconds: 0 });
+
+    expect(calls.some((call) => imageTag(call) === 'tower-arrow-se')).toBe(true);
+    const arrow = calls.find((call) => imageTag(call) === 'vfx-arrow');
+    expect(arrow?.args[1]).toBe(0);
+  });
+
   it('draws a scheduled slow pulse below the owning tower', () => {
     const { context, calls } = createRecordingContext();
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());

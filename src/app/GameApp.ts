@@ -12,9 +12,8 @@ import {
 import { createGame } from '../game/simulation/createGame';
 import { placeTower, validateTowerPlacement } from '../game/simulation/placeTower';
 import { updateGame as updateSimulation } from '../game/simulation/updateGame';
-import { STAGE_1 } from '../game/map/stage1';
+import { getStageDefinition } from '../game/stages/stageCatalog';
 import { TOWER_CATALOG, TOWER_TYPES, type TowerType } from '../game/towers/towerCatalog';
-import { STAGE_1_WAVES } from '../game/waves/stage1Waves';
 import { calculateGameScore } from '../game/scoring';
 import {
   createGameRuntime,
@@ -275,6 +274,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
 
     function render(): void {
       const snapshot = runtime.getSnapshot();
+      const stage = getStageDefinition(snapshot.game.stageId);
       if (renderedGame !== snapshot.game) {
         renderedGame = snapshot.game;
         effects = [];
@@ -303,7 +303,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       const placementGuideCells = snapshot.selectedTower !== null
         && snapshot.phase === 'playing'
         && !snapshot.portraitBlocked
-        ? STAGE_1.buildableCells(snapshot.game.towers.map((tower) => tower.cell))
+        ? stage.map.buildableCells(snapshot.game.towers.map((tower) => tower.cell))
         : undefined;
       renderer.render(snapshot.game, {
         placementGuideCells,
@@ -388,7 +388,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
           gold: snapshot.game.gold,
           baseHp: snapshot.game.baseHp,
           waveIndex: snapshot.game.wave.index,
-          waveCount: STAGE_1_WAVES.length,
+          waveCount: stage.waves.length,
           phase: snapshot.phase,
           speed: snapshot.speed,
           muted: preferences.muted,
