@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   createHudView,
   createModalFocusManager,
+  createStagePickerView,
   GAME_NAME,
+  stageActionLabel,
   TOWER_CARDS,
   towerCardAvailability,
   type ModalFocusTarget,
@@ -66,6 +68,7 @@ describe('mobile HUD view', () => {
 
   it('formats live values and accessible control states', () => {
     expect(createHudView({
+      stageId: 1,
       gold: 123,
       baseHp: 7,
       waveIndex: 12,
@@ -79,8 +82,8 @@ describe('mobile HUD view', () => {
       goldLabel: '골드 123',
       baseHpText: '7',
       baseHpLabel: '기지 체력 7',
-      waveText: '10/10',
-      waveLabel: '현재 웨이브 10/10',
+      waveText: 'S1 · 10/10',
+      waveLabel: '스테이지 1, 현재 웨이브 10/10',
       pauseText: '계속',
       pauseLabel: '게임 계속하기',
       speedText: '2×',
@@ -94,6 +97,7 @@ describe('mobile HUD view', () => {
 
   it('disables every game control while portrait blocks play', () => {
     const view = createHudView({
+      stageId: 1,
       gold: 450,
       baseHp: 20,
       waveIndex: 0,
@@ -106,10 +110,46 @@ describe('mobile HUD view', () => {
 
     expect(view.goldLabel).toBe('골드 450');
     expect(view.baseHpLabel).toBe('기지 체력 20');
-    expect(view.waveLabel).toBe('현재 웨이브 1/10');
+    expect(view.waveLabel).toBe('스테이지 1, 현재 웨이브 1/10');
     expect(view.speedLabel).toBe('게임 속도 1×, 변경');
     expect(view.hudControlsDisabled).toBe(true);
     expect(view.towerControlsDisabled).toBe(true);
+  });
+
+  it('formats the selected stage into the compact wave status', () => {
+    const view = createHudView({
+      stageId: 4,
+      gold: 320,
+      baseHp: 20,
+      waveIndex: 2,
+      waveCount: 10,
+      phase: 'playing',
+      speed: 1,
+      muted: false,
+      portraitBlocked: false,
+    });
+
+    expect(view.waveText).toBe('S4 · 3/10');
+    expect(view.waveLabel).toBe('스테이지 4, 현재 웨이브 3/10');
+  });
+
+  it('marks only unlocked stage buttons as selectable', () => {
+    expect(createStagePickerView(2, 3)).toEqual([
+      { id: 1, selected: false, locked: false },
+      { id: 2, selected: true, locked: false },
+      { id: 3, selected: false, locked: false },
+      { id: 4, selected: false, locked: true },
+      { id: 5, selected: false, locked: true },
+      { id: 6, selected: false, locked: true },
+    ]);
+  });
+
+  it('uses the approved progression action labels', () => {
+    expect(stageActionLabel('ready', 1, 1)).toBe('게임 시작');
+    expect(stageActionLabel('defeat', 3, 3)).toBe('다시 도전');
+    expect(stageActionLabel('victory', 3, 4)).toBe('다음 스테이지');
+    expect(stageActionLabel('victory', 6, 6)).toBe('다시 하기');
+    expect(stageActionLabel('victory', 3, 2)).toBe('스테이지 2 시작');
   });
 
   it('moves focus and inert state only when modal visibility changes', () => {

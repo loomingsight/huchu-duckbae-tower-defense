@@ -70,4 +70,11 @@ describe('project scaffold', () => {
     expect(css).toContain('bottom: calc(max(4px, env(safe-area-inset-bottom)) + 120px);');
     expect(css).toMatch(/\.game-control\s*\{[^}]*min-width: 44px;[^}]*min-height: 44px;/s);
   });
+
+  it('keeps the six-stage picker compact with accessible touch targets', () => {
+    const css = readFileSync('src/styles.css', 'utf8');
+
+    expect(css).toMatch(/\.stage-picker\s*\{[^}]*grid-template-columns: repeat\(6, 44px\);/s);
+    expect(css).toMatch(/\.stage-picker__button\s*\{[^}]*min-width: 44px;[^}]*min-height: 44px;/s);
+  });
 });

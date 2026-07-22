@@ -12,7 +12,11 @@ import {
 import { createGame } from '../game/simulation/createGame';
 import { placeTower, validateTowerPlacement } from '../game/simulation/placeTower';
 import { updateGame as updateSimulation } from '../game/simulation/updateGame';
-import { getStageDefinition } from '../game/stages/stageCatalog';
+import {
+  getStageDefinition,
+  STAGE_IDS,
+  type StageId,
+} from '../game/stages/stageCatalog';
 import { TOWER_CATALOG, TOWER_TYPES, type TowerType } from '../game/towers/towerCatalog';
 import { calculateGameScore } from '../game/scoring';
 import {
@@ -24,10 +28,12 @@ import {
 import {
   createHud,
   createModalFocusManager,
+  renderStagePicker,
   renderResultPanel,
   renderHud,
   showPlacementActions,
   showStateOverlay,
+  stageActionLabel,
 } from './hud';
 import { isTapGesture, pointerToCell, type ClientPoint } from './input';
 import { guardInitialization, LifecycleScope } from './lifecycle';
@@ -224,6 +230,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     const hud = createHud(root);
     const storage = browserPreferenceStorage();
     let preferences = loadPreferences(storage);
+    let selectedStageId = preferences.highestUnlockedStage;
     let activePointer: ActivePointer | null = null;
     let invalidTimer = 0;
     let lastHudKey = '';
@@ -332,10 +339,28 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       frameEvents.clear();
 
       const body = overlayBody(snapshot);
-      const overlayKey = `${snapshot.phase}|${body}`;
+      const pickerVisible = stateOverlayVisible(snapshot);
+      renderStagePicker(
+        hud,
+        selectedStageId,
+        preferences.highestUnlockedStage,
+        pickerVisible,
+      );
+      const overlayKey = [
+        snapshot.phase,
+        body,
+        snapshot.game.stageId,
+        selectedStageId,
+        preferences.highestUnlockedStage,
+      ].join('|');
       if (overlayKey !== lastOverlayKey) {
         lastOverlayKey = overlayKey;
-        showStateOverlay(hud, snapshot.phase, body);
+        showStateOverlay(
+          hud,
+          snapshot.phase,
+          body,
+          stageActionLabel(snapshot.phase, snapshot.game.stageId, selectedStageId),
+        );
         if (snapshot.phase === 'victory' || snapshot.phase === 'defeat') {
           const stageRecord = stageRecordFor(preferences, snapshot.game.stageId);
           const score = calculateGameScore(
@@ -373,6 +398,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       });
 
       const hudKey = [
+        snapshot.game.stageId,
         snapshot.game.gold,
         snapshot.game.baseHp,
         snapshot.game.wave.index,
@@ -387,6 +413,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       if (hudKey !== lastHudKey) {
         lastHudKey = hudKey;
         renderHud(hud, {
+          stageId: snapshot.game.stageId,
           gold: snapshot.game.gold,
           baseHp: snapshot.game.baseHp,
           waveIndex: snapshot.game.wave.index,
@@ -408,7 +435,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     const scheduler = createAppScheduler(scope, () => runtime.getSnapshot());
     runtime = createGameRuntime({
       scheduler,
-      createGame,
+      createGame: () => createGame(selectedStageId),
       updateGame(game, deltaSeconds) {
         const nextProjectileId = game.nextProjectileId;
         const baseHp = game.baseHp;
@@ -432,6 +459,9 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         }, preferences);
         preferences = recorded.preferences;
         newBestScore = recorded.newBestScore;
+        if (outcome === 'victory' && game.stageId < 6) {
+          selectedStageId = (game.stageId + 1) as StageId;
+        }
       },
     });
     scope.add(() => runtime.destroy());
@@ -540,6 +570,19 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       const phase = runtime.getSnapshot().phase;
       if (phase === 'ready' || phase === 'victory' || phase === 'defeat') startNewGame();
     });
+    for (const stageId of STAGE_IDS) {
+      scope.listen(hud.stageButtons[stageId], 'click', () => {
+        const phase = runtime.getSnapshot().phase;
+        if (
+          phase !== 'ready'
+          && phase !== 'victory'
+          && phase !== 'defeat'
+        ) return;
+        if (stageId > preferences.highestUnlockedStage) return;
+        selectedStageId = stageId;
+        runtime.renderNow();
+      });
+    }
     scope.listen(hud.pauseButton, 'click', () => {
       unlockAudio();
       if (!runtime.getSnapshot().portraitBlocked) runtime.togglePause();

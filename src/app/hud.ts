@@ -1,3 +1,8 @@
+import {
+  normalizeStageId,
+  STAGE_IDS,
+  type StageId,
+} from '../game/stages/stageCatalog';
 import { TOWER_CATALOG, TOWER_TYPES, type TowerType } from '../game/towers/towerCatalog';
 
 export const GAME_NAME = '후추덕배 타워 디펜스';
@@ -13,6 +18,7 @@ export const TOWER_CARDS = [
 ] as const;
 
 export type HudViewInput = Readonly<{
+  stageId: StageId;
   gold: number;
   baseHp: number;
   waveIndex: number;
@@ -65,7 +71,8 @@ export function createHudView(input: HudViewInput): HudView {
   const paused = input.phase === 'paused';
   const goldText = wholeNumber(input.gold);
   const baseHpText = wholeNumber(input.baseHp);
-  const waveText = `${wave}/${waveCount}`;
+  const waveStatus = `${wave}/${waveCount}`;
+  const waveText = `S${input.stageId} · ${waveStatus}`;
   const speedText = `${input.speed}×`;
   const isLivePhase = input.phase === 'playing' || input.phase === 'paused';
   return {
@@ -74,7 +81,7 @@ export function createHudView(input: HudViewInput): HudView {
     baseHpText,
     baseHpLabel: `기지 체력 ${baseHpText}`,
     waveText,
-    waveLabel: `현재 웨이브 ${waveText}`,
+    waveLabel: `스테이지 ${input.stageId}, 현재 웨이브 ${waveStatus}`,
     pauseText: paused ? '계속' : '정지',
     pauseLabel: paused ? '게임 계속하기' : '게임 일시정지',
     speedText,
@@ -84,6 +91,42 @@ export function createHudView(input: HudViewInput): HudView {
     hudControlsDisabled: input.portraitBlocked || !isLivePhase,
     towerControlsDisabled: input.portraitBlocked || input.phase !== 'playing',
   };
+}
+
+export type StagePickerItem = Readonly<{
+  id: StageId;
+  selected: boolean;
+  locked: boolean;
+}>;
+
+export function createStagePickerView(
+  selectedStageId: unknown,
+  highestUnlockedStage: unknown,
+): readonly StagePickerItem[] {
+  const selected = normalizeStageId(selectedStageId);
+  const highestUnlocked = normalizeStageId(highestUnlockedStage);
+  return STAGE_IDS.map((id) => ({
+    id,
+    selected: id === selected,
+    locked: id > highestUnlocked,
+  }));
+}
+
+export function stageActionLabel(
+  phase: GamePhase,
+  currentStageId: unknown,
+  selectedStageId: unknown,
+): string {
+  const current = normalizeStageId(currentStageId);
+  const selected = normalizeStageId(selectedStageId);
+  if (phase === 'ready') return '게임 시작';
+  if (phase === 'defeat' && selected === current) return '다시 도전';
+  if (phase === 'victory' && selected === current) return '다시 하기';
+  if (phase === 'victory' && current < 6 && selected === current + 1) {
+    return '다음 스테이지';
+  }
+  if (phase === 'victory' || phase === 'defeat') return `스테이지 ${selected} 시작`;
+  return '잠시만요';
 }
 
 export type ModalFocusTarget = {
@@ -175,6 +218,8 @@ export type HudElements = Readonly<{
   stateOverlay: HTMLElement;
   stateTitle: HTMLElement;
   stateBody: HTMLElement;
+  stagePicker: HTMLElement;
+  stageButtons: Readonly<Record<StageId, HTMLButtonElement>>;
   resultPanel: HTMLElement;
   stateAction: HTMLButtonElement;
 }>;
@@ -192,7 +237,7 @@ export function createHud(root: HTMLElement): HudElements {
         <div class="game-hud__stats">
           <span class="game-stat" data-stat="gold" aria-label="골드 0"><span aria-hidden="true">🪙</span><strong data-hud="gold">0</strong></span>
           <span class="game-stat" data-stat="base-hp" aria-label="기지 체력 20"><span aria-hidden="true">❤️</span><strong data-hud="base-hp">20</strong></span>
-          <span class="game-stat" data-stat="wave" aria-label="현재 웨이브 1/10"><span aria-hidden="true">🌊</span><strong data-hud="wave">1/10</strong></span>
+          <span class="game-stat" data-stat="wave" aria-label="스테이지 1, 현재 웨이브 1/10"><span aria-hidden="true">🌊</span><strong data-hud="wave">S1 · 1/10</strong></span>
         </div>
         <div class="game-hud__controls">
           <button class="game-control icon-control" data-control="pause" type="button" aria-label="게임 일시정지">정지</button>
@@ -227,6 +272,12 @@ export function createHud(root: HTMLElement): HudElements {
           <p class="game-overlay__eyebrow">${GAME_NAME}</p>
           <h1 id="game-state-title" data-state-title>게임 준비 중</h1>
           <p data-state-body>캐릭터를 불러오고 있어요.</p>
+          <div class="stage-picker" data-stage-picker aria-label="스테이지 선택" hidden>
+            ${STAGE_IDS.map((id) => `
+              <button class="game-control stage-picker__button" data-stage-id="${id}"
+                type="button" aria-label="스테이지 ${id}" aria-pressed="false">${id}</button>
+            `).join('')}
+          </div>
           <div class="game-result" data-result-panel hidden></div>
           <button class="game-control game-overlay__action" data-state-action type="button" disabled>잠시만요</button>
         </div>
@@ -238,6 +289,10 @@ export function createHud(root: HTMLElement): HudElements {
     type,
     requiredElement<HTMLButtonElement>(root, `[data-tower="${type}"]`),
   ])) as Record<TowerType, HTMLButtonElement>;
+  const stageButtons = Object.fromEntries(STAGE_IDS.map((id) => [
+    id,
+    requiredElement<HTMLButtonElement>(root, `[data-stage-id="${id}"]`),
+  ])) as Record<StageId, HTMLButtonElement>;
 
   return {
     shell: requiredElement(root, '.game-shell'),
@@ -265,9 +320,28 @@ export function createHud(root: HTMLElement): HudElements {
     stateOverlay: requiredElement(root, '[data-state-overlay]'),
     stateTitle: requiredElement(root, '[data-state-title]'),
     stateBody: requiredElement(root, '[data-state-body]'),
+    stagePicker: requiredElement(root, '[data-stage-picker]'),
+    stageButtons,
     resultPanel: requiredElement(root, '[data-result-panel]'),
     stateAction: requiredElement(root, '[data-state-action]'),
   };
+}
+
+export function renderStagePicker(
+  elements: HudElements,
+  selectedStageId: unknown,
+  highestUnlockedStage: unknown,
+  visible: boolean,
+): void {
+  elements.stagePicker.hidden = !visible;
+  for (const item of createStagePickerView(selectedStageId, highestUnlockedStage)) {
+    const button = elements.stageButtons[item.id];
+    button.disabled = item.locked;
+    button.setAttribute('aria-label', item.locked
+      ? `스테이지 ${item.id} 잠김`
+      : `스테이지 ${item.id}`);
+    button.setAttribute('aria-pressed', String(item.selected));
+  }
 }
 
 export type ResultPanelView = Readonly<{
@@ -373,6 +447,7 @@ export function showStateOverlay(
   elements: HudElements,
   phase: GamePhase,
   body = '',
+  actionLabel?: string,
 ): void {
   const content: Partial<Record<GamePhase, { title: string; action: string }>> = {
     loading: { title: '게임 준비 중', action: '잠시만요' },
@@ -385,6 +460,6 @@ export function showStateOverlay(
   if (state === undefined) return;
   elements.stateTitle.textContent = state.title;
   elements.stateBody.textContent = body;
-  elements.stateAction.textContent = state.action;
+  elements.stateAction.textContent = actionLabel ?? state.action;
   elements.stateAction.disabled = phase === 'loading';
 }

@@ -382,6 +382,32 @@ button {
   color: #d8e8dc;
 }
 
+.stage-picker {
+  display: grid;
+  grid-template-columns: repeat(6, 44px);
+  justify-content: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.stage-picker[hidden] {
+  display: none;
+}
+
+.stage-picker__button {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  background: var(--md-sys-color-surface-container-high);
+  font-weight: 900;
+}
+
+.stage-picker__button[aria-pressed="true"] {
+  border-color: var(--md-sys-color-primary);
+  background: #245f5c;
+  box-shadow: inset 0 0 0 2px rgba(109, 229, 220, 0.34);
+}
+
 .game-result {
   margin-top: 10px;
 }
