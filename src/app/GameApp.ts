@@ -37,6 +37,7 @@ import {
   recordAttempt,
   recordOutcome,
   saveMutedPreference,
+  stageRecordFor,
 } from './preferences';
 
 export type GameApp = Readonly<{
@@ -336,6 +337,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         lastOverlayKey = overlayKey;
         showStateOverlay(hud, snapshot.phase, body);
         if (snapshot.phase === 'victory' || snapshot.phase === 'defeat') {
+          const stageRecord = stageRecordFor(preferences, snapshot.game.stageId);
           const score = calculateGameScore(
             snapshot.game,
             snapshot.game.outcome,
@@ -351,10 +353,10 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
             bossDefeated: snapshot.game.stats.bossDefeated,
             elapsedText: clearTime(snapshot.elapsedSeconds),
             timeBonus: score.breakdown.timeBonus,
-            bestScore: preferences.bestScore,
-            bestClearText: preferences.bestClearSeconds === null
+            bestScore: stageRecord.bestScore,
+            bestClearText: stageRecord.bestClearSeconds === null
               ? '--:--'
-              : clearTime(preferences.bestClearSeconds),
+              : clearTime(stageRecord.bestClearSeconds),
             totalAttempts: preferences.totalAttempts,
             totalVictories: preferences.totalVictories,
             nextGoalText: score.nextStarScore === null
@@ -423,10 +425,11 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         const game = runtime.getSnapshot().game;
         const score = calculateGameScore(game, outcome, elapsedSeconds);
         const recorded = recordOutcome(storage, {
+          stageId: game.stageId,
           score: score.total,
           victory: outcome === 'victory',
           elapsedSeconds,
-        });
+        }, preferences);
         preferences = recorded.preferences;
         newBestScore = recorded.newBestScore;
       },
@@ -472,7 +475,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       renderedGame = null;
       newBestScore = false;
       hud.placementStatus.textContent = '타워를 선택해 주세요.';
-      preferences = recordAttempt(storage);
+      preferences = recordAttempt(storage, preferences);
       runtime.startGame();
     }
 
@@ -548,7 +551,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     scope.listen(hud.muteButton, 'click', () => {
       unlockAudio();
       if (runtime.getSnapshot().portraitBlocked) return;
-      preferences = saveMutedPreference(storage, !preferences.muted);
+      preferences = saveMutedPreference(storage, !preferences.muted, preferences);
       sound.setMuted(preferences.muted);
       runtime.renderNow();
     });
