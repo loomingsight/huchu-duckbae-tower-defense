@@ -235,7 +235,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     const hud = createHud(root);
     const storage = browserPreferenceStorage();
     let preferences = loadPreferences(storage);
-    let selectedStageId = preferences.highestUnlockedStage;
+    let selectedStageId = preferences.highestUnlockedByMode.normal;
     let activePointer: ActivePointer | null = null;
     let invalidTimer = 0;
     let lastHudKey = '';
@@ -345,11 +345,14 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
 
       const body = overlayBody(snapshot);
       const pickerVisible = stateOverlayVisible(snapshot);
+      const normalRecords = Object.fromEntries(
+        STAGE_IDS.map((id) => [id, stageRecordFor(preferences, `normal-${id}`)]),
+      );
       renderStagePicker(
         hud,
         selectedStageId,
-        preferences.highestUnlockedStage,
-        preferences.stageRecords,
+        preferences.highestUnlockedByMode.normal,
+        normalRecords,
         pickerVisible,
       );
       const overlayKey = [
@@ -357,7 +360,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         body,
         snapshot.game.stageId,
         selectedStageId,
-        preferences.highestUnlockedStage,
+        preferences.highestUnlockedByMode.normal,
       ].join('|');
       if (overlayKey !== lastOverlayKey) {
         lastOverlayKey = overlayKey;
@@ -458,8 +461,10 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         const game = runtime.getSnapshot().game;
         const score = calculateGameScore(game, outcome, elapsedSeconds);
         const recorded = recordOutcome(storage, {
-          stageId: game.stageId,
+          stageKey: `normal-${game.stageId}`,
           score: score.total,
+          stars: score.stars,
+          bossDefeated: game.stats.bossDefeated,
           victory: outcome === 'victory',
           elapsedSeconds,
         }, preferences);
@@ -584,7 +589,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
           && phase !== 'victory'
           && phase !== 'defeat'
         ) return;
-        if (stageId > preferences.highestUnlockedStage) return;
+        if (stageId > preferences.highestUnlockedByMode.normal) return;
         selectedStageId = stageId;
         runtime.renderNow();
       });

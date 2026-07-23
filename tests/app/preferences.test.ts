@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  defaultPreferences,
+  isStageUnlocked,
   loadPreferences,
   recordAttempt,
   recordOutcome,
@@ -25,24 +27,14 @@ function throwingStorage(): PreferencesStorage {
   };
 }
 
-function defaultPreferences(): GamePreferences {
-  return {
-    muted: false,
-    totalAttempts: 0,
-    totalVictories: 0,
-    highestUnlockedStage: 1,
-    stageRecords: {},
-  };
-}
-
 describe('local game preferences', () => {
   it('falls back when persisted JSON is corrupt or unavailable', () => {
-    const corrupt = storageWith({ 'huchu-defense.preferences.v3': '{bad json' });
+    const corrupt = storageWith({ 'huchu-defense.preferences.v4': '{bad json' });
     expect(loadPreferences(corrupt)).toEqual(defaultPreferences());
     expect(loadPreferences(throwingStorage())).toEqual(defaultPreferences());
   });
 
-  it('migrates v2 records to stage one and unlocks stage two after a prior victory', () => {
+  it('migrates v2 records to normal stage one and unlocks normal two', () => {
     const storage = storageWith({
       'huchu-defense.preferences.v2': JSON.stringify({
         muted: true,
@@ -57,15 +49,71 @@ describe('local game preferences', () => {
       muted: true,
       totalAttempts: 3,
       totalVictories: 1,
-      highestUnlockedStage: 2,
-      stageRecords: { 1: { bestScore: 8200, bestClearSeconds: 95 } },
+      highestUnlockedByMode: { normal: 2, nightmare: 0 },
+      stageRecords: {
+        'normal-1': {
+          bestScore: 8200,
+          bestClearScore: 8200,
+          bestClearSeconds: 95,
+          bestStars: 2,
+          bossDefeated: true,
+        },
+      },
+      badges: [],
     });
   });
 
-  it('persists mute without losing stage records', () => {
+  it('migrates v3 normal records without unlocking nightmare from stage five', () => {
+    const storage = storageWith({
+      'huchu-defense.preferences.v3': JSON.stringify({
+        muted: true,
+        totalAttempts: 9,
+        totalVictories: 5,
+        highestUnlockedStage: 6,
+        stageRecords: {
+          1: { bestScore: 8200, bestClearSeconds: 95 },
+          6: { bestScore: 4000, bestClearSeconds: null },
+        },
+      }),
+    });
+
+    const preferences = loadPreferences(storage);
+    expect(preferences.highestUnlockedByMode).toEqual({ normal: 6, nightmare: 0 });
+    expect(stageRecordFor(preferences, 'normal-1')).toEqual({
+      bestScore: 8200,
+      bestClearScore: 8200,
+      bestClearSeconds: 95,
+      bestStars: 2,
+      bossDefeated: true,
+    });
+  });
+
+  it('unlocks nightmare one when migrated normal six has a valid clear', () => {
+    const storage = storageWith({
+      'huchu-defense.preferences.v3': JSON.stringify({
+        highestUnlockedStage: 6,
+        stageRecords: {
+          6: { bestScore: 10_500, bestClearSeconds: 120 },
+        },
+      }),
+    });
+
+    expect(loadPreferences(storage).highestUnlockedByMode)
+      .toEqual({ normal: 6, nightmare: 1 });
+  });
+
+  it('persists mute without losing mode records', () => {
     const current: GamePreferences = {
       ...defaultPreferences(),
-      stageRecords: { 1: { bestScore: 7000, bestClearSeconds: 75.25 } },
+      stageRecords: {
+        'normal-1': {
+          bestScore: 7000,
+          bestClearScore: 7000,
+          bestClearSeconds: 75.25,
+          bestStars: 2,
+          bossDefeated: true,
+        },
+      },
     };
     const storage = storageWith({});
 
@@ -76,18 +124,25 @@ describe('local game preferences', () => {
     expect(loadPreferences(storage)).toEqual({ ...current, muted: true });
   });
 
-  it('normalizes malformed v3 fields and records independently', () => {
+  it('normalizes malformed v4 fields and records independently', () => {
     const storage = storageWith({
-      'huchu-defense.preferences.v3': JSON.stringify({
+      'huchu-defense.preferences.v4': JSON.stringify({
         muted: 'yes',
         totalAttempts: -2,
         totalVictories: Number.POSITIVE_INFINITY,
-        highestUnlockedStage: 9,
+        highestUnlockedByMode: { normal: 9, nightmare: 4 },
         stageRecords: {
-          1: { bestScore: -1, bestClearSeconds: Number.NaN },
-          2: { bestScore: 9012.9, bestClearSeconds: 81.5 },
-          9: { bestScore: 99999, bestClearSeconds: 1 },
+          'normal-1': { bestScore: -1, bestClearSeconds: Number.NaN },
+          'nightmare-2': {
+            bestScore: 9012.9,
+            bestClearScore: 8000,
+            bestClearSeconds: 81.5,
+            bestStars: 9,
+            bossDefeated: true,
+          },
+          'nightmare-9': { bestScore: 99999 },
         },
+        badges: ['abyss-guardian', 'unknown', 'abyss-guardian'],
       }),
     });
 
@@ -95,84 +150,122 @@ describe('local game preferences', () => {
       muted: false,
       totalAttempts: 0,
       totalVictories: 0,
-      highestUnlockedStage: 1,
+      highestUnlockedByMode: { normal: 1, nightmare: 4 },
       stageRecords: {
-        1: { bestScore: 0, bestClearSeconds: null },
-        2: { bestScore: 9012, bestClearSeconds: 81.5 },
+        'normal-1': {
+          bestScore: 0,
+          bestClearScore: 0,
+          bestClearSeconds: null,
+          bestStars: 0,
+          bossDefeated: false,
+        },
+        'nightmare-2': {
+          bestScore: 9012,
+          bestClearScore: 8000,
+          bestClearSeconds: 81.5,
+          bestStars: 3,
+          bossDefeated: true,
+        },
       },
+      badges: ['abyss-guardian'],
     });
   });
 
-  it('unlocks only the next stage on victory and keeps defeat locked', () => {
+  it('records defeat score but not clear fields or stars', () => {
     const storage = storageWith({});
-    const initial = loadPreferences(storage);
+    const initial = defaultPreferences();
 
     expect(recordAttempt(storage, initial).totalAttempts).toBe(1);
-    const defeat = recordOutcome(storage, {
-      stageId: 1,
-      score: 4000,
+    const result = recordOutcome(storage, {
+      stageKey: 'nightmare-1',
+      score: 17_000,
+      stars: 0,
+      bossDefeated: false,
       victory: false,
-      elapsedSeconds: 90,
-    }, initial);
-    expect(defeat.preferences.highestUnlockedStage).toBe(1);
-    expect(stageRecordFor(defeat.preferences, 1)).toEqual({
-      bestScore: 4000,
-      bestClearSeconds: null,
+      elapsedSeconds: 300,
+    }, {
+      ...initial,
+      highestUnlockedByMode: { normal: 6, nightmare: 1 },
     });
 
-    const victory = recordOutcome(storage, {
-      stageId: 1,
-      score: 8000,
-      victory: true,
-      elapsedSeconds: 85,
-    }, defeat.preferences);
-    expect(victory.newBestScore).toBe(true);
-    expect(victory.preferences.highestUnlockedStage).toBe(2);
-    expect(victory.preferences.totalVictories).toBe(1);
-    expect(stageRecordFor(victory.preferences, 1)).toEqual({
-      bestScore: 8000,
-      bestClearSeconds: 85,
+    expect(result.preferences.highestUnlockedByMode.nightmare).toBe(1);
+    expect(stageRecordFor(result.preferences, 'nightmare-1')).toEqual({
+      bestScore: 17_000,
+      bestClearScore: 0,
+      bestClearSeconds: null,
+      bestStars: 0,
+      bossDefeated: false,
     });
   });
 
-  it('updates only the current stage record and keeps its fastest valid clear', () => {
-    const storage = storageWith({});
+  it('unlocks nightmare one only after a normal six victory', () => {
+    const result = recordOutcome(storageWith({}), {
+      stageKey: 'normal-6',
+      score: 11_000,
+      stars: 3,
+      bossDefeated: true,
+      victory: true,
+      elapsedSeconds: 120,
+    }, {
+      ...defaultPreferences(),
+      highestUnlockedByMode: { normal: 6, nightmare: 0 },
+    });
+
+    expect(result.preferences.highestUnlockedByMode.nightmare).toBe(1);
+    expect(result.unlockedStageKey).toBe('nightmare-1');
+    expect(isStageUnlocked(result.preferences, 'nightmare-1')).toBe(true);
+  });
+
+  it('keeps the fastest clear and independent best clear score', () => {
     const current: GamePreferences = {
       ...defaultPreferences(),
-      highestUnlockedStage: 3,
+      highestUnlockedByMode: { normal: 3, nightmare: 0 },
       stageRecords: {
-        1: { bestScore: 9000, bestClearSeconds: 70 },
-        2: { bestScore: 6000, bestClearSeconds: 100 },
+        'normal-2': {
+          bestScore: 9000,
+          bestClearScore: 7500,
+          bestClearSeconds: 100,
+          bestStars: 2,
+          bossDefeated: true,
+        },
       },
     };
 
-    const result = recordOutcome(storage, {
-      stageId: 2,
-      score: 7500,
+    const result = recordOutcome(storageWith({}), {
+      stageKey: 'normal-2',
+      score: 8000,
+      stars: 2,
+      bossDefeated: true,
       victory: true,
       elapsedSeconds: 110,
     }, current);
 
-    expect(stageRecordFor(result.preferences, 1)).toEqual(current.stageRecords[1]);
-    expect(stageRecordFor(result.preferences, 2)).toEqual({
-      bestScore: 7500,
+    expect(stageRecordFor(result.preferences, 'normal-2')).toEqual({
+      bestScore: 9000,
+      bestClearScore: 8000,
       bestClearSeconds: 100,
+      bestStars: 2,
+      bossDefeated: true,
     });
   });
 
-  it('caps unlocks at six and advances in memory when storage throws', () => {
-    const current: GamePreferences = { ...defaultPreferences(), highestUnlockedStage: 6 };
+  it('awards the abyss badge once and advances in memory when storage throws', () => {
+    const current: GamePreferences = {
+      ...defaultPreferences(),
+      highestUnlockedByMode: { normal: 6, nightmare: 6 },
+    };
     const result = recordOutcome(throwingStorage(), {
-      stageId: 6,
-      score: 11000,
+      stageKey: 'nightmare-6',
+      score: 27_000,
+      stars: 3,
+      bossDefeated: true,
       victory: true,
-      elapsedSeconds: 120,
+      elapsedSeconds: 180,
     }, current);
 
-    expect(result.preferences.highestUnlockedStage).toBe(6);
-    expect(stageRecordFor(result.preferences, 6)).toEqual({
-      bestScore: 11000,
-      bestClearSeconds: 120,
-    });
+    expect(result.preferences.badges).toEqual(['abyss-guardian']);
+    expect(result.newBadge).toBe(true);
+    expect(result.unlockedStageKey).toBeNull();
+    expect(stageRecordFor(result.preferences, 'nightmare-6').bestClearSeconds).toBe(180);
   });
 });
