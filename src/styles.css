@@ -285,11 +285,23 @@ button {
   animation: invalid-placement 320ms ease-out;
 }
 
+.game-shell--base-hit {
+  animation: base-hit-screen-shake 420ms cubic-bezier(.36, .07, .19, .97);
+}
+
 @keyframes invalid-placement {
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-5px); filter: saturate(1.6); }
   55% { transform: translateX(5px); }
   80% { transform: translateX(-2px); }
+}
+
+@keyframes base-hit-screen-shake {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  15% { transform: translate3d(-8px, 3px, 0) rotate(-0.35deg); }
+  35% { transform: translate3d(7px, -3px, 0) rotate(0.3deg); }
+  55% { transform: translate3d(-5px, 2px, 0) rotate(-0.2deg); }
+  75% { transform: translate3d(3px, -1px, 0) rotate(0.1deg); }
 }
 
 .tower-tray {
@@ -776,5 +788,6 @@ button {
 
 @media (prefers-reduced-motion: reduce) {
   .game-stage--invalid .game-canvas { animation: none; }
+  .game-shell--base-hit { animation: none; }
   .trait-notice { animation: none; }
 }

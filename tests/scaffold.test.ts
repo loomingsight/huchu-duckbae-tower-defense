@@ -102,4 +102,19 @@ describe('project scaffold', () => {
     );
     expect(css).toMatch(/\.placement-status\[hidden\]\s*\{[^}]*display: none;/s);
   });
+
+  it('restarts full-shell shake feedback from the existing leak cue', () => {
+    const app = readFileSync('src/app/GameApp.ts', 'utf8');
+    const css = readFileSync('src/styles.css', 'utf8');
+
+    expect(app).toContain('createBaseHitFeedback');
+    expect(app).toContain("frame.cueTypes.includes('leak')");
+    expect(css).toMatch(
+      /\.game-shell--base-hit\s*\{[^}]*animation: base-hit-screen-shake 420ms/s,
+    );
+    expect(css).toContain('@keyframes base-hit-screen-shake');
+    expect(css).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.game-shell--base-hit\s*\{\s*animation: none;/,
+    );
+  });
 });

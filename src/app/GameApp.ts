@@ -26,6 +26,7 @@ import {
 } from '../game/stages/stageIdentity';
 import { TOWER_CATALOG, TOWER_TYPES, type TowerType } from '../game/towers/towerCatalog';
 import { calculateGameScore } from '../game/scoring';
+import { createBaseHitFeedback } from './baseHitFeedback';
 import {
   createGameRuntime,
   type AnimationFrameScheduler,
@@ -286,6 +287,8 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     scope.add(() => { void sound.destroy(); });
     const placementMessage = createTransientMessageController(hud.placementStatus);
     scope.add(() => placementMessage.destroy());
+    const baseHitFeedback = createBaseHitFeedback(hud.shell);
+    scope.add(() => baseHitFeedback.destroy());
 
     const focusManager = createModalFocusManager({
       backgrounds: [hud.header, hud.stage, hud.tray],
@@ -332,6 +335,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         frameEvents.reset();
       }
       const frame = frameEvents.peek();
+      if (frame.cueTypes.includes('leak')) baseHitFeedback.trigger();
       traitNoticeState = updateTraitNoticeState(
         traitNoticeState,
         frame.traitEvents,
@@ -566,6 +570,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     function startNewGame(): void {
       globalThis.clearTimeout(invalidTimer);
       hud.stage.classList.remove('game-stage--invalid');
+      baseHitFeedback.clear();
       activePointer = null;
       frameEvents.reset();
       effects = [];
