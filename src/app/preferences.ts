@@ -22,8 +22,11 @@ export type StageRecord = Readonly<{
   bossDefeated: boolean;
 }>;
 
+export type TowerTrayPosition = 'bottom' | 'top';
+
 export type GamePreferences = Readonly<{
   muted: boolean;
+  towerTrayPosition: TowerTrayPosition;
   totalAttempts: number;
   totalVictories: number;
   highestUnlockedByMode: Readonly<{
@@ -52,6 +55,7 @@ const EMPTY_STAGE_RECORD: StageRecord = {
 export function defaultPreferences(): GamePreferences {
   return {
     muted: false,
+    towerTrayPosition: 'bottom',
     totalAttempts: 0,
     totalVictories: 0,
     highestUnlockedByMode: { normal: 1, nightmare: 0 },
@@ -84,6 +88,10 @@ function safeNightmareUnlock(value: unknown): 0 | StageNumber {
     && value <= 6
     ? value as StageNumber
     : 0;
+}
+
+function safeTowerTrayPosition(value: unknown): TowerTrayPosition {
+  return value === 'top' ? 'top' : 'bottom';
 }
 
 function normalizedStageRecord(value: unknown): StageRecord {
@@ -120,6 +128,7 @@ function normalizedPreferences(value: unknown): GamePreferences {
     : [];
   return {
     muted: candidate.muted === true,
+    towerTrayPosition: safeTowerTrayPosition(candidate.towerTrayPosition),
     totalAttempts: safeCount(candidate.totalAttempts),
     totalVictories: safeCount(candidate.totalVictories),
     highestUnlockedByMode: {
@@ -163,6 +172,7 @@ function migrateV3Preferences(value: unknown): GamePreferences {
   }
   return {
     muted: candidate.muted === true,
+    towerTrayPosition: 'bottom',
     totalAttempts: safeCount(candidate.totalAttempts),
     totalVictories: safeCount(candidate.totalVictories),
     highestUnlockedByMode: {
@@ -184,6 +194,7 @@ function migrateLegacyPreferences(value: unknown): GamePreferences {
   const totalVictories = safeCount(candidate.totalVictories);
   return {
     muted: candidate.muted === true,
+    towerTrayPosition: 'bottom',
     totalAttempts: safeCount(candidate.totalAttempts),
     totalVictories,
     highestUnlockedByMode: {
@@ -252,6 +263,14 @@ export function saveMutedPreference(
   current: GamePreferences = loadPreferences(storage),
 ): GamePreferences {
   return savePreferences(storage, { ...current, muted });
+}
+
+export function saveTowerTrayPositionPreference(
+  storage: PreferencesStorage | null | undefined,
+  towerTrayPosition: TowerTrayPosition,
+  current: GamePreferences = loadPreferences(storage),
+): GamePreferences {
+  return savePreferences(storage, { ...current, towerTrayPosition });
 }
 
 export function recordAttempt(

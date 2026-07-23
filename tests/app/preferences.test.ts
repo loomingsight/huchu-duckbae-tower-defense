@@ -7,6 +7,7 @@ import {
   recordAttempt,
   recordOutcome,
   saveMutedPreference,
+  saveTowerTrayPositionPreference,
   stageRecordFor,
   type GamePreferences,
   type PreferencesStorage,
@@ -47,6 +48,7 @@ describe('local game preferences', () => {
 
     expect(loadPreferences(storage)).toEqual({
       muted: true,
+      towerTrayPosition: 'bottom',
       totalAttempts: 3,
       totalVictories: 1,
       highestUnlockedByMode: { normal: 2, nightmare: 0 },
@@ -148,6 +150,7 @@ describe('local game preferences', () => {
 
     expect(loadPreferences(storage)).toEqual({
       muted: false,
+      towerTrayPosition: 'bottom',
       totalAttempts: 0,
       totalVictories: 0,
       highestUnlockedByMode: { normal: 1, nightmare: 4 },
@@ -169,6 +172,30 @@ describe('local game preferences', () => {
       },
       badges: ['abyss-guardian'],
     });
+  });
+
+  it('normalizes and persists the mobile tower tray position', () => {
+    const storage = storageWith({
+      'huchu-defense.preferences.v4': JSON.stringify({
+        towerTrayPosition: 'top',
+      }),
+    });
+
+    expect(defaultPreferences().towerTrayPosition).toBe('bottom');
+    expect(loadPreferences(storage).towerTrayPosition).toBe('top');
+    expect(loadPreferences(storageWith({
+      'huchu-defense.preferences.v4': JSON.stringify({
+        towerTrayPosition: 'left',
+      }),
+    })).towerTrayPosition).toBe('bottom');
+
+    const saved = saveTowerTrayPositionPreference(
+      storage,
+      'bottom',
+      loadPreferences(storage),
+    );
+    expect(saved.towerTrayPosition).toBe('bottom');
+    expect(loadPreferences(storage).towerTrayPosition).toBe('bottom');
   });
 
   it('records defeat score but not clear fields or stars', () => {

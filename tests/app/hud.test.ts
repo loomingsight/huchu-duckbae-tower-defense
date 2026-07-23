@@ -9,6 +9,7 @@ import {
   GAME_NAME,
   stageActionLabel,
   TOWER_CARDS,
+  towerTrayPositionView,
   towerCardAvailability,
   type ModalFocusTarget,
 } from '../../src/app/hud';
@@ -52,6 +53,19 @@ describe('mobile HUD view', () => {
       { type: 'deokbae', name: '덕배', roleIcon: '🔥', cost: 420 },
       { type: 'huchu', name: '후추', roleIcon: '💧', cost: 560 },
     ]);
+  });
+
+  it('describes the mobile tower tray position toggle accessibly', () => {
+    expect(towerTrayPositionView('bottom')).toEqual({
+      icon: '↑',
+      label: '타워 버튼 위로 이동',
+      pressed: false,
+    });
+    expect(towerTrayPositionView('top')).toEqual({
+      icon: '↓',
+      label: '타워 버튼 아래로 이동',
+      pressed: true,
+    });
   });
 
   it('keeps both advanced towers unaffordable at the start of stage one', () => {

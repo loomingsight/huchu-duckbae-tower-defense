@@ -39,6 +39,7 @@ import {
   renderStagePicker,
   renderResultPanel,
   renderHud,
+  renderTowerTrayPosition,
   renderTraitNotice,
   showPlacementActions,
   showStateOverlay,
@@ -53,6 +54,7 @@ import {
   recordAttempt,
   recordOutcome,
   saveMutedPreference,
+  saveTowerTrayPositionPreference,
   stageRecordFor,
 } from './preferences';
 import {
@@ -259,6 +261,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     const hud = createHud(root);
     const storage = browserPreferenceStorage();
     let preferences = loadPreferences(storage);
+    renderTowerTrayPosition(hud, preferences.towerTrayPosition);
     const highestNightmareStage = preferences.highestUnlockedByMode.nightmare;
     let selectedStageKey: StageKey = highestNightmareStage !== 0
       ? stageKey('nightmare', highestNightmareStage)
@@ -696,6 +699,17 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       preferences = saveMutedPreference(storage, !preferences.muted, preferences);
       sound.setMuted(preferences.muted);
       runtime.renderNow();
+    });
+    scope.listen(hud.towerTrayPositionButton, 'click', () => {
+      const nextPosition = preferences.towerTrayPosition === 'bottom'
+        ? 'top'
+        : 'bottom';
+      preferences = saveTowerTrayPositionPreference(
+        storage,
+        nextPosition,
+        preferences,
+      );
+      renderTowerTrayPosition(hud, preferences.towerTrayPosition);
     });
     scope.listen(hud.placementConfirm, 'click', () => {
       unlockAudio();

@@ -117,4 +117,19 @@ describe('project scaffold', () => {
       /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.game-shell--base-hit\s*\{\s*animation: none;/,
     );
   });
+
+  it('provides a persisted top-or-bottom tower tray control on mobile landscape', () => {
+    const app = readFileSync('src/app/GameApp.ts', 'utf8');
+    const hud = readFileSync('src/app/hud.ts', 'utf8');
+    const css = readFileSync('src/styles.css', 'utf8');
+
+    expect(hud).toContain('data-control="tower-tray-position"');
+    expect(hud).toContain('renderTowerTrayPosition');
+    expect(app).toContain('saveTowerTrayPositionPreference');
+    expect(app).toContain('hud.towerTrayPositionButton');
+    expect(css).toMatch(/\.tower-tray__position-toggle\s*\{[^}]*display: none;/s);
+    expect(css).toMatch(
+      /\.game-shell--tower-tray-top \.tower-tray\s*\{[^}]*top:[^;]+;[^}]*bottom: auto;/s,
+    );
+  });
 });

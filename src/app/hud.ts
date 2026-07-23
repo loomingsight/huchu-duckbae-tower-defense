@@ -18,6 +18,7 @@ import {
   stageRecordFor,
   type GamePreferences,
   type StarRating,
+  type TowerTrayPosition,
 } from './preferences';
 import type { TraitNoticeView } from './traitNotice';
 
@@ -61,6 +62,20 @@ export type HudView = Readonly<{
   hudControlsDisabled: boolean;
   towerControlsDisabled: boolean;
 }>;
+
+export type TowerTrayPositionView = Readonly<{
+  icon: '↑' | '↓';
+  label: '타워 버튼 위로 이동' | '타워 버튼 아래로 이동';
+  pressed: boolean;
+}>;
+
+export function towerTrayPositionView(
+  position: TowerTrayPosition,
+): TowerTrayPositionView {
+  return position === 'top'
+    ? { icon: '↓', label: '타워 버튼 아래로 이동', pressed: true }
+    : { icon: '↑', label: '타워 버튼 위로 이동', pressed: false };
+}
 
 export function towerCardAvailability(
   input: Pick<HudViewInput, 'gold' | 'phase' | 'portraitBlocked'>,
@@ -314,6 +329,7 @@ export type HudElements = Readonly<{
   pauseButton: HTMLButtonElement;
   speedButton: HTMLButtonElement;
   muteButton: HTMLButtonElement;
+  towerTrayPositionButton: HTMLButtonElement;
   towerButtons: Readonly<Record<TowerType, HTMLButtonElement>>;
   placementStatus: HTMLElement;
   placementActions: HTMLElement;
@@ -373,6 +389,9 @@ export function createHud(root: HTMLElement): HudElements {
             <span class="tower-card__copy"><strong>${card.name}</strong><small>${card.cost}G</small></span>
           </button>
         `).join('')}
+        <button class="game-control tower-tray__position-toggle"
+          data-control="tower-tray-position" type="button"
+          aria-label="타워 버튼 위로 이동" aria-pressed="false">↑</button>
       </nav>
       <div class="orientation-prompt" data-orientation-prompt role="dialog" aria-modal="true" aria-labelledby="orientation-title" tabindex="-1" hidden>
         <span aria-hidden="true">↻</span>
@@ -441,6 +460,10 @@ export function createHud(root: HTMLElement): HudElements {
     pauseButton: requiredElement(root, '[data-control="pause"]'),
     speedButton: requiredElement(root, '[data-control="speed"]'),
     muteButton: requiredElement(root, '[data-control="mute"]'),
+    towerTrayPositionButton: requiredElement(
+      root,
+      '[data-control="tower-tray-position"]',
+    ),
     towerButtons,
     placementStatus: requiredElement(root, '[data-placement-status]'),
     placementActions: requiredElement(root, '[data-placement-actions]'),
@@ -459,6 +482,20 @@ export function createHud(root: HTMLElement): HudElements {
     resultPanel: requiredElement(root, '[data-result-panel]'),
     stateAction: requiredElement(root, '[data-state-action]'),
   };
+}
+
+export function renderTowerTrayPosition(
+  elements: HudElements,
+  position: TowerTrayPosition,
+): void {
+  const view = towerTrayPositionView(position);
+  elements.shell.classList.toggle('game-shell--tower-tray-top', view.pressed);
+  elements.towerTrayPositionButton.textContent = view.icon;
+  elements.towerTrayPositionButton.setAttribute('aria-label', view.label);
+  elements.towerTrayPositionButton.setAttribute(
+    'aria-pressed',
+    String(view.pressed),
+  );
 }
 
 export function createTraitNoticeMarkup(view: TraitNoticeView): string {

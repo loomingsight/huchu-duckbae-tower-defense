@@ -323,6 +323,10 @@ button {
   backdrop-filter: blur(8px);
 }
 
+.tower-tray__position-toggle {
+  display: none;
+}
+
 .tower-card {
   display: flex;
   min-width: 0;
@@ -760,6 +764,35 @@ button {
     gap: 4px;
     min-height: 50px;
     padding: 4px;
+  }
+
+  .tower-tray__position-toggle {
+    position: absolute;
+    top: -48px;
+    right: 4px;
+    display: grid;
+    width: 44px;
+    min-width: 44px;
+    place-items: center;
+    padding: 0;
+    background: rgba(35, 70, 56, 0.96);
+    box-shadow: var(--md-sys-elevation-1);
+    font-size: 1.1rem;
+    font-weight: 900;
+  }
+
+  .game-shell--tower-tray-top .tower-tray {
+    top: max(4px, env(safe-area-inset-top));
+    bottom: auto;
+  }
+
+  .game-shell--tower-tray-top .tower-tray__position-toggle {
+    top: auto;
+    bottom: -48px;
+  }
+
+  .game-shell--tower-tray-top .trait-notice {
+    top: calc(max(8px, env(safe-area-inset-top)) + 58px);
   }
 
   .tower-card {
