@@ -4,6 +4,7 @@ playwright-report/
 test-results/
 .playwright-cli/
 .superpowers/
+.worktrees/
 output/
 *.tsbuildinfo
 .DS_Store
