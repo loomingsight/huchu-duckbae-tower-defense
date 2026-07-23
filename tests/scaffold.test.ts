@@ -88,4 +88,18 @@ describe('project scaffold', () => {
     expect(Number(cardSize?.[1])).toBeGreaterThanOrEqual(44);
     expect(Number(cardSize?.[2])).toBeGreaterThanOrEqual(44);
   });
+
+  it('routes central placement messages through the three-second controller', () => {
+    const app = readFileSync('src/app/GameApp.ts', 'utf8');
+    const hud = readFileSync('src/app/hud.ts', 'utf8');
+    const css = readFileSync('src/styles.css', 'utf8');
+
+    expect(app).toContain('createTransientMessageController');
+    expect(app).toContain('placementMessage.show(');
+    expect(app).not.toContain('hud.placementStatus.textContent =');
+    expect(hud).toContain(
+      '<p class="placement-status" data-placement-status aria-live="polite" hidden></p>',
+    );
+    expect(css).toMatch(/\.placement-status\[hidden\]\s*\{[^}]*display: none;/s);
+  });
 });

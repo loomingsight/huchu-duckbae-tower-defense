@@ -358,7 +358,7 @@ export function createHud(root: HTMLElement): HudElements {
         <canvas class="game-canvas" aria-label="20열 10행 타워 배치 게임 보드" tabindex="0"></canvas>
         <div class="trait-notice" data-trait-notice role="status"
           aria-live="polite" aria-atomic="true" hidden></div>
-        <p class="placement-status" data-placement-status aria-live="polite"></p>
+        <p class="placement-status" data-placement-status aria-live="polite" hidden></p>
         <div class="placement-actions" data-placement-actions role="group" aria-label="타워 배치 확인" hidden>
           <span class="placement-actions__copy"><strong data-placement-name>타워</strong><small data-placement-cost>0G</small></span>
           <button class="game-control placement-actions__confirm" data-placement-confirm type="button">배치</button>

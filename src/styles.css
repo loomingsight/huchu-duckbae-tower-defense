@@ -220,6 +220,10 @@ button {
   pointer-events: none;
 }
 
+.placement-status[hidden] {
+  display: none;
+}
+
 .placement-actions {
   position: absolute;
   z-index: 4;

@@ -59,6 +59,7 @@ import {
   traitNoticeView,
   updateTraitNoticeState,
 } from './traitNotice';
+import { createTransientMessageController } from './transientMessage';
 
 export type GameApp = Readonly<{
   destroy(): void;
@@ -283,6 +284,8 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     const sound = new SoundEngine();
     sound.setMuted(preferences.muted);
     scope.add(() => { void sound.destroy(); });
+    const placementMessage = createTransientMessageController(hud.placementStatus);
+    scope.add(() => placementMessage.destroy());
 
     const focusManager = createModalFocusManager({
       backgrounds: [hud.header, hud.stage, hud.tray],
@@ -550,7 +553,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     }
 
     function showInvalidPlacement(message: string): void {
-      hud.placementStatus.textContent = message;
+      placementMessage.show(message);
       hud.stage.classList.remove('game-stage--invalid');
       void hud.stage.offsetWidth;
       hud.stage.classList.add('game-stage--invalid');
@@ -572,7 +575,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       traitNoticeState = createTraitNoticeState();
       renderTraitNotice(hud, null);
       pickerNotice = '';
-      hud.placementStatus.textContent = '타워를 선택해 주세요.';
+      placementMessage.show('타워를 선택해 주세요.');
       preferences = recordAttempt(storage, preferences);
       runtime.startGame();
     }
@@ -602,7 +605,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         runtime.renderNow();
         return;
       }
-      hud.placementStatus.textContent = '사거리를 확인하고 배치 또는 취소를 눌러 주세요.';
+      placementMessage.show('사거리를 확인하고 배치 또는 취소를 눌러 주세요.');
       runtime.renderNow();
     }
 
@@ -622,7 +625,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         runtime.renderNow();
         return;
       }
-      hud.placementStatus.textContent = '타워를 설치했어요. 같은 타워를 계속 배치할 수 있어요.';
+      placementMessage.show('타워를 설치했어요. 같은 타워를 계속 배치할 수 있어요.');
       sound.play('placement');
       runtime.setSelectedCell(null);
       runtime.renderNow();
@@ -630,7 +633,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
 
     function cancelPlacement(): void {
       runtime.setSelectedCell(null);
-      hud.placementStatus.textContent = '배치를 취소했어요. 다른 칸을 선택할 수 있어요.';
+      placementMessage.show('배치를 취소했어요. 다른 칸을 선택할 수 있어요.');
     }
 
     scope.listen(hud.stateAction, 'click', () => {
@@ -701,9 +704,9 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         if (snapshot.phase !== 'playing' || snapshot.portraitBlocked) return;
         const selected: TowerType | null = snapshot.selectedTower === type ? null : type;
         runtime.selectTower(selected);
-        hud.placementStatus.textContent = selected === null
+        placementMessage.show(selected === null
           ? '타워 선택을 취소했어요.'
-          : `${hud.towerButtons[type].textContent?.trim() ?? '타워'} 선택`;
+          : `${hud.towerButtons[type].textContent?.trim() ?? '타워'} 선택`);
       });
     }
     scope.listen(hud.canvas, 'pointerdown', (event) => {
