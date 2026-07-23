@@ -512,10 +512,20 @@ button {
 
 .game-result__hero {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 9px;
   min-height: 40px;
+}
+
+.game-result__stage {
+  flex-basis: 100%;
+  color: #c8ddd1;
+  font-size: 0.72rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-align: center;
 }
 
 .game-result__stars {
@@ -537,6 +547,12 @@ button {
   color: #382305;
   font-size: 0.66rem;
   font-weight: 900;
+}
+
+.game-result__badge--guardian {
+  background: #6d3bb7;
+  color: #f7eaff;
+  box-shadow: 0 0 14px rgba(162, 105, 255, 0.42);
 }
 
 .game-result__breakdown {

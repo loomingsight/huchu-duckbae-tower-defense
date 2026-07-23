@@ -10,8 +10,9 @@ import {
   type StageKey,
   type StageNumber,
 } from '../game/stages/stageIdentity';
+import type { StarRating } from '../game/scoring';
 
-export type StarRating = 0 | 1 | 2 | 3;
+export type { StarRating } from '../game/scoring';
 
 export type StageRecord = Readonly<{
   bestScore: number;

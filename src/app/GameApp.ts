@@ -258,6 +258,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     let lastEffectTimeSeconds = 0;
     let lastRenderedGold = 0;
     let newBestScore = false;
+    let newBadge = false;
     const frameEvents = createFrameEventBuffer();
     const renderer = await createRendererWithFallback(hud.canvas);
     const sound = new SoundEngine();
@@ -390,15 +391,20 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
             snapshot.elapsedSeconds,
           );
           renderResultPanel(hud, {
+            modeLabel: stage.mode === 'nightmare' ? '나이트메어' : '노멀',
+            stageName: stage.name,
             score: score.total,
             stars: score.stars,
             newBestScore,
+            newBadge,
             completedWaves: snapshot.game.stats.completedWaves,
             defeatedEnemies: snapshot.game.stats.defeatedEnemies,
+            combatScore: score.breakdown.combatScore,
             baseHp: snapshot.game.baseHp,
             bossDefeated: snapshot.game.stats.bossDefeated,
             elapsedText: clearTime(snapshot.elapsedSeconds),
             timeBonus: score.breakdown.timeBonus,
+            difficultyBonus: score.breakdown.difficultyBonus,
             bestScore: stageRecord.bestScore,
             bestClearText: stageRecord.bestClearSeconds === null
               ? '--:--'
@@ -482,6 +488,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         }, preferences);
         preferences = recorded.preferences;
         newBestScore = recorded.newBestScore;
+        newBadge = recorded.newBadge;
         if (outcome === 'victory') {
           selectedStageKey = recorded.unlockedStageKey ?? game.stageKey;
           activeMode = stageRef(selectedStageKey).mode;
@@ -528,6 +535,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       effects = [];
       renderedGame = null;
       newBestScore = false;
+      newBadge = false;
       pickerNotice = '';
       hud.placementStatus.textContent = '타워를 선택해 주세요.';
       preferences = recordAttempt(storage, preferences);

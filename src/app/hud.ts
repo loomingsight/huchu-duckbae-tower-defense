@@ -488,21 +488,58 @@ export function renderStagePicker(
 }
 
 export type ResultPanelView = Readonly<{
+  modeLabel: '노멀' | '나이트메어';
+  stageName: string;
   score: number;
-  stars: 1 | 2 | 3;
+  stars: StarRating;
   newBestScore: boolean;
+  newBadge: boolean;
   completedWaves: number;
   defeatedEnemies: number;
+  combatScore: number;
   baseHp: number;
   bossDefeated: boolean;
   elapsedText: string;
   timeBonus: number;
+  difficultyBonus: number;
   bestScore: number;
   bestClearText: string;
   totalAttempts: number;
   totalVictories: number;
   nextGoalText: string;
 }>;
+
+export function createResultPanelMarkup(view: ResultPanelView): string {
+  const stars = `${'★'.repeat(view.stars)}${'☆'.repeat(3 - view.stars)}`;
+  const nightmareBonus = view.modeLabel === '나이트메어'
+    ? `<div><dt>나이트메어 보너스 ×1.5</dt><dd>+${view.difficultyBonus.toLocaleString('ko-KR')}</dd></div>`
+    : '';
+  return `
+    <div class="game-result__hero">
+      <span class="game-result__stage">${view.modeLabel} · ${view.stageName}</span>
+      <span class="game-result__stars" aria-label="별 ${view.stars}개">${stars}</span>
+      <strong class="game-result__score">${view.score.toLocaleString('ko-KR')}점</strong>
+      ${view.newBestScore ? '<span class="game-result__badge">새 최고 기록</span>' : ''}
+      ${view.newBadge ? '<span class="game-result__badge game-result__badge--guardian">심연의 수호자 획득</span>' : ''}
+    </div>
+    <dl class="game-result__breakdown">
+      <div><dt>웨이브</dt><dd>${view.completedWaves}/10</dd></div>
+      <div><dt>처치</dt><dd>${view.defeatedEnemies}</dd></div>
+      <div><dt>전투 점수</dt><dd>${view.combatScore.toLocaleString('ko-KR')}</dd></div>
+      <div><dt>남은 체력</dt><dd>${view.baseHp}</dd></div>
+      <div><dt>보스</dt><dd>${view.bossDefeated ? '처치 완료' : '미처리'}</dd></div>
+      <div><dt>시간</dt><dd>${view.elapsedText}</dd></div>
+      <div><dt>시간 보너스</dt><dd>+${view.timeBonus.toLocaleString('ko-KR')}</dd></div>
+      ${nightmareBonus}
+    </dl>
+    <div class="game-result__records">
+      <span>최고 ${view.bestScore.toLocaleString('ko-KR')}점</span>
+      <span>최단 ${view.bestClearText}</span>
+      <span>도전 ${view.totalAttempts}회 · 승리 ${view.totalVictories}회</span>
+    </div>
+    <p class="game-result__goal">${view.nextGoalText}</p>
+  `;
+}
 
 export function renderResultPanel(
   elements: HudElements,
@@ -513,28 +550,7 @@ export function renderResultPanel(
     elements.resultPanel.replaceChildren();
     return;
   }
-  const stars = `${'★'.repeat(view.stars)}${'☆'.repeat(3 - view.stars)}`;
-  elements.resultPanel.innerHTML = `
-    <div class="game-result__hero">
-      <span class="game-result__stars" aria-label="별 ${view.stars}개">${stars}</span>
-      <strong class="game-result__score">${view.score.toLocaleString('ko-KR')}점</strong>
-      ${view.newBestScore ? '<span class="game-result__badge">새 최고 기록</span>' : ''}
-    </div>
-    <dl class="game-result__breakdown">
-      <div><dt>웨이브</dt><dd>${view.completedWaves}/10</dd></div>
-      <div><dt>처치</dt><dd>${view.defeatedEnemies}</dd></div>
-      <div><dt>남은 체력</dt><dd>${view.baseHp}</dd></div>
-      <div><dt>보스</dt><dd>${view.bossDefeated ? '처치 완료' : '미처리'}</dd></div>
-      <div><dt>시간</dt><dd>${view.elapsedText}</dd></div>
-      <div><dt>시간 보너스</dt><dd>+${view.timeBonus.toLocaleString('ko-KR')}</dd></div>
-    </dl>
-    <div class="game-result__records">
-      <span>최고 ${view.bestScore.toLocaleString('ko-KR')}점</span>
-      <span>최단 ${view.bestClearText}</span>
-      <span>도전 ${view.totalAttempts}회 · 승리 ${view.totalVictories}회</span>
-    </div>
-    <p class="game-result__goal">${view.nextGoalText}</p>
-  `;
+  elements.resultPanel.innerHTML = createResultPanelMarkup(view);
 }
 
 export function showPlacementActions(

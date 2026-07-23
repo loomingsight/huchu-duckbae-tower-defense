@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createHudView,
   createModalFocusManager,
+  createResultPanelMarkup,
   createStageSelectView,
   GAME_NAME,
   stageActionLabel,
@@ -231,6 +232,38 @@ describe('mobile HUD view', () => {
     expect(stageActionLabel('victory', 'normal-3', 'normal-2')).toBe('스테이지 2 시작');
     expect(stageActionLabel('victory', 'normal-6', 'nightmare-1'))
       .toBe('나이트메어 1 시작');
+  });
+
+  it('renders nightmare result bonuses, zero stars, and the guardian badge', () => {
+    const markup = createResultPanelMarkup({
+      modeLabel: '나이트메어',
+      stageName: '심연의 성문',
+      score: 1800,
+      stars: 0,
+      newBestScore: true,
+      newBadge: true,
+      completedWaves: 2,
+      defeatedEnemies: 8,
+      combatScore: 200,
+      baseHp: 0,
+      bossDefeated: false,
+      elapsedText: '1:32',
+      timeBonus: 0,
+      difficultyBonus: 600,
+      bestScore: 1800,
+      bestClearText: '--:--',
+      totalAttempts: 3,
+      totalVictories: 1,
+      nextGoalText: '별 하나를 더 받으려면 16,700점이 필요해요.',
+    });
+
+    expect(markup).toContain('나이트메어 · 심연의 성문');
+    expect(markup).toContain('aria-label="별 0개">☆☆☆');
+    expect(markup).toContain('전투 점수');
+    expect(markup).toContain('200');
+    expect(markup).toContain('나이트메어 보너스 ×1.5');
+    expect(markup).toContain('+600');
+    expect(markup).toContain('심연의 수호자');
   });
 
   it('moves focus and inert state only when modal visibility changes', () => {
