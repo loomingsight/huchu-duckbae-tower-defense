@@ -5,6 +5,7 @@ import {
   createModalFocusManager,
   createResultPanelMarkup,
   createStageSelectView,
+  createTraitNoticeMarkup,
   GAME_NAME,
   stageActionLabel,
   TOWER_CARDS,
@@ -30,6 +31,18 @@ function clearedRecord(score: number, stars: 1 | 2 | 3 = 2): StageRecord {
 describe('mobile HUD view', () => {
   it('uses the approved game name', () => {
     expect(GAME_NAME).toBe('후추덕배 타워 디펜스');
+  });
+
+  it('renders the approved nonblocking slow-resistance notice copy', () => {
+    const markup = createTraitNoticeMarkup({
+      title: '흡혈 박쥐 · 둔화 저항',
+      body: '슬로우 효과가 50%만 적용돼요',
+    });
+
+    expect(markup).toContain('<strong>흡혈 박쥐 · 둔화 저항</strong>');
+    expect(markup).toContain('<span>슬로우 효과가 50%만 적용돼요</span>');
+    expect(markup).not.toContain('button');
+    expect(markup).not.toContain('+');
   });
 
   it('exposes the four tower names, role icons, and prices', () => {

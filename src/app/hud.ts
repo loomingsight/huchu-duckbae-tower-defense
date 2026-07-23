@@ -19,6 +19,7 @@ import {
   type GamePreferences,
   type StarRating,
 } from './preferences';
+import type { TraitNoticeView } from './traitNotice';
 
 export const GAME_NAME = '후추덕배 타워 디펜스';
 
@@ -303,6 +304,7 @@ export type HudElements = Readonly<{
   stage: HTMLElement;
   tray: HTMLElement;
   canvas: HTMLCanvasElement;
+  traitNotice: HTMLElement;
   gold: HTMLElement;
   goldStat: HTMLElement;
   baseHp: HTMLElement;
@@ -354,6 +356,8 @@ export function createHud(root: HTMLElement): HudElements {
       </header>
       <section class="game-stage" aria-label="게임 보드">
         <canvas class="game-canvas" aria-label="20열 10행 타워 배치 게임 보드" tabindex="0"></canvas>
+        <div class="trait-notice" data-trait-notice role="status"
+          aria-live="polite" aria-atomic="true" hidden></div>
         <p class="placement-status" data-placement-status aria-live="polite"></p>
         <div class="placement-actions" data-placement-actions role="group" aria-label="타워 배치 확인" hidden>
           <span class="placement-actions__copy"><strong data-placement-name>타워</strong><small data-placement-cost>0G</small></span>
@@ -427,6 +431,7 @@ export function createHud(root: HTMLElement): HudElements {
     stage: requiredElement(root, '.game-stage'),
     tray: requiredElement(root, '.tower-tray'),
     canvas: requiredElement(root, '.game-canvas'),
+    traitNotice: requiredElement(root, '[data-trait-notice]'),
     gold: requiredElement(root, '[data-hud="gold"]'),
     goldStat: requiredElement(root, '[data-stat="gold"]'),
     baseHp: requiredElement(root, '[data-hud="base-hp"]'),
@@ -454,6 +459,26 @@ export function createHud(root: HTMLElement): HudElements {
     resultPanel: requiredElement(root, '[data-result-panel]'),
     stateAction: requiredElement(root, '[data-state-action]'),
   };
+}
+
+export function createTraitNoticeMarkup(view: TraitNoticeView): string {
+  return `<strong>${view.title}</strong><span>${view.body}</span>`;
+}
+
+export function renderTraitNotice(
+  elements: HudElements,
+  view: TraitNoticeView | null,
+): void {
+  if (view === null) {
+    if (!elements.traitNotice.hidden) {
+      elements.traitNotice.hidden = true;
+      elements.traitNotice.replaceChildren();
+    }
+    return;
+  }
+  if (!elements.traitNotice.hidden) return;
+  elements.traitNotice.innerHTML = createTraitNoticeMarkup(view);
+  elements.traitNotice.hidden = false;
 }
 
 export function renderStagePicker(
