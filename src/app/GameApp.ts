@@ -5,6 +5,7 @@ import {
   createFrameEventBuffer,
   createGoldPop,
   effectsForHits,
+  effectsForTraits,
   slowPulseEffects,
   updateEffects,
   type RuntimeEffect,
@@ -261,6 +262,9 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     let newBadge = false;
     const frameEvents = createFrameEventBuffer();
     const renderer = await createRendererWithFallback(hud.canvas);
+    const reducedMotionQuery = typeof globalThis.matchMedia === 'function'
+      ? globalThis.matchMedia('(prefers-reduced-motion: reduce)')
+      : null;
     const sound = new SoundEngine();
     sound.setMuted(preferences.muted);
     scope.add(() => { void sound.destroy(); });
@@ -314,6 +318,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       const nextEffects = [
         ...updateEffects(effects, effectDelta),
         ...effectsForHits(frame.hitEvents),
+        ...effectsForTraits(frame.traitEvents),
       ];
       const earnedGold = snapshot.game.gold - lastRenderedGold;
       const lastHitPosition = frame.hitEvents.at(-1)?.position;
@@ -350,6 +355,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
           ...nextEffects,
           ...slowPulseEffects(snapshot.game.towers, snapshot.elapsedSeconds),
         ],
+        reducedMotion: reducedMotionQuery?.matches === true,
       });
       for (const cue of frame.cueTypes) sound.play(cue);
       effects = nextEffects;
@@ -469,6 +475,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         updateSimulation(game, deltaSeconds);
         frameEvents.recordStep({
           hitEvents: game.hitEvents,
+          traitEvents: game.traitEvents,
           shot: game.nextProjectileId > nextProjectileId,
           leak: game.baseHp < baseHp,
         });

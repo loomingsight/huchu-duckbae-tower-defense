@@ -15,6 +15,7 @@ import {
   drawBossPresentation,
   drawForegroundEffects,
   drawGroundEffects,
+  drawNightmareStageIntro,
   drawPauseOverlay,
   type FloatingGold,
 } from './drawEffects';
@@ -49,6 +50,7 @@ export type RenderOptions = {
   readonly timeSeconds?: number;
   readonly floatingGold?: readonly FloatingGold[];
   readonly effects?: readonly RuntimeEffect[];
+  readonly reducedMotion?: boolean;
 };
 
 export type CanvasRenderer = {
@@ -89,11 +91,13 @@ export function createCanvasRenderer(
 
   function render(snapshot: GameSnapshot, options: RenderOptions = {}): void {
     const stage = getStageDefinition(snapshot.stageKey);
+    const timeSeconds = Number.isFinite(options.timeSeconds) ? options.timeSeconds ?? 0 : 0;
+    const reducedMotion = options.reducedMotion === true;
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);
     context.imageSmoothingEnabled = true;
-    context.fillStyle = '#20362c';
+    context.fillStyle = stage.mode === 'nightmare' ? '#090710' : '#20362c';
     context.fillRect(0, 0, layout.viewport.width, layout.viewport.height);
 
     context.save();
@@ -105,13 +109,12 @@ export function createCanvasRenderer(
       layout.gameArea.height,
     );
     context.clip();
-    drawMap(context, layout, assets, stage.map, {
+    drawMap(context, layout, assets, stage, {
       buildableCells: options.placementGuideCells,
       cell: options.selectedCell,
       range: options.selectedRange,
       valid: options.selectedValid,
-    });
-    const timeSeconds = Number.isFinite(options.timeSeconds) ? options.timeSeconds ?? 0 : 0;
+    }, timeSeconds, reducedMotion);
     const effects = options.effects ?? [];
     drawGroundEffects(context, layout, effects);
     drawEntities(context, layout, snapshot, assets, {
@@ -126,8 +129,17 @@ export function createCanvasRenderer(
       effects,
       assets,
       timeSeconds,
+      reducedMotion,
     );
-    drawBossPresentation(context, layout, snapshot.bossSpawnedAtSeconds, timeSeconds);
+    drawNightmareStageIntro(context, layout, stage, timeSeconds, reducedMotion);
+    drawBossPresentation(
+      context,
+      layout,
+      stage,
+      snapshot.bossSpawnedAtSeconds,
+      timeSeconds,
+      reducedMotion,
+    );
     if (options.paused === true) drawPauseOverlay(context, layout);
     context.restore();
 

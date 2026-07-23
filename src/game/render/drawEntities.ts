@@ -1,5 +1,6 @@
 import { enemyPosition, selectTarget } from '../combat/targeting';
 import { cellCenter } from '../core/geometry';
+import type { EnemyVariant } from '../enemies/enemyCatalog';
 import type { GameEnemy, GameTower } from '../simulation/createGame';
 import type { StageKey } from '../stages/stageIdentity';
 import type { TowerType } from '../towers/towerCatalog';
@@ -62,6 +63,93 @@ function drawFallback(
   ctx.fillText(label, 0, -size * 0.24);
 }
 
+const ENEMY_LABELS = {
+  slime: 'S',
+  fairy: 'F',
+  orc: 'O',
+  golem: 'G',
+  minotaur: 'M',
+  shadowSlime: '암',
+  vampireBat: '박',
+  skeletonKnight: '해',
+  obsidianGolem: '흑',
+  lichKing: '리',
+} as const;
+
+function drawNightmareFallback(
+  ctx: CanvasRenderingContext2D,
+  enemy: Readonly<GameEnemy>,
+  color: string,
+  size: number,
+): void {
+  const label = ENEMY_LABELS[enemy.type];
+  ctx.fillStyle = color;
+  if (enemy.type === 'shadowSlime') {
+    ctx.beginPath();
+    ctx.roundRect(-size * 0.3, -size * 0.55, size * 0.6, size * 0.5, size * 0.12);
+    ctx.fill();
+  } else if (enemy.type === 'vampireBat') {
+    traceFallbackPolygon(ctx, [
+      [-0.12, -0.31], [-0.54, -0.56], [-0.43, -0.12], [-0.1, -0.2],
+    ], size);
+    ctx.fill();
+    traceFallbackPolygon(ctx, [
+      [0.12, -0.31], [0.54, -0.56], [0.43, -0.12], [0.1, -0.2],
+    ], size);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(0, -size * 0.3, size * 0.2, size * 0.24, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (enemy.type === 'skeletonKnight') {
+    ctx.fillStyle = '#d9d5c8';
+    ctx.beginPath();
+    ctx.ellipse(0, -size * 0.49, size * 0.19, size * 0.2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillRect(-size * 0.09, -size * 0.32, size * 0.18, size * 0.25);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.ellipse(-size * 0.2, -size * 0.25, size * 0.17, size * 0.23, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (enemy.type === 'obsidianGolem') {
+    ctx.fillRect(-size * 0.28, -size * 0.57, size * 0.56, size * 0.5);
+    ctx.fillRect(-size * 0.44, -size * 0.48, size * 0.16, size * 0.34);
+    ctx.fillRect(size * 0.28, -size * 0.48, size * 0.16, size * 0.34);
+  } else if (enemy.type === 'lichKing') {
+    traceFallbackPolygon(ctx, [
+      [-0.28, -0.06], [-0.2, -0.44], [0.2, -0.44], [0.28, -0.06],
+    ], size);
+    ctx.fill();
+    ctx.fillStyle = '#ded8cb';
+    ctx.beginPath();
+    ctx.ellipse(0, -size * 0.51, size * 0.21, size * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#9855cf';
+    traceFallbackPolygon(ctx, [
+      [-0.19, -0.66], [-0.11, -0.84], [0, -0.7], [0.11, -0.84], [0.19, -0.66],
+    ], size);
+    ctx.fill();
+  } else {
+    drawFallback(ctx, color, label, size);
+    return;
+  }
+  ctx.fillStyle = '#fff9e8';
+  ctx.font = `900 ${Math.max(8, size * 0.13)}px system-ui, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(label, 0, -size * 0.34);
+}
+
+function traceFallbackPolygon(
+  ctx: CanvasRenderingContext2D,
+  points: readonly (readonly [number, number])[],
+  size: number,
+): void {
+  ctx.beginPath();
+  ctx.moveTo(points[0][0] * size, points[0][1] * size);
+  for (const [x, y] of points.slice(1)) ctx.lineTo(x * size, y * size);
+  ctx.closePath();
+}
+
 function drawAnchoredSprite(
   ctx: CanvasRenderingContext2D,
   image: LoadedSprite,
@@ -107,7 +195,7 @@ function drawEnemyHp(
   position: Readonly<Vec2>,
   timeSeconds: number,
 ): void {
-  const isBoss = enemy.type === 'minotaur';
+  const isBoss = enemy.boss === true;
   const recentlyHit = enemy.lastHitAtSeconds !== null
     && timeSeconds - enemy.lastHitAtSeconds <= 2.5;
   if (!isBoss && !recentlyHit) return;
@@ -157,12 +245,21 @@ export function towerSizeFactor(type: TowerType): number {
   return type === 'slow' ? 1.8 : 2.0;
 }
 
+export function enemyVariantSizeFactor(variant: EnemyVariant | undefined): number {
+  return variant === 'split-child' ? 0.7 : variant === 'elite' ? 1.1 : 1;
+}
+
 const ENEMY_SIZES = {
   slime: 2.05,
   fairy: 2.32,
   orc: 2.38,
   golem: 2.5,
   minotaur: 2.85,
+  shadowSlime: 2.05,
+  vampireBat: 2.25,
+  skeletonKnight: 2.3,
+  obsidianGolem: 2.55,
+  lichKing: 2.85,
 } as const;
 const ENEMY_COLORS = {
   slime: '#78c96d',
@@ -170,6 +267,11 @@ const ENEMY_COLORS = {
   orc: '#5f9b56',
   golem: '#85877f',
   minotaur: '#9b6048',
+  shadowSlime: '#563486',
+  vampireBat: '#4a294f',
+  skeletonKnight: '#54506b',
+  obsidianGolem: '#272331',
+  lichKing: '#5c2d78',
 } as const;
 
 type EntityBody = Readonly<{
@@ -242,20 +344,57 @@ function drawEnemyBody(
   const center = projectWorldPoint(layout, position);
   const fallbackSize = ENEMY_SIZES[enemy.type as keyof typeof ENEMY_SIZES] ?? 2.2;
   const fallbackColor = ENEMY_COLORS[enemy.type as keyof typeof ENEMY_COLORS] ?? '#76558f';
+  const variantScale = enemyVariantSizeFactor(enemy.variant);
+  const size = layout.tileWidth * fallbackSize * depthScale * variantScale;
+  const groundAnchor = enemy.type === 'orc' ? 0.60 : 0.76;
 
   ctx.save();
   ctx.translate(center.x, center.y - bounce);
   ctx.scale(1 / squash, squash);
-  drawAnchoredSprite(
+  const rendered = drawSpriteFrame(
     ctx,
     sprite,
     frame,
     motion === null ? SPRITE_FRAME_SIZES.enemy : SPRITE_FRAME_SIZES.motion,
-    layout.tileWidth * fallbackSize * depthScale,
-    fallbackColor,
-    enemy.type.slice(0, 1).toUpperCase(),
-    enemy.type === 'orc' ? 0.60 : 0.76,
+    {
+      x: -size / 2,
+      y: -size * groundAnchor,
+      width: size,
+      height: size,
+    },
   );
+  if (!rendered) drawNightmareFallback(ctx, enemy, fallbackColor, size);
+  if (enemy.variant === 'elite') {
+    ctx.strokeStyle = '#ff5a62';
+    ctx.lineWidth = Math.max(1.5, size * 0.022);
+    traceFallbackPolygon(ctx, [
+      [0, -0.73], [0.1, -0.62], [0, -0.51], [-0.1, -0.62],
+    ], size);
+    ctx.stroke();
+  }
+  if (enemy.shieldHitsRemaining > 0) {
+    ctx.strokeStyle = 'rgba(160, 181, 255, 0.85)';
+    ctx.lineWidth = Math.max(1.5, size * 0.025);
+    ctx.beginPath();
+    ctx.ellipse(-size * 0.16, -size * 0.28, size * 0.22, size * 0.32, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (enemy.auraMultiplier > 1) {
+    ctx.strokeStyle = 'rgba(190, 91, 240, 0.72)';
+    ctx.lineWidth = Math.max(1.5, size * 0.02);
+    ctx.beginPath();
+    ctx.ellipse(0, -size * 0.2, size * 0.34, size * 0.14, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  if (enemy.armorStage > 0) {
+    ctx.strokeStyle = '#ff8a38';
+    ctx.lineWidth = Math.max(1.5, size * 0.025);
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.08, -size * 0.55);
+    ctx.lineTo(size * 0.04, -size * 0.36);
+    ctx.lineTo(-size * 0.02, -size * 0.16);
+    ctx.stroke();
+  }
   ctx.restore();
 }
 

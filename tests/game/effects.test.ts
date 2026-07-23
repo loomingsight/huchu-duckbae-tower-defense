@@ -4,8 +4,10 @@ import { FIXED_STEP_SECONDS } from '../../src/game/config';
 import { createFixedStepLoop } from '../../src/game/core/fixedStepLoop';
 import type { GameHitEvent, GameTower } from '../../src/game/simulation/createGame';
 import {
+  createFrameEventBuffer,
   createSlowPulse,
   effectForHit,
+  effectsForTraits,
   SLOW_PULSE_DURATION_SECONDS,
   SLOW_PULSE_INTERVAL_SECONDS,
   slowPulseEffects,
@@ -119,7 +121,11 @@ describe('runtime effects', () => {
         shot: boolean;
         leak: boolean;
       }): void;
-      peek(): { hitEvents: readonly GameHitEvent[]; cueTypes: readonly string[] };
+      peek(): {
+        hitEvents: readonly GameHitEvent[];
+        traitEvents: readonly { kind: string; position: { x: number; y: number } }[];
+        cueTypes: readonly string[];
+      };
       clear(): void;
       reset(): void;
     };
@@ -171,10 +177,72 @@ describe('runtime effects', () => {
     ]);
 
     loop.tick(0);
-    expect(renderedFrames[1]).toEqual({ hitEvents: [], cueTypes: [] });
+    expect(renderedFrames[1]).toEqual({ hitEvents: [], traitEvents: [], cueTypes: [] });
     buffer.recordStep({ hitEvents: firstStep, shot: true, leak: false });
     buffer.reset();
-    expect(buffer.peek()).toEqual({ hitEvents: [], cueTypes: [] });
+    expect(buffer.peek()).toEqual({ hitEvents: [], traitEvents: [], cueTypes: [] });
+  });
+
+  it('buffers trait events across fixed steps and maps them to finite visual effects', () => {
+    const buffer = createFrameEventBuffer();
+    const traitEvents = [{
+      kind: 'shield-break' as const,
+      enemyId: 1,
+      position: { x: 2.5, y: 3.5 },
+    }, {
+      kind: 'lich-aura' as const,
+      enemyId: 2,
+      position: { x: 4.5, y: 5.5 },
+      radius: 2.7,
+    }];
+
+    buffer.recordStep({
+      hitEvents: [],
+      traitEvents,
+      shot: false,
+      leak: false,
+    });
+    traitEvents[0].position.x = 99;
+
+    expect(buffer.peek().traitEvents).toEqual([
+      {
+        kind: 'shield-break',
+        enemyId: 1,
+        position: { x: 2.5, y: 3.5 },
+      },
+      {
+        kind: 'lich-aura',
+        enemyId: 2,
+        position: { x: 4.5, y: 5.5 },
+        radius: 2.7,
+      },
+    ]);
+    expect(effectsForTraits(buffer.peek().traitEvents)).toEqual([
+      {
+        kind: 'shield-break',
+        position: { x: 2.5, y: 3.5 },
+        radius: 0,
+        age: 0,
+        duration: 0.24,
+      },
+      {
+        kind: 'lich-aura',
+        position: { x: 4.5, y: 5.5 },
+        radius: 2.7,
+        age: 0,
+        duration: 0.4,
+      },
+    ]);
+
+    buffer.clear();
+    expect(buffer.peek().traitEvents).toEqual([]);
+  });
+
+  it('ignores non-visual damage and invalid trait event coordinates', () => {
+    expect(effectsForTraits([
+      { kind: 'damage', enemyId: 1, position: { x: 1, y: 1 } },
+      { kind: 'split', enemyId: 2, position: { x: Number.NaN, y: 1 } },
+    ])).toEqual([]);
   });
 });
 

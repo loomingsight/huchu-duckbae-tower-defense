@@ -3,9 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { enemyPosition } from '../../src/game/combat/targeting';
 import { cellCenter } from '../../src/game/core/geometry';
 import { createCanvasRenderer, type GameSnapshot } from '../../src/game/render/canvasRenderer';
-import { drawEntities, towerSizeFactor } from '../../src/game/render/drawEntities';
+import {
+  drawEntities,
+  enemyVariantSizeFactor,
+  towerSizeFactor,
+} from '../../src/game/render/drawEntities';
 import { slowPulseRadius } from '../../src/game/render/drawEffects';
-import { effectsForHits, slowPulseEffects } from '../../src/game/render/effects';
+import {
+  effectsForHits,
+  effectsForTraits,
+  slowPulseEffects,
+} from '../../src/game/render/effects';
 import { computeCanvasLayout } from '../../src/game/render/layout';
 import { projectWorldPoint, visualScaleAt } from '../../src/game/render/projection';
 import { getStageDefinition } from '../../src/game/stages/stageCatalog';
@@ -54,6 +62,12 @@ describe('entity depth rendering', () => {
     expect(towerSizeFactor('arrow')).toBe(2);
     expect(towerSizeFactor('deokbae')).toBe(2);
     expect(towerSizeFactor('huchu')).toBe(2);
+  });
+
+  it('scales split children down and elite enemies up', () => {
+    expect(enemyVariantSizeFactor('standard')).toBe(1);
+    expect(enemyVariantSizeFactor('split-child')).toBe(0.7);
+    expect(enemyVariantSizeFactor('elite')).toBe(1.1);
   });
 
   it('positions enemies on the selected stage path', () => {
@@ -242,6 +256,40 @@ describe('entity depth rendering', () => {
     const orcDraw = calls.find((call) => call.method === 'drawImage' && imageTag(call) === 'motion-orc');
     expect(slimeDraw?.args[6]).toBeCloseTo(-Number(slimeDraw?.args[8]) * 0.76);
     expect(orcDraw?.args[6]).toBeCloseTo(-Number(orcDraw?.args[8]) * 0.60);
+  });
+
+  it('draws readable front-facing fallbacks for all unapproved nightmare sprites', () => {
+    const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
+    const { context, calls } = createRecordingContext();
+    const assets = createTestAssets();
+    const emptyDirections = { ne: null, se: null, sw: null, nw: null };
+    const fallbackAssets = {
+      ...assets,
+      enemies: {
+        ...assets.enemies,
+        shadowSlime: emptyDirections,
+        vampireBat: emptyDirections,
+        skeletonKnight: emptyDirections,
+        obsidianGolem: emptyDirections,
+        lichKing: emptyDirections,
+      },
+    };
+    drawEntities(context, layout, snapshot({
+      stageKey: 'nightmare-1',
+      enemies: [
+        { id: 1, type: 'shadowSlime', variant: 'standard', boss: false, hp: 90, maxHp: 90, progress: 0, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 2, type: 'vampireBat', variant: 'standard', boss: false, hp: 64, maxHp: 64, progress: 1, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 3, type: 'skeletonKnight', variant: 'standard', boss: false, hp: 200, maxHp: 200, progress: 2, slowMultiplier: 1, shieldHitsRemaining: 3, rewarded: false, lastHitAtSeconds: null },
+        { id: 4, type: 'obsidianGolem', variant: 'standard', boss: false, hp: 620, maxHp: 620, progress: 3, slowMultiplier: 1, armorStage: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 5, type: 'lichKing', variant: 'standard', boss: true, hp: 3500, maxHp: 3500, progress: 4, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+      ],
+    }), fallbackAssets, { timeSeconds: 0 });
+
+    const labels = calls
+      .filter((call) => call.method === 'fillText')
+      .map((call) => call.args[0]);
+    expect(labels).toEqual(expect.arrayContaining(['암', '박', '해', '흑', '리', 'BOSS']));
+    expect(calls.some((call) => imageTag(call)?.startsWith('enemy-shadow-slime'))).toBe(false);
   });
 });
 
@@ -470,6 +518,33 @@ describe('renderer layer order', () => {
 
     expect(calls.some((call) => imageTag(call) === 'vfx-aqua-burst')).toBe(false);
   });
+
+  it('renders buffered trait primitives and nightmare stage presentations', () => {
+    const { context, calls } = createRecordingContext();
+    const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
+    const state = snapshot({
+      stageKey: 'nightmare-1',
+      bossSpawnedAtSeconds: 0,
+    });
+    const effects = effectsForTraits([
+      { kind: 'shield-break', enemyId: 1, position: { x: 2.5, y: 3.5 } },
+      { kind: 'lich-aura', enemyId: 2, position: { x: 4.5, y: 5.5 }, radius: 2.7 },
+    ]);
+
+    renderer.render(state, { timeSeconds: 0.3, effects });
+
+    expect(calls.some((call) => call.strokeStyle === '#a9bbff')).toBe(true);
+    expect(calls.some((call) => (
+      typeof call.strokeStyle === 'string'
+      && call.strokeStyle.startsWith('rgba(180, 81, 235,')
+    ))).toBe(true);
+    expect(calls.some((call) => (
+      call.method === 'fillText' && call.args[0] === 'NIGHTMARE · 달빛 늪'
+    ))).toBe(true);
+    expect(calls.some((call) => (
+      call.method === 'fillText' && call.args[0] === '리치 왕이 나타났어요!'
+    ))).toBe(true);
+  });
 });
 
 describe('renderer boundaries', () => {
@@ -519,6 +594,7 @@ describe('renderer boundaries', () => {
         enemies: [{
           id: 2,
           type: 'minotaur',
+          boss: true,
           hp: 900,
           maxHp: 1800,
           progress: 0,
@@ -535,6 +611,32 @@ describe('renderer boundaries', () => {
     ))).toBe(true);
     expect(bossRecording.calls.some((call) => (
       call.method === 'fillRect' && call.fillStyle === '#b96cff'
+    ))).toBe(true);
+
+    const lichRecording = createRecordingContext();
+    drawEntities(
+      lichRecording.context,
+      layout,
+      snapshot({
+        stageKey: 'nightmare-6',
+        enemies: [{
+          id: 3,
+          type: 'lichKing',
+          variant: 'standard',
+          boss: true,
+          hp: 1750,
+          maxHp: 3500,
+          progress: 0,
+          slowMultiplier: 1,
+          rewarded: false,
+          lastHitAtSeconds: null,
+        }],
+      }),
+      createTestAssets(),
+      { timeSeconds: 999 },
+    );
+    expect(lichRecording.calls.some((call) => (
+      call.method === 'fillText' && call.args[0] === 'BOSS'
     ))).toBe(true);
   });
 
