@@ -63,7 +63,48 @@ export const TOWER_SPRITES = {
 export const MOTION_SPRITES = {
   orc: { url: new URL('../../../assets/renders/redesign-preview-v1/master/motion/orc-walk-se.png', import.meta.url).href, frames: 6, fps: 8 },
   fairy: { url: new URL('../../../assets/renders/redesign-preview-v1/master/motion/fairy-fly-se.png', import.meta.url).href, frames: 8, fps: 12 },
+  shadowSlime: {
+    url: new URL('../../../assets/renders/nightmare-v2/master/motion/shadow-slime-bounce.png', import.meta.url).href,
+    frames: 6,
+    fps: 7,
+  },
+  vampireBat: {
+    url: new URL('../../../assets/renders/nightmare-v2/master/motion/vampire-bat-fly.png', import.meta.url).href,
+    frames: 8,
+    fps: 10,
+  },
+  skeletonKnight: {
+    url: new URL('../../../assets/renders/nightmare-v2/master/motion/skeleton-knight-walk.png', import.meta.url).href,
+    frames: 6,
+    fps: 7,
+  },
+  obsidianGolem: {
+    url: new URL('../../../assets/renders/nightmare-v2/master/motion/obsidian-golem-walk.png', import.meta.url).href,
+    frames: 6,
+    fps: 5,
+  },
+  lichKing: {
+    url: new URL('../../../assets/renders/nightmare-v2/master/motion/lich-king-float.png', import.meta.url).href,
+    frames: 8,
+    fps: 6,
+  },
 } as const;
+
+export type MotionEnemyType = keyof typeof MOTION_SPRITES;
+
+export const MOTION_ENEMY_TYPES = Object.freeze([
+  'orc',
+  'fairy',
+  'shadowSlime',
+  'vampireBat',
+  'skeletonKnight',
+  'obsidianGolem',
+  'lichKing',
+] as const satisfies readonly MotionEnemyType[]);
+
+export function isMotionEnemyType(type: EnemyType): type is MotionEnemyType {
+  return (MOTION_ENEMY_TYPES as readonly EnemyType[]).includes(type);
+}
 
 export const VFX_SPRITES = {
   arrow: { url: new URL('../../../assets/renders/redesign-preview-v1/master/vfx/arrow-8dir.png', import.meta.url).href, frames: 8 },

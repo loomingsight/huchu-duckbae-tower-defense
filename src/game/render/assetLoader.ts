@@ -7,6 +7,7 @@ import {
   TOWER_SPRITES,
   VFX_SPRITES,
   type MapSpriteKey,
+  type MotionEnemyType,
   type SpriteDirection,
 } from './spriteManifest';
 
@@ -30,10 +31,7 @@ export type GameAssets = {
     slow: LoadedSprite;
   }>;
   enemies: Readonly<Record<EnemyType, DirectionalSprites>>;
-  motion: Readonly<{
-    orc: LoadedSprite;
-    fairy: LoadedSprite;
-  }>;
+  motion: Readonly<Record<MotionEnemyType, LoadedSprite>>;
   vfx: Readonly<{
     arrow: LoadedSprite;
     fireball: LoadedSprite;
@@ -93,6 +91,11 @@ export async function loadGameAssets(): Promise<GameAssets> {
     minotaur,
     orcMotion,
     fairyMotion,
+    shadowSlimeMotion,
+    vampireBatMotion,
+    skeletonKnightMotion,
+    obsidianGolemMotion,
+    lichKingMotion,
     arrowVfx,
     fireball,
     waterball,
@@ -120,6 +123,11 @@ export async function loadGameAssets(): Promise<GameAssets> {
     loadDirections(ENEMY_SPRITES.minotaur),
     loadImage(MOTION_SPRITES.orc.url),
     loadImage(MOTION_SPRITES.fairy.url),
+    loadImage(MOTION_SPRITES.shadowSlime.url),
+    loadImage(MOTION_SPRITES.vampireBat.url),
+    loadImage(MOTION_SPRITES.skeletonKnight.url),
+    loadImage(MOTION_SPRITES.obsidianGolem.url),
+    loadImage(MOTION_SPRITES.lichKing.url),
     loadImage(VFX_SPRITES.arrow.url),
     loadImage(VFX_SPRITES.fireball.url),
     loadImage(VFX_SPRITES.waterball.url),
@@ -153,7 +161,15 @@ export async function loadGameAssets(): Promise<GameAssets> {
       obsidianGolem: EMPTY_DIRECTIONS,
       lichKing: EMPTY_DIRECTIONS,
     },
-    motion: { orc: orcMotion, fairy: fairyMotion },
+    motion: {
+      orc: orcMotion,
+      fairy: fairyMotion,
+      shadowSlime: shadowSlimeMotion,
+      vampireBat: vampireBatMotion,
+      skeletonKnight: skeletonKnightMotion,
+      obsidianGolem: obsidianGolemMotion,
+      lichKing: lichKingMotion,
+    },
     vfx: { arrow: arrowVfx, fireball, waterball, arrowImpact, fireBurst, aquaBurst },
   };
 }

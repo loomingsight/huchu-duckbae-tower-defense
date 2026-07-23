@@ -58,6 +58,11 @@ export function createTestAssets(): GameAssets {
     motion: {
       orc: taggedImage('motion-orc', 256 * 6),
       fairy: taggedImage('motion-fairy', 256 * 8),
+      shadowSlime: taggedImage('motion-shadow-slime', 256 * 6),
+      vampireBat: taggedImage('motion-vampire-bat', 256 * 8),
+      skeletonKnight: taggedImage('motion-skeleton-knight', 256 * 6),
+      obsidianGolem: taggedImage('motion-obsidian-golem', 256 * 6),
+      lichKing: taggedImage('motion-lich-king', 256 * 8),
     },
     vfx: {
       arrow: taggedImage('vfx-arrow', 256 * 8),

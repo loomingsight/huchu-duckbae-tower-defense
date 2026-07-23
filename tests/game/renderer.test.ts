@@ -242,6 +242,43 @@ describe('entity depth rendering', () => {
     expect(frameDraw?.args[1]).toBe(256);
   });
 
+  it('renders refined nightmare motion frames without duplicate canvas bobbing', () => {
+    const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
+    const enemy = {
+      id: 0,
+      type: 'shadowSlime' as const,
+      variant: 'standard' as const,
+      boss: false,
+      hp: 90,
+      maxHp: 90,
+      progress: 0,
+      slowMultiplier: 1,
+      rewarded: false,
+      lastHitAtSeconds: null,
+    };
+
+    const origin = createRecordingContext();
+    drawEntities(origin.context, layout, snapshot({
+      stageKey: 'nightmare-1',
+      enemies: [enemy],
+    }), createTestAssets(), { timeSeconds: 0 });
+    const next = createRecordingContext();
+    drawEntities(next.context, layout, snapshot({
+      stageKey: 'nightmare-1',
+      enemies: [enemy],
+    }), createTestAssets(), { timeSeconds: 1 / 7 });
+
+    const originTranslate = origin.calls.find((call) => call.method === 'translate');
+    const nextTranslate = next.calls.find((call) => call.method === 'translate');
+    const nextDraw = next.calls.find((call) => (
+      call.method === 'drawImage' && imageTag(call) === 'motion-shadow-slime'
+    ));
+    expect(nextDraw?.args[1]).toBe(256);
+    expect(nextTranslate?.args[1]).toBe(originTranslate?.args[1]);
+    expect(next.calls.some((call) => call.method === 'fillText' && call.args[0] === '암'))
+      .toBe(false);
+  });
+
   it('grounds only the orc lower while preserving the default enemy anchor', () => {
     const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
     const { context, calls } = createRecordingContext();
@@ -258,13 +295,21 @@ describe('entity depth rendering', () => {
     expect(orcDraw?.args[6]).toBeCloseTo(-Number(orcDraw?.args[8]) * 0.60);
   });
 
-  it('draws readable front-facing fallbacks for all unapproved nightmare sprites', () => {
+  it('draws readable front-facing fallbacks when refined nightmare motion fails', () => {
     const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
     const { context, calls } = createRecordingContext();
     const assets = createTestAssets();
     const emptyDirections = { ne: null, se: null, sw: null, nw: null };
     const fallbackAssets = {
       ...assets,
+      motion: {
+        ...assets.motion,
+        shadowSlime: null,
+        vampireBat: null,
+        skeletonKnight: null,
+        obsidianGolem: null,
+        lichKing: null,
+      },
       enemies: {
         ...assets.enemies,
         shadowSlime: emptyDirections,

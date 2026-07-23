@@ -40,6 +40,11 @@ describe('loadGameAssets', () => {
     expect(Object.values(assets.enemies.lichKing).every((image) => image === null)).toBe(true);
     expect(assets.map.grass).toBeInstanceOf(MixedResultImage);
     expect(assets.motion.orc).toBeInstanceOf(MixedResultImage);
+    expect(assets.motion.shadowSlime).toBeInstanceOf(MixedResultImage);
+    expect(assets.motion.vampireBat).toBeInstanceOf(MixedResultImage);
+    expect(assets.motion.skeletonKnight).toBeInstanceOf(MixedResultImage);
+    expect(assets.motion.obsidianGolem).toBeInstanceOf(MixedResultImage);
+    expect(assets.motion.lichKing).toBeInstanceOf(MixedResultImage);
     expect(assets.vfx.aquaBurst).toBeInstanceOf(MixedResultImage);
   });
 });

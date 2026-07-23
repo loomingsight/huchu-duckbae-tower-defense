@@ -13,8 +13,10 @@ import {
   visualScaleAt,
 } from './projection';
 import {
+  isMotionEnemyType,
   MOTION_SPRITES,
   SPRITE_FRAME_SIZES,
+  type MotionEnemyType,
   type SpriteDirection,
 } from './spriteManifest';
 import { drawSpriteFrame } from './spriteSheet';
@@ -325,18 +327,21 @@ function drawEnemyBody(
   assets: GameAssets,
   timeSeconds: number,
 ): void {
-  const motion = enemy.type === 'orc'
-    ? MOTION_SPRITES.orc
-    : enemy.type === 'fairy' ? MOTION_SPRITES.fairy : null;
+  const motion = isMotionEnemyType(enemy.type)
+    ? MOTION_SPRITES[enemy.type]
+    : null;
   const framePhase = timeSeconds * (motion?.fps ?? 7) + enemy.id * 0.37;
   const bobPhase = timeSeconds * (motion?.fps ?? 7) * 0.5 + enemy.id * 0.37;
   const frame = motion === null ? 0 : Math.floor(framePhase) % motion.frames;
   const sprite = motion === null
     ? assets.enemies[enemy.type].se
-    : assets.motion[enemy.type as 'orc' | 'fairy'];
+    : assets.motion[enemy.type as MotionEnemyType];
   const depthScale = visualScaleAt(layout, position.y);
   const wave = Math.sin(bobPhase * Math.PI * 2);
-  const bounce = wave
+  const sheetOwnsVerticalMotion = motion !== null
+    && enemy.type !== 'orc'
+    && enemy.type !== 'fairy';
+  const bounce = (sheetOwnsVerticalMotion ? 0 : wave)
     * layout.tileHeight
     * depthScale
     * (enemy.type === 'fairy' ? 0.22 : 0.09);
