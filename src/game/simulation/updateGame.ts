@@ -11,7 +11,7 @@ export function updateGame(state: GameState, dt: number): void {
   if (state.outcome !== 'playing') return;
 
   const safeDt = Number.isFinite(dt) && dt >= 0 ? dt : 0;
-  const stage = getStageDefinition(state.stageId);
+  const stage = getStageDefinition(state.stageKey);
   state.elapsedSeconds += safeDt;
   const hadEnemies = state.enemies.length > 0;
   updateSlow(state);

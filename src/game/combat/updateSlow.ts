@@ -14,7 +14,7 @@ export function updateSlow(state: GameState): void {
 
     for (const enemy of state.enemies) {
       if (enemy.hp <= 0) continue;
-      const position = enemyPosition(enemy, state.stageId);
+      const position = enemyPosition(enemy, state.stageKey);
       if (position === undefined) continue;
       if (isWithinRadius(tower.position, position, definition.range)) {
         enemy.speedMultiplier = Math.min(enemy.speedMultiplier, definition.multiplier ?? 1);

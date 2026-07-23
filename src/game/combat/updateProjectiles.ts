@@ -20,7 +20,7 @@ export function updateProjectiles(state: GameState, dt: number): void {
     ));
     if (target === undefined) continue;
 
-    const impactPosition = enemyPosition(target, state.stageId);
+    const impactPosition = enemyPosition(target, state.stageKey);
     if (impactPosition === undefined) continue;
     const dx = impactPosition.x - projectile.position.x;
     const dy = impactPosition.y - projectile.position.y;
@@ -31,7 +31,7 @@ export function updateProjectiles(state: GameState, dt: number): void {
       if (projectile.splash > 0) {
         for (const enemy of state.enemies) {
           if (enemy.hp <= 0) continue;
-          const position = enemyPosition(enemy, state.stageId);
+          const position = enemyPosition(enemy, state.stageKey);
           if (position === undefined) continue;
           if (isWithinRadius(impactPosition, position, projectile.splash)) {
             applyDamage(state, enemy, projectile.damage);

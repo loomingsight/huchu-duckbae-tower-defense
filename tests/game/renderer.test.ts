@@ -19,7 +19,7 @@ import {
 
 function snapshot(overrides: Partial<GameSnapshot> = {}): GameSnapshot {
   return {
-    stageId: 1,
+    stageKey: 'normal-1',
     gold: 450,
     baseHp: 20,
     outcome: 'playing',
@@ -59,10 +59,10 @@ describe('entity depth rendering', () => {
   it('positions enemies on the selected stage path', () => {
     const { context, calls } = createRecordingContext();
     const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
-    const stage = getStageDefinition(6);
+    const stage = getStageDefinition('normal-6');
     const progress = stage.map.pathCells.length - 1;
     const state = snapshot({
-      stageId: 6,
+      stageKey: 'normal-6',
       enemies: [{
         id: 0,
         type: 'slime',
@@ -256,9 +256,9 @@ describe('renderer layer order', () => {
   it('renders the active stage map instead of the stage-one map', () => {
     const { context, calls } = createRecordingContext();
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
-    const stage = getStageDefinition(6);
+    const stage = getStageDefinition('normal-6');
 
-    renderer.render(snapshot({ stageId: 6 }));
+    renderer.render(snapshot({ stageKey: 'normal-6' }));
 
     expect(calls.filter((call) => (
       call.method === 'fill' && call.fillStyle === '#e4c99f'
@@ -268,11 +268,11 @@ describe('renderer layer order', () => {
   it('aims arrow towers and projectiles along the selected stage path', () => {
     const { context, calls } = createRecordingContext();
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
-    const stage = getStageDefinition(6);
+    const stage = getStageDefinition('normal-6');
     const targetId = 1;
 
     renderer.render(snapshot({
-      stageId: 6,
+      stageKey: 'normal-6',
       towers: [{
         id: 1,
         type: 'arrow',

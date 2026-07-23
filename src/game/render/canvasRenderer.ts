@@ -6,7 +6,8 @@ import type {
   Outcome,
   WaveState,
 } from '../simulation/createGame';
-import { getStageDefinition, type StageId } from '../stages/stageCatalog';
+import { getStageDefinition } from '../stages/stageCatalog';
+import type { StageKey } from '../stages/stageIdentity';
 import type { Cell } from '../types';
 import type { GameAssets } from './assetLoader';
 import { drawEntities, type TowerPreview } from './drawEntities';
@@ -26,7 +27,7 @@ import {
 } from './layout';
 
 export type GameSnapshot = {
-  readonly stageId: StageId;
+  readonly stageKey: StageKey;
   readonly gold: number;
   readonly baseHp: number;
   readonly outcome: Outcome;
@@ -87,7 +88,7 @@ export function createCanvasRenderer(
   }
 
   function render(snapshot: GameSnapshot, options: RenderOptions = {}): void {
-    const stage = getStageDefinition(snapshot.stageId);
+    const stage = getStageDefinition(snapshot.stageKey);
     context.setTransform(1, 0, 0, 1, 0, 0);
     context.clearRect(0, 0, canvas.width, canvas.height);
     context.setTransform(layout.dpr, 0, 0, layout.dpr, 0, 0);

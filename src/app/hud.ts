@@ -1,10 +1,24 @@
 import {
+  ALL_STAGE_KEYS,
   getStageDefinition,
-  normalizeStageId,
-  STAGE_IDS,
-  type StageId,
 } from '../game/stages/stageCatalog';
+import {
+  GAME_MODES,
+  normalizeStageKey,
+  stageKey,
+  stageRef,
+  STAGE_NUMBERS,
+  type GameMode,
+  type StageKey,
+  type StageNumber,
+} from '../game/stages/stageIdentity';
 import { TOWER_CATALOG, TOWER_TYPES, type TowerType } from '../game/towers/towerCatalog';
+import {
+  isStageUnlocked,
+  stageRecordFor,
+  type GamePreferences,
+  type StarRating,
+} from './preferences';
 
 export const GAME_NAME = '후추덕배 타워 디펜스';
 
@@ -19,7 +33,7 @@ export const TOWER_CARDS = [
 ] as const;
 
 export type HudViewInput = Readonly<{
-  stageId: StageId;
+  stageKey: StageKey;
   gold: number;
   baseHp: number;
   waveIndex: number;
@@ -65,6 +79,7 @@ function wholeNumber(value: number): string {
 }
 
 export function createHudView(input: HudViewInput): HudView {
+  const stage = stageRef(input.stageKey);
   const waveCount = Number.isFinite(input.waveCount) ? Math.max(1, Math.floor(input.waveCount)) : 1;
   const wave = Number.isFinite(input.waveIndex)
     ? Math.min(waveCount, Math.max(1, Math.floor(input.waveIndex) + 1))
@@ -73,7 +88,8 @@ export function createHudView(input: HudViewInput): HudView {
   const goldText = wholeNumber(input.gold);
   const baseHpText = wholeNumber(input.baseHp);
   const waveStatus = `${wave}/${waveCount}`;
-  const waveText = `S${input.stageId} · ${waveStatus}`;
+  const wavePrefix = stage.mode === 'normal' ? 'S' : 'N';
+  const waveText = `${wavePrefix}${stage.number} · ${waveStatus}`;
   const speedText = `${input.speed}×`;
   const isLivePhase = input.phase === 'playing' || input.phase === 'paused';
   return {
@@ -82,7 +98,7 @@ export function createHudView(input: HudViewInput): HudView {
     baseHpText,
     baseHpLabel: `기지 체력 ${baseHpText}`,
     waveText,
-    waveLabel: `스테이지 ${input.stageId}, 현재 웨이브 ${waveStatus}`,
+    waveLabel: `${stage.mode === 'normal' ? '스테이지' : '나이트메어'} ${stage.number}, 현재 웨이브 ${waveStatus}`,
     pauseText: paused ? '계속' : '정지',
     pauseLabel: paused ? '게임 계속하기' : '게임 일시정지',
     speedText,
@@ -94,23 +110,18 @@ export function createHudView(input: HudViewInput): HudView {
   };
 }
 
-export type StagePickerItem = Readonly<{
-  id: StageId;
-  selected: boolean;
-  locked: boolean;
-}>;
-
 export type StageSelectStatus = 'locked' | 'available' | 'cleared';
 
-export type StageSelectRecord = Readonly<{
-  bestScore: number;
-  bestClearSeconds: number | null;
-}>;
-
-export type StageSelectItem = StagePickerItem & Readonly<{
+export type StageSelectItem = Readonly<{
+  key: StageKey;
+  mode: GameMode;
+  number: StageNumber;
   name: string;
+  selected: boolean;
+  locked: boolean;
   status: StageSelectStatus;
   statusText: string;
+  bestStars: StarRating;
   recordText: string;
   ariaLabel: string;
 }>;
@@ -147,18 +158,20 @@ function accessibleClearTime(seconds: number): string {
 }
 
 export function createStageSelectView(
-  selectedStageId: unknown,
-  highestUnlockedStage: unknown,
-  records: Readonly<Partial<Record<StageId, StageSelectRecord>>> = {},
+  mode: GameMode,
+  selectedStageKey: unknown,
+  preferences: GamePreferences,
 ): readonly StageSelectItem[] {
-  const selected = normalizeStageId(selectedStageId);
-  const highestUnlocked = normalizeStageId(highestUnlockedStage);
-  return STAGE_IDS.map((id) => {
-    const definition = getStageDefinition(id);
-    const locked = id > highestUnlocked;
-    const record = records[id];
+  const activeMode = (GAME_MODES as readonly string[]).includes(mode) ? mode : 'normal';
+  const selected = normalizeStageKey(selectedStageKey);
+  return STAGE_NUMBERS.map((number) => {
+    const key = stageKey(activeMode, number);
+    const definition = getStageDefinition(key);
+    const locked = !isStageUnlocked(preferences, key);
+    const record = stageRecordFor(preferences, key);
     const bestScore = normalizedRecordScore(record?.bestScore);
     const bestClearSeconds = normalizedClearSeconds(record?.bestClearSeconds);
+    const bestStars = record.bestStars;
     const status: StageSelectStatus = locked
       ? 'locked'
       : bestClearSeconds === null ? 'available' : 'cleared';
@@ -166,58 +179,58 @@ export function createStageSelectView(
       ? '잠김'
       : status === 'cleared' ? '클리어' : '도전 가능';
     const scoreText = bestScore.toLocaleString('ko-KR');
+    const starsText = `${'★'.repeat(bestStars)}${'☆'.repeat(3 - bestStars)}`;
     const recordText = locked
       ? '잠김'
       : bestClearSeconds !== null
-        ? `최고 ${scoreText}점 · 최단 ${formatStageClearTime(bestClearSeconds)}`
-        : bestScore > 0 ? `최고 ${scoreText}점 · 미클리어` : '기록 없음';
-    const selectedText = id === selected ? ', 선택됨' : '';
+        ? `${starsText} · 최고 ${scoreText}점 · 최단 ${formatStageClearTime(bestClearSeconds)}`
+        : bestScore > 0 ? `☆☆☆ · 최고 ${scoreText}점 · 미클리어` : '기록 없음';
+    const selectedText = key === selected ? ', 선택됨' : '';
     const ariaRecord = bestClearSeconds !== null
-      ? `최고 ${scoreText}점, 최단 ${accessibleClearTime(bestClearSeconds)}`
+      ? `별 ${bestStars}개, 최고 ${scoreText}점, 최단 ${accessibleClearTime(bestClearSeconds)}`
       : bestScore > 0 ? `최고 ${scoreText}점, 미클리어` : '기록 없음';
+    const modeLabel = activeMode === 'normal' ? '스테이지' : '나이트메어';
     const ariaLabel = locked
-      ? `스테이지 ${id} ${definition.name} 잠김`
-      : `스테이지 ${id} ${definition.name}${selectedText}, ${statusText}, ${ariaRecord}`;
+      ? `${modeLabel} ${number} ${definition.name} 잠김`
+      : `${modeLabel} ${number} ${definition.name}${selectedText}, ${statusText}, ${ariaRecord}`;
     return {
-      id,
+      key,
+      mode: activeMode,
+      number,
       name: definition.name,
-      selected: id === selected,
+      selected: key === selected,
       locked,
       status,
       statusText,
+      bestStars,
       recordText,
       ariaLabel,
     };
   });
 }
 
-export function createStagePickerView(
-  selectedStageId: unknown,
-  highestUnlockedStage: unknown,
-): readonly StagePickerItem[] {
-  const selected = normalizeStageId(selectedStageId);
-  const highestUnlocked = normalizeStageId(highestUnlockedStage);
-  return STAGE_IDS.map((id) => ({
-    id,
-    selected: id === selected,
-    locked: id > highestUnlocked,
-  }));
-}
-
 export function stageActionLabel(
   phase: GamePhase,
-  currentStageId: unknown,
-  selectedStageId: unknown,
+  currentStageKey: unknown,
+  selectedStageKey: unknown,
 ): string {
-  const current = normalizeStageId(currentStageId);
-  const selected = normalizeStageId(selectedStageId);
+  const current = stageRef(currentStageKey);
+  const selected = stageRef(selectedStageKey);
   if (phase === 'ready') return '게임 시작';
-  if (phase === 'defeat' && selected === current) return '다시 도전';
-  if (phase === 'victory' && selected === current) return '다시 하기';
-  if (phase === 'victory' && current < 6 && selected === current + 1) {
+  if (phase === 'defeat' && selected.key === current.key) return '다시 도전';
+  if (phase === 'victory' && selected.key === current.key) return '다시 하기';
+  if (
+    phase === 'victory'
+    && current.mode === selected.mode
+    && current.number < 6
+    && selected.number === current.number + 1
+  ) {
     return '다음 스테이지';
   }
-  if (phase === 'victory' || phase === 'defeat') return `스테이지 ${selected} 시작`;
+  if (phase === 'victory' || phase === 'defeat') {
+    const label = selected.mode === 'normal' ? '스테이지' : '나이트메어';
+    return `${label} ${selected.number} 시작`;
+  }
   return '잠시만요';
 }
 
@@ -310,8 +323,10 @@ export type HudElements = Readonly<{
   stateOverlay: HTMLElement;
   stateTitle: HTMLElement;
   stateBody: HTMLElement;
+  modeTabs: Readonly<Record<GameMode, HTMLButtonElement>>;
   stagePicker: HTMLElement;
-  stageButtons: Readonly<Record<StageId, HTMLButtonElement>>;
+  stageButtons: Readonly<Record<StageKey, HTMLButtonElement>>;
+  badge: HTMLElement;
   resultPanel: HTMLElement;
   stateAction: HTMLButtonElement;
 }>;
@@ -364,20 +379,28 @@ export function createHud(root: HTMLElement): HudElements {
           <p class="stage-select-screen__eyebrow">${GAME_NAME}</p>
           <h1 id="game-state-title" data-state-title>게임 준비 중</h1>
           <p data-state-body>캐릭터를 불러오고 있어요.</p>
+          <div class="stage-mode-tabs" role="tablist" aria-label="난이도 선택">
+            <button class="game-control stage-mode-tab" data-mode="normal"
+              role="tab" type="button" aria-selected="true">노멀</button>
+            <button class="game-control stage-mode-tab" data-mode="nightmare"
+              role="tab" type="button" aria-selected="false">나이트메어</button>
+          </div>
           <div class="stage-picker" data-stage-picker aria-label="스테이지 선택" hidden>
-            ${STAGE_IDS.map((id) => {
-              const stage = getStageDefinition(id);
+            ${ALL_STAGE_KEYS.map((key) => {
+              const stage = getStageDefinition(key);
               return `
-              <button class="game-control stage-picker__button" data-stage-id="${id}"
-                data-stage-status="locked" type="button" aria-label="스테이지 ${id} ${stage.name} 잠김"
-                aria-pressed="false">
-                <span class="stage-picker__number">STAGE ${id}</span>
+              <button class="game-control stage-picker__button" data-stage-key="${key}"
+                data-mode="${stage.mode}" data-stage-status="locked" type="button"
+                aria-label="${stage.mode} 스테이지 ${stage.number} ${stage.name} 잠김"
+                aria-pressed="false" hidden>
+                <span class="stage-picker__number">STAGE ${stage.number}</span>
                 <strong class="stage-picker__name">${stage.name}</strong>
                 <span class="stage-picker__status">잠김</span>
                 <small class="stage-picker__record">잠김</small>
               </button>
             `; }).join('')}
           </div>
+          <p class="stage-select-screen__badge" data-stage-badge hidden>심연의 수호자</p>
           <div class="game-result" data-result-panel hidden></div>
           <button class="game-control stage-select-screen__action" data-state-action type="button" disabled>잠시만요</button>
         </div>
@@ -389,10 +412,14 @@ export function createHud(root: HTMLElement): HudElements {
     type,
     requiredElement<HTMLButtonElement>(root, `[data-tower="${type}"]`),
   ])) as Record<TowerType, HTMLButtonElement>;
-  const stageButtons = Object.fromEntries(STAGE_IDS.map((id) => [
-    id,
-    requiredElement<HTMLButtonElement>(root, `[data-stage-id="${id}"]`),
-  ])) as Record<StageId, HTMLButtonElement>;
+  const modeTabs = Object.fromEntries(GAME_MODES.map((mode) => [
+    mode,
+    requiredElement<HTMLButtonElement>(root, `[data-mode="${mode}"][role="tab"]`),
+  ])) as Record<GameMode, HTMLButtonElement>;
+  const stageButtons = Object.fromEntries(ALL_STAGE_KEYS.map((key) => [
+    key,
+    requiredElement<HTMLButtonElement>(root, `[data-stage-key="${key}"]`),
+  ])) as Record<StageKey, HTMLButtonElement>;
 
   return {
     shell: requiredElement(root, '.game-shell'),
@@ -420,8 +447,10 @@ export function createHud(root: HTMLElement): HudElements {
     stateOverlay: requiredElement(root, '[data-state-overlay]'),
     stateTitle: requiredElement(root, '[data-state-title]'),
     stateBody: requiredElement(root, '[data-state-body]'),
+    modeTabs,
     stagePicker: requiredElement(root, '[data-stage-picker]'),
     stageButtons,
+    badge: requiredElement(root, '[data-stage-badge]'),
     resultPanel: requiredElement(root, '[data-result-panel]'),
     stateAction: requiredElement(root, '[data-state-action]'),
   };
@@ -429,15 +458,26 @@ export function createHud(root: HTMLElement): HudElements {
 
 export function renderStagePicker(
   elements: HudElements,
-  selectedStageId: unknown,
-  highestUnlockedStage: unknown,
-  records: Readonly<Partial<Record<StageId, StageSelectRecord>>>,
+  activeMode: GameMode,
+  selectedStageKey: unknown,
+  preferences: GamePreferences,
   visible: boolean,
 ): void {
   elements.stagePicker.hidden = !visible;
+  for (const mode of GAME_MODES) {
+    const tab = elements.modeTabs[mode];
+    tab.setAttribute('aria-selected', String(mode === activeMode));
+    tab.setAttribute('aria-disabled', String(
+      mode === 'nightmare' && preferences.highestUnlockedByMode.nightmare === 0,
+    ));
+  }
+  elements.badge.hidden = !preferences.badges.includes('abyss-guardian');
+  for (const key of ALL_STAGE_KEYS) {
+    elements.stageButtons[key].hidden = stageRef(key).mode !== activeMode;
+  }
   if (!visible) return;
-  for (const item of createStageSelectView(selectedStageId, highestUnlockedStage, records)) {
-    const button = elements.stageButtons[item.id];
+  for (const item of createStageSelectView(activeMode, selectedStageKey, preferences)) {
+    const button = elements.stageButtons[item.key];
     button.disabled = item.locked;
     button.dataset.stageStatus = item.status;
     button.setAttribute('aria-label', item.ariaLabel);

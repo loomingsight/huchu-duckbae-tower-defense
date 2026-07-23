@@ -15,7 +15,7 @@ export function validateTowerPlacement(
 ): PlaceTowerResult {
   const definition = TOWER_CATALOG[type];
   if (state.gold < definition.cost) return { ok: false, reason: 'insufficient-gold' };
-  const map = getStageDefinition(state.stageId).map;
+  const map = getStageDefinition(state.stageKey).map;
   if (!map.isBuildableCell(cell, state.towers.map((tower) => tower.cell))) {
     return { ok: false, reason: 'not-buildable' };
   }

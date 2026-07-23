@@ -3,7 +3,6 @@ import { describe, expect, it } from 'vitest';
 import {
   createHudView,
   createModalFocusManager,
-  createStagePickerView,
   createStageSelectView,
   GAME_NAME,
   stageActionLabel,
@@ -11,7 +10,21 @@ import {
   towerCardAvailability,
   type ModalFocusTarget,
 } from '../../src/app/hud';
+import {
+  defaultPreferences,
+  type StageRecord,
+} from '../../src/app/preferences';
 import { createGame } from '../../src/game/simulation/createGame';
+
+function clearedRecord(score: number, stars: 1 | 2 | 3 = 2): StageRecord {
+  return {
+    bestScore: score,
+    bestClearScore: score,
+    bestClearSeconds: 95,
+    bestStars: stars,
+    bossDefeated: true,
+  };
+}
 
 describe('mobile HUD view', () => {
   it('uses the approved game name', () => {
@@ -69,7 +82,7 @@ describe('mobile HUD view', () => {
 
   it('formats live values and accessible control states', () => {
     expect(createHudView({
-      stageId: 1,
+      stageKey: 'normal-1',
       gold: 123,
       baseHp: 7,
       waveIndex: 12,
@@ -98,7 +111,7 @@ describe('mobile HUD view', () => {
 
   it('disables every game control while portrait blocks play', () => {
     const view = createHudView({
-      stageId: 1,
+      stageKey: 'normal-1',
       gold: 450,
       baseHp: 20,
       waveIndex: 0,
@@ -119,7 +132,7 @@ describe('mobile HUD view', () => {
 
   it('formats the selected stage into the compact wave status', () => {
     const view = createHudView({
-      stageId: 4,
+      stageKey: 'normal-4',
       gold: 320,
       baseHp: 20,
       waveIndex: 2,
@@ -134,70 +147,90 @@ describe('mobile HUD view', () => {
     expect(view.waveLabel).toBe('스테이지 4, 현재 웨이브 3/10');
   });
 
-  it('marks only unlocked stage buttons as selectable', () => {
-    expect(createStagePickerView(2, 3)).toEqual([
-      { id: 1, selected: false, locked: false },
-      { id: 2, selected: true, locked: false },
-      { id: 3, selected: false, locked: false },
-      { id: 4, selected: false, locked: true },
-      { id: 5, selected: false, locked: true },
-      { id: 6, selected: false, locked: true },
-    ]);
-  });
-
   it('builds stage cards with names, progression states, and saved records', () => {
-    const cards = createStageSelectView(2, 2, {
-      1: { bestScore: 8400, bestClearSeconds: 95 },
-      2: { bestScore: 2200, bestClearSeconds: null },
+    const cards = createStageSelectView('normal', 'normal-2', {
+      ...defaultPreferences(),
+      highestUnlockedByMode: { normal: 2, nightmare: 0 },
+      stageRecords: {
+        'normal-1': clearedRecord(8400),
+        'normal-2': {
+          bestScore: 2200,
+          bestClearScore: 0,
+          bestClearSeconds: null,
+          bestStars: 0,
+          bossDefeated: false,
+        },
+      },
     });
 
-    expect(cards.slice(0, 3)).toEqual([
+    expect(cards).toHaveLength(6);
+    expect(cards[0]).toMatchObject({
+      key: 'normal-1',
+      mode: 'normal',
+      number: 1,
+      name: '초록 들판',
+      selected: false,
+      locked: false,
+      status: 'cleared',
+      bestStars: 2,
+    });
+    expect(cards[0].recordText).toContain('★★☆');
+    expect(cards[1]).toMatchObject({
+      key: 'normal-2',
+      selected: true,
+      locked: false,
+      status: 'available',
+    });
+    expect(cards[1].recordText).toContain('최고 2,200점');
+    expect(cards[2]).toMatchObject({
+      key: 'normal-3',
+      locked: true,
+      status: 'locked',
+    });
+  });
+
+  it('shows only the active mode six-card set and separate records', () => {
+    const view = createStageSelectView(
+      'nightmare',
+      'nightmare-1',
       {
-        id: 1,
-        name: '초록 들판',
-        selected: false,
-        locked: false,
-        status: 'cleared',
-        statusText: '클리어',
-        recordText: '최고 8,400점 · 최단 1:35',
-        ariaLabel: '스테이지 1 초록 들판, 클리어, 최고 8,400점, 최단 1분 35초',
+        ...defaultPreferences(),
+        highestUnlockedByMode: { normal: 6, nightmare: 1 },
+        stageRecords: {
+          'normal-1': clearedRecord(9000),
+          'nightmare-1': clearedRecord(23000, 3),
+        },
       },
-      {
-        id: 2,
-        name: '굽이 개울',
-        selected: true,
-        locked: false,
-        status: 'available',
-        statusText: '도전 가능',
-        recordText: '최고 2,200점 · 미클리어',
-        ariaLabel: '스테이지 2 굽이 개울, 선택됨, 도전 가능, 최고 2,200점, 미클리어',
-      },
-      {
-        id: 3,
-        name: '바람 언덕',
-        selected: false,
-        locked: true,
-        status: 'locked',
-        statusText: '잠김',
-        recordText: '잠김',
-        ariaLabel: '스테이지 3 바람 언덕 잠김',
-      },
-    ]);
+    );
+    expect(view).toHaveLength(6);
+    expect(view[0]).toMatchObject({
+      key: 'nightmare-1',
+      name: '달빛 늪',
+      selected: true,
+      locked: false,
+    });
+    expect(view[0].recordText).toContain('★★★');
   });
 
   it('shows an unlocked stage without a score as having no record', () => {
-    const stage = createStageSelectView(1, 1, {})[0];
+    const stage = createStageSelectView(
+      'normal',
+      'normal-1',
+      defaultPreferences(),
+    )[0];
 
     expect(stage.recordText).toBe('기록 없음');
     expect(stage.ariaLabel).toContain('기록 없음');
   });
 
   it('uses the approved progression action labels', () => {
-    expect(stageActionLabel('ready', 1, 1)).toBe('게임 시작');
-    expect(stageActionLabel('defeat', 3, 3)).toBe('다시 도전');
-    expect(stageActionLabel('victory', 3, 4)).toBe('다음 스테이지');
-    expect(stageActionLabel('victory', 6, 6)).toBe('다시 하기');
-    expect(stageActionLabel('victory', 3, 2)).toBe('스테이지 2 시작');
+    expect(stageActionLabel('ready', 'normal-1', 'normal-1')).toBe('게임 시작');
+    expect(stageActionLabel('defeat', 'normal-3', 'normal-3')).toBe('다시 도전');
+    expect(stageActionLabel('victory', 'normal-3', 'normal-4')).toBe('다음 스테이지');
+    expect(stageActionLabel('victory', 'nightmare-6', 'nightmare-6')).toBe('다시 하기');
+    expect(stageActionLabel('victory', 'normal-3', 'normal-2')).toBe('스테이지 2 시작');
+    expect(stageActionLabel('victory', 'normal-6', 'nightmare-1'))
+      .toBe('나이트메어 1 시작');
   });
 
   it('moves focus and inert state only when modal visibility changes', () => {

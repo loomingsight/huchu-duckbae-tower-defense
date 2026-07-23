@@ -13,10 +13,16 @@ import { createGame } from '../game/simulation/createGame';
 import { placeTower, validateTowerPlacement } from '../game/simulation/placeTower';
 import { updateGame as updateSimulation } from '../game/simulation/updateGame';
 import {
+  ALL_STAGE_KEYS,
   getStageDefinition,
-  STAGE_IDS,
-  type StageId,
 } from '../game/stages/stageCatalog';
+import {
+  GAME_MODES,
+  stageKey,
+  stageRef,
+  type GameMode,
+  type StageKey,
+} from '../game/stages/stageIdentity';
 import { TOWER_CATALOG, TOWER_TYPES, type TowerType } from '../game/towers/towerCatalog';
 import { calculateGameScore } from '../game/scoring';
 import {
@@ -39,6 +45,7 @@ import { isTapGesture, pointerToCell, type ClientPoint } from './input';
 import { guardInitialization, LifecycleScope } from './lifecycle';
 import {
   browserPreferenceStorage,
+  isStageUnlocked,
   loadPreferences,
   recordAttempt,
   recordOutcome,
@@ -235,7 +242,12 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     const hud = createHud(root);
     const storage = browserPreferenceStorage();
     let preferences = loadPreferences(storage);
-    let selectedStageId = preferences.highestUnlockedByMode.normal;
+    const highestNightmareStage = preferences.highestUnlockedByMode.nightmare;
+    let selectedStageKey: StageKey = highestNightmareStage !== 0
+      ? stageKey('nightmare', highestNightmareStage)
+      : stageKey('normal', preferences.highestUnlockedByMode.normal);
+    let activeMode: GameMode = stageRef(selectedStageKey).mode;
+    let pickerNotice = '';
     let activePointer: ActivePointer | null = null;
     let invalidTimer = 0;
     let lastHudKey = '';
@@ -267,6 +279,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     scope.add(() => globalThis.clearTimeout(invalidTimer));
 
     function overlayBody(snapshot: GameRuntimeSnapshot): string {
+      if (pickerNotice !== '') return pickerNotice;
       if (snapshot.phase === 'ready') {
         return '스테이지를 고르고 게임 시작을 눌러 주세요.';
       }
@@ -287,7 +300,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
 
     function render(): void {
       const snapshot = runtime.getSnapshot();
-      const stage = getStageDefinition(snapshot.game.stageId);
+      const stage = getStageDefinition(snapshot.game.stageKey);
       if (renderedGame !== snapshot.game) {
         renderedGame = snapshot.game;
         effects = [];
@@ -345,22 +358,21 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
 
       const body = overlayBody(snapshot);
       const pickerVisible = stateOverlayVisible(snapshot);
-      const normalRecords = Object.fromEntries(
-        STAGE_IDS.map((id) => [id, stageRecordFor(preferences, `normal-${id}`)]),
-      );
       renderStagePicker(
         hud,
-        selectedStageId,
-        preferences.highestUnlockedByMode.normal,
-        normalRecords,
+        activeMode,
+        selectedStageKey,
+        preferences,
         pickerVisible,
       );
       const overlayKey = [
         snapshot.phase,
         body,
-        snapshot.game.stageId,
-        selectedStageId,
+        snapshot.game.stageKey,
+        selectedStageKey,
+        activeMode,
         preferences.highestUnlockedByMode.normal,
+        preferences.highestUnlockedByMode.nightmare,
       ].join('|');
       if (overlayKey !== lastOverlayKey) {
         lastOverlayKey = overlayKey;
@@ -368,10 +380,10 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
           hud,
           snapshot.phase,
           body,
-          stageActionLabel(snapshot.phase, snapshot.game.stageId, selectedStageId),
+          stageActionLabel(snapshot.phase, snapshot.game.stageKey, selectedStageKey),
         );
         if (snapshot.phase === 'victory' || snapshot.phase === 'defeat') {
-          const stageRecord = stageRecordFor(preferences, snapshot.game.stageId);
+          const stageRecord = stageRecordFor(preferences, snapshot.game.stageKey);
           const score = calculateGameScore(
             snapshot.game,
             snapshot.game.outcome,
@@ -407,7 +419,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       });
 
       const hudKey = [
-        snapshot.game.stageId,
+        snapshot.game.stageKey,
         snapshot.game.gold,
         snapshot.game.baseHp,
         snapshot.game.wave.index,
@@ -422,7 +434,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       if (hudKey !== lastHudKey) {
         lastHudKey = hudKey;
         renderHud(hud, {
-          stageId: snapshot.game.stageId,
+          stageKey: snapshot.game.stageKey,
           gold: snapshot.game.gold,
           baseHp: snapshot.game.baseHp,
           waveIndex: snapshot.game.wave.index,
@@ -444,7 +456,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     const scheduler = createAppScheduler(scope, () => runtime.getSnapshot());
     runtime = createGameRuntime({
       scheduler,
-      createGame: () => createGame(selectedStageId),
+      createGame: () => createGame(selectedStageKey),
       updateGame(game, deltaSeconds) {
         const nextProjectileId = game.nextProjectileId;
         const baseHp = game.baseHp;
@@ -461,7 +473,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         const game = runtime.getSnapshot().game;
         const score = calculateGameScore(game, outcome, elapsedSeconds);
         const recorded = recordOutcome(storage, {
-          stageKey: `normal-${game.stageId}`,
+          stageKey: game.stageKey,
           score: score.total,
           stars: score.stars,
           bossDefeated: game.stats.bossDefeated,
@@ -470,8 +482,9 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         }, preferences);
         preferences = recorded.preferences;
         newBestScore = recorded.newBestScore;
-        if (outcome === 'victory' && game.stageId < 6) {
-          selectedStageId = (game.stageId + 1) as StageId;
+        if (outcome === 'victory') {
+          selectedStageKey = recorded.unlockedStageKey ?? game.stageKey;
+          activeMode = stageRef(selectedStageKey).mode;
         }
       },
     });
@@ -515,6 +528,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       effects = [];
       renderedGame = null;
       newBestScore = false;
+      pickerNotice = '';
       hud.placementStatus.textContent = '타워를 선택해 주세요.';
       preferences = recordAttempt(storage, preferences);
       runtime.startGame();
@@ -581,16 +595,39 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       const phase = runtime.getSnapshot().phase;
       if (phase === 'ready' || phase === 'victory' || phase === 'defeat') startNewGame();
     });
-    for (const stageId of STAGE_IDS) {
-      scope.listen(hud.stageButtons[stageId], 'click', () => {
+    for (const mode of GAME_MODES) {
+      scope.listen(hud.modeTabs[mode], 'click', () => {
         const phase = runtime.getSnapshot().phase;
         if (
           phase !== 'ready'
           && phase !== 'victory'
           && phase !== 'defeat'
         ) return;
-        if (stageId > preferences.highestUnlockedByMode.normal) return;
-        selectedStageId = stageId;
+        if (mode === 'nightmare' && preferences.highestUnlockedByMode.nightmare === 0) {
+          pickerNotice = '노멀 6을 클리어하면 열려요.';
+          runtime.renderNow();
+          return;
+        }
+        pickerNotice = '';
+        activeMode = mode;
+        selectedStageKey = mode === 'normal'
+          ? stageKey('normal', preferences.highestUnlockedByMode.normal)
+          : stageKey('nightmare', preferences.highestUnlockedByMode.nightmare || 1);
+        runtime.renderNow();
+      });
+    }
+    for (const key of ALL_STAGE_KEYS) {
+      scope.listen(hud.stageButtons[key], 'click', () => {
+        const phase = runtime.getSnapshot().phase;
+        if (
+          phase !== 'ready'
+          && phase !== 'victory'
+          && phase !== 'defeat'
+        ) return;
+        if (!isStageUnlocked(preferences, key)) return;
+        pickerNotice = '';
+        selectedStageKey = key;
+        activeMode = stageRef(key).mode;
         runtime.renderNow();
       });
     }

@@ -4,7 +4,7 @@ import type { GameState } from './createGame';
 
 export function updateEnemies(state: GameState, dt: number): void {
   const safeDt = Number.isFinite(dt) && dt >= 0 ? dt : 0;
-  const stage = getStageDefinition(state.stageId);
+  const stage = getStageDefinition(state.stageKey);
   const routeLength = stage.map.pathCells.length - 1;
   const survivors = [];
 

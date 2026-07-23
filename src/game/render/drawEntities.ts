@@ -1,7 +1,7 @@
 import { enemyPosition, selectTarget } from '../combat/targeting';
 import { cellCenter } from '../core/geometry';
 import type { GameEnemy, GameTower } from '../simulation/createGame';
-import type { StageId } from '../stages/stageCatalog';
+import type { StageKey } from '../stages/stageIdentity';
 import type { TowerType } from '../towers/towerCatalog';
 import type { Cell, Vec2 } from '../types';
 import type { GameAssets, LoadedSprite } from './assetLoader';
@@ -19,7 +19,7 @@ import {
 import { drawSpriteFrame } from './spriteSheet';
 
 export type RenderEntitiesSnapshot = {
-  readonly stageId: StageId;
+  readonly stageKey: StageKey;
   readonly enemies: readonly Readonly<GameEnemy>[];
   readonly towers: readonly Readonly<GameTower>[];
 };
@@ -87,10 +87,10 @@ function towerSprite(
   layout: CanvasLayout,
 ): LoadedSprite {
   if (tower.type !== 'arrow') return assets.towers[tower.type];
-  const target = selectTarget(tower, snapshot.enemies, snapshot.stageId);
+  const target = selectTarget(tower, snapshot.enemies, snapshot.stageKey);
   const targetPosition = target === undefined
     ? undefined
-    : enemyPosition(target, snapshot.stageId);
+    : enemyPosition(target, snapshot.stageKey);
   if (targetPosition === undefined) return assets.towers.arrow.se;
   const towerScreen = projectWorldPoint(layout, tower.position);
   const targetScreen = projectWorldPoint(layout, targetPosition);
@@ -273,7 +273,7 @@ export function drawEntities(
     }
   }
   for (const enemy of snapshot.enemies) {
-    const position = enemyPosition(enemy, snapshot.stageId);
+    const position = enemyPosition(enemy, snapshot.stageKey);
     if (position !== undefined && isRenderableWorldPoint(layout, position)) {
       bodies.push({ kind: 'enemy', id: enemy.id, position, enemy });
     }

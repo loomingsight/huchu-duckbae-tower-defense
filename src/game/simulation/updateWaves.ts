@@ -9,7 +9,7 @@ const TIME_EPSILON = 1e-12;
 
 export function spawnEnemy(state: GameState, type: EnemyType, waveIndex: number): void {
   const definition = ENEMY_CATALOG[type];
-  const stage = getStageDefinition(state.stageId);
+  const stage = getStageDefinition(state.stageKey);
   const scaledHp = definition.hp * stage.hpMultiplier * (1 + waveIndex * 0.08);
   state.enemies.push({
     id: state.nextEnemyId,
@@ -32,7 +32,7 @@ export function updateWaves(state: GameState, dt: number): void {
   if (!Number.isFinite(dt) || dt < 0) return;
 
   let remaining = dt;
-  const stage = getStageDefinition(state.stageId);
+  const stage = getStageDefinition(state.stageKey);
   let canSpawnAtCurrentTime = remaining > 0;
   let steps = 0;
   while (steps < MAX_WAVE_SPAWNS_PER_UPDATE) {

@@ -4,7 +4,7 @@ import type {
   GameProjectile,
   GameTower,
 } from '../simulation/createGame';
-import type { StageId } from '../stages/stageCatalog';
+import type { StageKey } from '../stages/stageIdentity';
 import { TOWER_CATALOG } from '../towers/towerCatalog';
 import type { Vec2 } from '../types';
 import type { GameAssets, LoadedSprite } from './assetLoader';
@@ -27,7 +27,7 @@ export type FloatingGold = {
 };
 
 export type EffectSnapshot = {
-  readonly stageId: StageId;
+  readonly stageKey: StageKey;
   readonly towers: readonly Readonly<GameTower>[];
   readonly projectiles: readonly Readonly<GameProjectile>[];
   readonly enemies: readonly Readonly<GameEnemy>[];
@@ -49,7 +49,7 @@ function projectileFrame(
   const target = snapshot.enemies.find((enemy) => enemy.id === projectile.targetId);
   const targetPosition = target === undefined
     ? undefined
-    : enemyPosition(target, snapshot.stageId);
+    : enemyPosition(target, snapshot.stageKey);
   if (targetPosition === undefined) return 0;
   const current = projectWorldPoint(layout, projectile.position);
   const destination = projectWorldPoint(layout, targetPosition);
