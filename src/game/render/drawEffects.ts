@@ -234,23 +234,25 @@ function drawTraitEffect(
     const opening = effect.kind === 'shield-open'
       ? 0.55 + 0.45 * Math.min(1, progress * 2.4)
       : 1;
-    const alpha = effect.kind === 'shield-block'
-      ? 0.92 * (1 - progress)
-      : 0.54 * (1 - progress * 0.6);
-    ctx.globalAlpha = alpha;
-    ctx.fillStyle = effect.kind === 'shield-block' ? '#e8efff' : '#7187d8';
-    ctx.strokeStyle = '#b9c8ff';
+    ctx.globalAlpha = effect.kind === 'shield-block'
+      ? 1 - progress
+      : 1 - progress * 0.72;
+    ctx.fillStyle = effect.kind === 'shield-block'
+      ? 'rgba(105, 126, 220, 0.48)'
+      : 'rgba(91, 111, 202, 0.32)';
+    ctx.strokeStyle = '#d7e0ff';
     ctx.lineWidth = Math.max(1.5, visualUnit * 0.045);
-    ctx.beginPath();
-    ctx.ellipse(
-      center.x - visualUnit * 0.13,
-      center.y - visualUnit * 0.28,
-      visualUnit * 0.32 * opening,
-      visualUnit * 0.44 * opening,
-      0,
-      0,
-      Math.PI * 2,
-    );
+    const shieldWidth = visualUnit * 0.34 * opening;
+    const shieldHeight = visualUnit * 0.58 * opening;
+    const shieldCenterY = center.y - visualUnit * 0.16;
+    tracePoints(ctx, [
+      { x: center.x - shieldWidth, y: shieldCenterY - shieldHeight * 0.42 },
+      { x: center.x, y: shieldCenterY - shieldHeight * 0.58 },
+      { x: center.x + shieldWidth, y: shieldCenterY - shieldHeight * 0.42 },
+      { x: center.x + shieldWidth * 0.86, y: shieldCenterY + shieldHeight * 0.2 },
+      { x: center.x, y: shieldCenterY + shieldHeight * 0.58 },
+      { x: center.x - shieldWidth * 0.86, y: shieldCenterY + shieldHeight * 0.2 },
+    ]);
     ctx.fill();
     ctx.stroke();
   } else if (effect.kind === 'shield-break') {

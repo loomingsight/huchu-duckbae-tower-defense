@@ -519,6 +519,30 @@ describe('renderer layer order', () => {
     expect(calls.some((call) => imageTag(call) === 'vfx-aqua-burst')).toBe(false);
   });
 
+  it('draws slow resistance as purple wings and a broken cyan ring without shield copy', () => {
+    const { context, calls } = createRecordingContext();
+    const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
+    const effects = effectsForTraits([{
+      kind: 'slow-resist',
+      enemyId: 1,
+      position: { x: 2.5, y: 2.5 },
+    }]);
+
+    renderer.render(snapshot({ stageKey: 'normal-1' }), {
+      timeSeconds: 0.1,
+      effects,
+    });
+
+    expect(calls.some(({ fillStyle }) => fillStyle === '#a15ce0')).toBe(true);
+    expect(calls.filter(({ method, strokeStyle }) => (
+      method === 'stroke' && strokeStyle === '#73d7ff'
+    ))).toHaveLength(2);
+    expect(calls.some(({ method }) => method === 'fillText')).toBe(false);
+    expect(calls.some(({ fillStyle }) => (
+      fillStyle === 'rgba(105, 126, 220, 0.48)'
+    ))).toBe(false);
+  });
+
   it('renders buffered trait primitives and nightmare stage presentations', () => {
     const { context, calls } = createRecordingContext();
     const renderer = createCanvasRenderer(createTestCanvas(context), createTestAssets());
@@ -527,12 +551,17 @@ describe('renderer layer order', () => {
       bossSpawnedAtSeconds: 0,
     });
     const effects = effectsForTraits([
+      { kind: 'shield-block', enemyId: 0, position: { x: 1.5, y: 2.5 } },
       { kind: 'shield-break', enemyId: 1, position: { x: 2.5, y: 3.5 } },
       { kind: 'lich-aura', enemyId: 2, position: { x: 4.5, y: 5.5 }, radius: 2.7 },
     ]);
 
     renderer.render(state, { timeSeconds: 0.3, effects });
 
+    expect(calls.some((call) => (
+      call.method === 'fill' && call.fillStyle === 'rgba(105, 126, 220, 0.48)'
+    ))).toBe(true);
+    expect(calls.some((call) => call.strokeStyle === '#d7e0ff')).toBe(true);
     expect(calls.some((call) => call.strokeStyle === '#a9bbff')).toBe(true);
     expect(calls.some((call) => (
       typeof call.strokeStyle === 'string'

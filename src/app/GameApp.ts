@@ -38,6 +38,7 @@ import {
   renderStagePicker,
   renderResultPanel,
   renderHud,
+  renderTraitNotice,
   showPlacementActions,
   showStateOverlay,
   stageActionLabel,
@@ -53,6 +54,11 @@ import {
   saveMutedPreference,
   stageRecordFor,
 } from './preferences';
+import {
+  createTraitNoticeState,
+  traitNoticeView,
+  updateTraitNoticeState,
+} from './traitNotice';
 
 export type GameApp = Readonly<{
   destroy(): void;
@@ -260,6 +266,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     let lastRenderedGold = 0;
     let newBestScore = false;
     let newBadge = false;
+    let traitNoticeState = createTraitNoticeState();
     const frameEvents = createFrameEventBuffer();
     const renderer = await createRendererWithFallback(hud.canvas);
     const reducedMotionQuery = typeof globalThis.matchMedia === 'function'
@@ -314,6 +321,17 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         frameEvents.reset();
       }
       const frame = frameEvents.peek();
+      traitNoticeState = updateTraitNoticeState(
+        traitNoticeState,
+        frame.traitEvents,
+        snapshot.elapsedSeconds,
+      );
+      renderTraitNotice(
+        hud,
+        snapshot.phase === 'playing' || snapshot.phase === 'paused'
+          ? traitNoticeView(traitNoticeState, snapshot.elapsedSeconds)
+          : null,
+      );
       const effectDelta = Math.max(0, snapshot.elapsedSeconds - lastEffectTimeSeconds);
       const nextEffects = [
         ...updateEffects(effects, effectDelta),
@@ -543,6 +561,8 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       renderedGame = null;
       newBestScore = false;
       newBadge = false;
+      traitNoticeState = createTraitNoticeState();
+      renderTraitNotice(hud, null);
       pickerNotice = '';
       hud.placementStatus.textContent = '타워를 선택해 주세요.';
       preferences = recordAttempt(storage, preferences);
