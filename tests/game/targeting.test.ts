@@ -11,7 +11,7 @@ function enemy(id: number, progress: number, hp = 42): GameEnemy {
     hp,
     maxHp: 42,
     progress,
-    speedMultiplier: 1,
+    slowMultiplier: 1,
     rewarded: false,
   };
 }

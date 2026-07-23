@@ -69,7 +69,7 @@ describe('entity depth rendering', () => {
         hp: 42,
         maxHp: 42,
         progress,
-        speedMultiplier: 1,
+        slowMultiplier: 1,
         rewarded: false,
         lastHitAtSeconds: null,
       }],
@@ -91,8 +91,8 @@ describe('entity depth rendering', () => {
         { id: 2, type: 'huchu', cell: { col: 8, row: 6 }, position: { x: 8.5, y: 6.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
       ],
       enemies: [
-        { id: 1, type: 'slime', hp: 20, maxHp: 42, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: 0 },
-        { id: 2, type: 'orc', hp: 80, maxHp: 110, progress: 11, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: 0 },
+        { id: 1, type: 'slime', hp: 20, maxHp: 42, progress: 0, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: 0 },
+        { id: 2, type: 'orc', hp: 80, maxHp: 110, progress: 11, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: 0 },
       ],
     });
 
@@ -151,10 +151,10 @@ describe('entity depth rendering', () => {
     const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
     const state = snapshot({
       enemies: [
-        { id: 1, type: 'slime', hp: 42, maxHp: 42, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
-        { id: 2, type: 'golem', hp: 320, maxHp: 320, progress: 6, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
-        { id: 3, type: 'orc', hp: 110, maxHp: 110, progress: 11, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
-        { id: 4, type: 'fairy', hp: 32, maxHp: 32, progress: 16, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 1, type: 'slime', hp: 42, maxHp: 42, progress: 0, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 2, type: 'golem', hp: 320, maxHp: 320, progress: 6, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 3, type: 'orc', hp: 110, maxHp: 110, progress: 11, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 4, type: 'fairy', hp: 32, maxHp: 32, progress: 16, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
       ],
     });
 
@@ -193,7 +193,7 @@ describe('entity depth rendering', () => {
       hp: 110,
       maxHp: 110,
       progress: 0,
-      speedMultiplier: 1,
+      slowMultiplier: 1,
       rewarded: false,
       lastHitAtSeconds: null,
     };
@@ -233,8 +233,8 @@ describe('entity depth rendering', () => {
     const { context, calls } = createRecordingContext();
     drawEntities(context, layout, snapshot({
       enemies: [
-        { id: 1, type: 'slime', hp: 42, maxHp: 42, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
-        { id: 2, type: 'orc', hp: 110, maxHp: 110, progress: 11, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 1, type: 'slime', hp: 42, maxHp: 42, progress: 0, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 2, type: 'orc', hp: 110, maxHp: 110, progress: 11, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
       ],
     }), createTestAssets(), { timeSeconds: 0 });
 
@@ -287,7 +287,7 @@ describe('renderer layer order', () => {
         hp: 42,
         maxHp: 42,
         progress: stage.map.pathCells.length - 1,
-        speedMultiplier: 1,
+        slowMultiplier: 1,
         rewarded: false,
         lastHitAtSeconds: null,
       }],
@@ -400,8 +400,8 @@ describe('renderer layer order', () => {
         { id: 1, type: 'slow', cell: { col: 1, row: 1 }, position: { x: 1.5, y: 1.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
       ],
       enemies: [
-        { id: 1, type: 'slime', hp: 42, maxHp: 42, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
-        { id: 2, type: 'orc', hp: 110, maxHp: 110, progress: 11, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 1, type: 'slime', hp: 42, maxHp: 42, progress: 0, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 2, type: 'orc', hp: 110, maxHp: 110, progress: 11, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
       ],
       projectiles: [
         { id: 1, towerType: 'huchu', position: { x: 2.5, y: 2.5 }, targetId: 1, damage: 72, speed: 5, splash: 1.25 },
@@ -423,7 +423,7 @@ describe('renderer layer order', () => {
         { id: 1, type: 'slow', cell: { col: 1, row: 1 }, position: { x: 1.5, y: 1.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
       ],
       enemies: [
-        { id: 1, type: 'slime', hp: 20, maxHp: 42, progress: 0, speedMultiplier: 0.62, rewarded: false, lastHitAtSeconds: 0 },
+        { id: 1, type: 'slime', hp: 20, maxHp: 42, progress: 0, slowMultiplier: 0.62, rewarded: false, lastHitAtSeconds: 0 },
       ],
       projectiles: [
         { id: 1, towerType: 'huchu', position: { x: 2.5, y: 2.5 }, targetId: 1, damage: 72, speed: 5, splash: 1.25 },
@@ -482,7 +482,7 @@ describe('renderer boundaries', () => {
         hp: 20,
         maxHp: 42,
         progress: 0,
-        speedMultiplier: 1,
+        slowMultiplier: 1,
         rewarded: false,
         lastHitAtSeconds: 1,
       }],
@@ -522,7 +522,7 @@ describe('renderer boundaries', () => {
           hp: 900,
           maxHp: 1800,
           progress: 0,
-          speedMultiplier: 1,
+          slowMultiplier: 1,
           rewarded: false,
           lastHitAtSeconds: null,
         }],
@@ -546,7 +546,7 @@ describe('renderer boundaries', () => {
         { id: 1, type: 'arrow', cell: { col: 1, row: 1 }, position: { x: 1.5, y: 1.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
       ],
       enemies: [
-        { id: 1, type: 'slime', hp: 20, maxHp: 42, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
+        { id: 1, type: 'slime', hp: 20, maxHp: 42, progress: 0, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: null },
       ],
     }));
     const before = JSON.stringify(state);
@@ -563,7 +563,7 @@ describe('renderer boundaries', () => {
         { id: 1, type: 'huchu', cell: { col: 1, row: 1 }, position: { x: Number.POSITIVE_INFINITY, y: 1.5 }, cooldownRemaining: 0, placedAtSeconds: 0 },
       ],
       enemies: [
-        { id: 1, type: 'slime', hp: Number.NaN, maxHp: 0, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: 0 },
+        { id: 1, type: 'slime', hp: Number.NaN, maxHp: 0, progress: 0, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: 0 },
       ],
       projectiles: [
         { id: 1, towerType: 'huchu', position: { x: Number.NaN, y: 2.5 }, targetId: 1, damage: 72, speed: 5, splash: 1.25 },
@@ -619,8 +619,8 @@ describe('renderer boundaries', () => {
     const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
     const state = snapshot({
       enemies: [
-        { id: 1, type: 'slime', hp: -10, maxHp: 100, progress: 0, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: 0 },
-        { id: 2, type: 'slime', hp: 200, maxHp: 100, progress: 0.1, speedMultiplier: 1, rewarded: false, lastHitAtSeconds: 0 },
+        { id: 1, type: 'slime', hp: -10, maxHp: 100, progress: 0, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: 0 },
+        { id: 2, type: 'slime', hp: 200, maxHp: 100, progress: 0.1, slowMultiplier: 1, rewarded: false, lastHitAtSeconds: 0 },
       ],
     });
 

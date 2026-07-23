@@ -5,9 +5,11 @@ import { updateTowers } from '../combat/updateTowers';
 import { updateEnemies } from './updateEnemies';
 import { updateWaves } from './updateWaves';
 import { getStageDefinition } from '../stages/stageCatalog';
+import { updateEnemyTraits } from '../enemies/enemyTraits';
 
 export function updateGame(state: GameState, dt: number): void {
   state.hitEvents = [];
+  state.traitEvents = [];
   if (state.outcome !== 'playing') return;
 
   const safeDt = Number.isFinite(dt) && dt >= 0 ? dt : 0;
@@ -17,6 +19,7 @@ export function updateGame(state: GameState, dt: number): void {
   updateSlow(state);
   updateTowers(state, safeDt);
   updateProjectiles(state, safeDt);
+  updateEnemyTraits(state, safeDt);
   updateEnemies(state, safeDt);
   const activeEnemyIds = new Set(state.enemies.map((enemy) => enemy.id));
   state.projectiles = state.projectiles.filter((projectile) => (

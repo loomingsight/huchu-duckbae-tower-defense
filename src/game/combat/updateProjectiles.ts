@@ -1,12 +1,7 @@
-import type { GameEnemy, GameState } from '../simulation/createGame';
+import { applyEnemyDamage } from '../enemies/enemyTraits';
+import type { GameState } from '../simulation/createGame';
 import { isWithinRadius } from './radius';
 import { enemyPosition } from './targeting';
-
-function applyDamage(state: GameState, enemy: GameEnemy, damage: number): void {
-  const previousHp = enemy.hp;
-  enemy.hp = Math.max(0, enemy.hp - damage);
-  if (enemy.hp < previousHp) enemy.lastHitAtSeconds = state.elapsedSeconds;
-}
 
 export function updateProjectiles(state: GameState, dt: number): void {
   state.hitEvents = [];
@@ -34,11 +29,11 @@ export function updateProjectiles(state: GameState, dt: number): void {
           const position = enemyPosition(enemy, state.stageKey);
           if (position === undefined) continue;
           if (isWithinRadius(impactPosition, position, projectile.splash)) {
-            applyDamage(state, enemy, projectile.damage);
+            applyEnemyDamage(state, enemy, projectile.damage);
           }
         }
       } else {
-        applyDamage(state, target, projectile.damage);
+        applyEnemyDamage(state, target, projectile.damage);
       }
 
       state.hitEvents.push({

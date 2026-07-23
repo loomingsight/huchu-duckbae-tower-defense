@@ -80,7 +80,7 @@ describe('tower combat', () => {
 
     updateGame(state, 1);
 
-    expect(state.enemies[0].speedMultiplier).toBe(0.62);
+    expect(state.enemies[0].slowMultiplier).toBe(0.62);
     expect(state.enemies[0].progress).toBeCloseTo(1.15 * 0.62);
     expect(state.enemies[0].hp).toBe(ENEMY_CATALOG.slime.hp);
     expect(state.projectiles).toEqual([]);
@@ -91,12 +91,12 @@ describe('tower combat', () => {
     state.wave.allSpawned = true;
     placeTower(state, 'slow', { col: 0, row: 1 });
     spawnEnemy(state, 'slime', 0);
-    state.enemies[0].speedMultiplier = 0.62;
+    state.enemies[0].slowMultiplier = 0.62;
     state.enemies[0].progress = 10;
 
     updateGame(state, 1);
 
-    expect(state.enemies[0].speedMultiplier).toBe(1);
+    expect(state.enemies[0].slowMultiplier).toBe(1);
     expect(state.enemies[0].progress).toBeCloseTo(11.15);
   });
 
@@ -111,7 +111,7 @@ describe('tower combat', () => {
 
     updateSlow(state);
 
-    expect(state.enemies.map(({ speedMultiplier }) => speedMultiplier)).toEqual([0.62, 1]);
+    expect(state.enemies.map(({ slowMultiplier }) => slowMultiplier)).toEqual([0.62, 1]);
   });
 
   it('removes a projectile without impact when its target has already died', () => {

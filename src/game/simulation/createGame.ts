@@ -1,4 +1,8 @@
-import type { EnemyType } from '../enemies/enemyCatalog';
+import type {
+  EnemyType,
+  EnemyVariant,
+} from '../enemies/enemyCatalog';
+import type { EnemyTraitVisualEvent } from '../enemies/enemyTraits';
 import { getStageDefinition } from '../stages/stageCatalog';
 import {
   DEFAULT_STAGE_KEY,
@@ -14,10 +18,24 @@ export const INITIAL_GOLD = 320;
 export type GameEnemy = {
   id: number;
   type: EnemyType;
+  variant: EnemyVariant;
   hp: number;
   maxHp: number;
   progress: number;
-  speedMultiplier: number;
+  baseSpeed: number;
+  slowMultiplier: number;
+  auraMultiplier: number;
+  auraRemaining: number;
+  reward: number;
+  leak: number;
+  combatScore: number;
+  boss: boolean;
+  splitGeneration: 0 | 1;
+  shieldHitsRemaining: number;
+  lastSlowResistEffectAtSeconds: number | null;
+  armorStage: 0 | 1 | 2;
+  auraCooldownRemaining: number;
+  lichPhase: 1 | 2;
   rewarded: boolean;
   lastHitAtSeconds: number | null;
 };
@@ -71,6 +89,7 @@ export type GameState = {
   projectiles: GameProjectile[];
   nextProjectileId: number;
   hitEvents: GameHitEvent[];
+  traitEvents: EnemyTraitVisualEvent[];
   wave: WaveState;
   bossSpawnedAtSeconds: number | null;
   stats: {
@@ -78,6 +97,7 @@ export type GameState = {
     leakedEnemies: number;
     completedWaves: number;
     bossDefeated: boolean;
+    combatScore: number;
   };
 };
 
@@ -96,6 +116,7 @@ export function createGame(value: unknown = DEFAULT_STAGE_KEY): GameState {
     projectiles: [],
     nextProjectileId: 1,
     hitEvents: [],
+    traitEvents: [],
     wave: {
       index: 0,
       groupIndex: 0,
@@ -111,6 +132,7 @@ export function createGame(value: unknown = DEFAULT_STAGE_KEY): GameState {
       leakedEnemies: 0,
       completedWaves: 0,
       bossDefeated: false,
+      combatScore: 0,
     },
   };
 }
