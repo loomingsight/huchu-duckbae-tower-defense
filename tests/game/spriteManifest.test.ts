@@ -24,6 +24,8 @@ describe('ENEMY_SPRITES', () => {
       }
       expect(new Set(directions.map((direction) => ENEMY_SPRITES[type][direction])).size).toBe(1);
     }
+
+    expect(Object.keys(ENEMY_SPRITES).sort()).toEqual([...types].sort());
   });
 
   it('uses 256px master sprites for entities and effects while maps stay at 128px', () => {

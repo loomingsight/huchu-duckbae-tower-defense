@@ -49,6 +49,11 @@ export function createTestAssets(): GameAssets {
       orc: directions('enemy-orc'),
       golem: directions('enemy-golem'),
       minotaur: directions('enemy-minotaur'),
+      shadowSlime: directions('enemy-shadow-slime'),
+      vampireBat: directions('enemy-vampire-bat'),
+      skeletonKnight: directions('enemy-skeleton-knight'),
+      obsidianGolem: directions('enemy-obsidian-golem'),
+      lichKing: directions('enemy-lich-king'),
     },
     motion: {
       orc: taggedImage('motion-orc', 256 * 6),

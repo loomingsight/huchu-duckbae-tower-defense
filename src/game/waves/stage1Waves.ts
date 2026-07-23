@@ -1,9 +1,14 @@
-import { ENEMY_TYPES, type EnemyType } from '../enemies/enemyCatalog';
+import {
+  ENEMY_TYPES,
+  type EnemyType,
+  type EnemyVariant,
+} from '../enemies/enemyCatalog';
 
 export type WaveGroup = {
   type: EnemyType;
   count: number;
   spawnInterval: number;
+  variant?: EnemyVariant;
 };
 
 export type Wave = {
@@ -13,7 +18,7 @@ export type Wave = {
 export function isValidWaveGroup(group: unknown): group is WaveGroup {
   if (typeof group !== 'object' || group === null) return false;
   const candidate = group as Partial<WaveGroup>;
-  const { type, count, spawnInterval } = candidate;
+  const { type, count, spawnInterval, variant } = candidate;
   return typeof type === 'string'
     && (ENEMY_TYPES as readonly string[]).includes(type)
     && typeof count === 'number'
@@ -21,7 +26,11 @@ export function isValidWaveGroup(group: unknown): group is WaveGroup {
     && count > 0
     && typeof spawnInterval === 'number'
     && Number.isFinite(spawnInterval)
-    && spawnInterval >= 0;
+    && spawnInterval >= 0
+    && (variant === undefined
+      || variant === 'standard'
+      || variant === 'elite'
+      || variant === 'split-child');
 }
 
 export const STAGE_1_WAVES: readonly Wave[] = [

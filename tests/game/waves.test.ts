@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createGame } from '../../src/game/simulation/createGame';
 import { updateWaves } from '../../src/game/simulation/updateWaves';
+import { createNightmareWaves } from '../../src/game/waves/nightmareWaves';
 import { isValidWaveGroup, STAGE_1_WAVES } from '../../src/game/waves/stage1Waves';
 
 describe('stage 1 waves', () => {
@@ -41,5 +42,34 @@ describe('stage 1 waves', () => {
     expect(isValidWaveGroup({ type: 'slime', count: Number.POSITIVE_INFINITY, spawnInterval: 0 }))
       .toBe(false);
     expect(isValidWaveGroup({ type: 'slime', count: 1, spawnInterval: Number.NaN })).toBe(false);
+    expect(isValidWaveGroup({
+      type: 'skeletonKnight',
+      count: 1,
+      spawnInterval: 0,
+      variant: 'elite',
+    })).toBe(true);
+    expect(isValidWaveGroup({
+      type: 'skeletonKnight',
+      count: 1,
+      spawnInterval: 0,
+      variant: 'legendary',
+    })).toBe(false);
+  });
+
+  it('creates ten deterministic nightmare waves with one elite and one lich', () => {
+    const first = createNightmareWaves(4);
+    const second = createNightmareWaves(4);
+
+    expect(first).toEqual(second);
+    expect(first).toHaveLength(10);
+    expect(first.flatMap(({ groups }) => groups)
+      .filter(({ variant }) => variant === 'elite')).toHaveLength(1);
+    expect(first.slice(0, 9).flatMap(({ groups }) => groups)
+      .some(({ type }) => type === 'lichKing')).toBe(false);
+    expect(first[9].groups.at(-1)).toEqual({
+      type: 'lichKing',
+      count: 1,
+      spawnInterval: 0,
+    });
   });
 });

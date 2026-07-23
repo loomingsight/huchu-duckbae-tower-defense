@@ -22,7 +22,10 @@ export const ENEMY_SPRITES = {
   orc: frontFacingSprites(new URL('../../../assets/renders/enemies-v1/orc/orc-se-v1.png', import.meta.url).href),
   golem: frontFacingSprites(new URL('../../../assets/renders/enemies-v1/golem/golem-se-v1.png', import.meta.url).href),
   minotaur: frontFacingSprites(new URL('../../../assets/renders/enemies-v1/minotaur/minotaur-se-v1.png', import.meta.url).href),
-} as const satisfies Readonly<Record<EnemyType, Readonly<Record<SpriteDirection, string>>>>;
+} as const satisfies Readonly<Partial<Record<
+  EnemyType,
+  Readonly<Record<SpriteDirection, string>>
+>>>;
 
 export const MAP_SPRITE_KEYS = [
   'grass',

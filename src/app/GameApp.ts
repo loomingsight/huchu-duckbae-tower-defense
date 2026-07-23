@@ -72,6 +72,11 @@ const EMPTY_ASSETS: GameAssets = {
     orc: EMPTY_DIRECTIONS,
     golem: EMPTY_DIRECTIONS,
     minotaur: EMPTY_DIRECTIONS,
+    shadowSlime: EMPTY_DIRECTIONS,
+    vampireBat: EMPTY_DIRECTIONS,
+    skeletonKnight: EMPTY_DIRECTIONS,
+    obsidianGolem: EMPTY_DIRECTIONS,
+    lichKing: EMPTY_DIRECTIONS,
   },
   motion: { orc: null, fairy: null },
   vfx: {

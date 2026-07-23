@@ -33,6 +33,11 @@ describe('loadGameAssets', () => {
     expect(assets.towers.deokbae).toBeInstanceOf(MixedResultImage);
     expect(Object.values(assets.enemies.slime).every((image) => image === null)).toBe(true);
     expect(assets.enemies.fairy.ne).toBeInstanceOf(MixedResultImage);
+    expect(Object.values(assets.enemies.shadowSlime).every((image) => image === null)).toBe(true);
+    expect(Object.values(assets.enemies.vampireBat).every((image) => image === null)).toBe(true);
+    expect(Object.values(assets.enemies.skeletonKnight).every((image) => image === null)).toBe(true);
+    expect(Object.values(assets.enemies.obsidianGolem).every((image) => image === null)).toBe(true);
+    expect(Object.values(assets.enemies.lichKing).every((image) => image === null)).toBe(true);
     expect(assets.map.grass).toBeInstanceOf(MixedResultImage);
     expect(assets.motion.orc).toBeInstanceOf(MixedResultImage);
     expect(assets.vfx.aquaBurst).toBeInstanceOf(MixedResultImage);

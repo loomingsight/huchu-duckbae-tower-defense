@@ -14,6 +14,13 @@ export type LoadedSprite = HTMLImageElement | null;
 
 export type DirectionalSprites = Readonly<Record<SpriteDirection, LoadedSprite>>;
 
+const EMPTY_DIRECTIONS: DirectionalSprites = {
+  ne: null,
+  se: null,
+  sw: null,
+  nw: null,
+};
+
 export type GameAssets = {
   map: Readonly<Record<MapSpriteKey, LoadedSprite>>;
   towers: Readonly<{
@@ -134,7 +141,18 @@ export async function loadGameAssets(): Promise<GameAssets> {
       snackChest,
     },
     towers: { arrow, deokbae, huchu, slow },
-    enemies: { slime, fairy, orc, golem, minotaur },
+    enemies: {
+      slime,
+      fairy,
+      orc,
+      golem,
+      minotaur,
+      shadowSlime: EMPTY_DIRECTIONS,
+      vampireBat: EMPTY_DIRECTIONS,
+      skeletonKnight: EMPTY_DIRECTIONS,
+      obsidianGolem: EMPTY_DIRECTIONS,
+      lichKing: EMPTY_DIRECTIONS,
+    },
     motion: { orc: orcMotion, fairy: fairyMotion },
     vfx: { arrow: arrowVfx, fireball, waterball, arrowImpact, fireBurst, aquaBurst },
   };

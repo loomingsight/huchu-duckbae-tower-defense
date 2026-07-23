@@ -240,6 +240,8 @@ function drawEnemyBody(
     * (enemy.type === 'fairy' ? 0.22 : 0.09);
   const squash = enemy.type === 'slime' ? 1 + wave * 0.08 : 1;
   const center = projectWorldPoint(layout, position);
+  const fallbackSize = ENEMY_SIZES[enemy.type as keyof typeof ENEMY_SIZES] ?? 2.2;
+  const fallbackColor = ENEMY_COLORS[enemy.type as keyof typeof ENEMY_COLORS] ?? '#76558f';
 
   ctx.save();
   ctx.translate(center.x, center.y - bounce);
@@ -249,8 +251,8 @@ function drawEnemyBody(
     sprite,
     frame,
     motion === null ? SPRITE_FRAME_SIZES.enemy : SPRITE_FRAME_SIZES.motion,
-    layout.tileWidth * ENEMY_SIZES[enemy.type] * depthScale,
-    ENEMY_COLORS[enemy.type],
+    layout.tileWidth * fallbackSize * depthScale,
+    fallbackColor,
     enemy.type.slice(0, 1).toUpperCase(),
     enemy.type === 'orc' ? 0.60 : 0.76,
   );

@@ -3,11 +3,17 @@ import { describe, expect, it } from 'vitest';
 import { ENEMY_CATALOG } from '../../src/game/enemies/enemyCatalog';
 import { createStageMap } from '../../src/game/map/createStageMap';
 import {
+  ALL_STAGE_KEYS,
   getStageDefinition,
+  NIGHTMARE_STAGE_KEYS,
   normalizeStageId,
   STAGE_CATALOG,
   STAGE_IDS,
 } from '../../src/game/stages/stageCatalog';
+import {
+  normalizeStageKey,
+  stageRef,
+} from '../../src/game/stages/stageIdentity';
 
 const EXPECTED = [
   {
@@ -78,13 +84,15 @@ const EXPECTED = [
   },
 ] as const;
 
-describe('six-stage catalog', () => {
+describe('twelve-stage catalog', () => {
   it('defines the approved IDs, maps, multipliers, waves, and economy', () => {
     expect(STAGE_IDS).toEqual([1, 2, 3, 4, 5, 6]);
-    expect(STAGE_CATALOG).toHaveLength(6);
+    expect(STAGE_CATALOG).toHaveLength(12);
 
     for (const expected of EXPECTED) {
       const stage = getStageDefinition(expected.id);
+      expect(stage.key).toBe(`normal-${expected.id}`);
+      expect(stage.number).toBe(expected.id);
       expect(stage.name).toBe(expected.name);
       expect(stage.map.pathCells.length - 1).toBe(expected.steps);
       expect(stage.map.buildableCells([])).toHaveLength(expected.buildable);
@@ -112,7 +120,53 @@ describe('six-stage catalog', () => {
   it('normalizes invalid stage IDs to stage one', () => {
     for (const value of [0, 7, 1.5, Number.NaN, '2', null]) {
       expect(normalizeStageId(value)).toBe(1);
-      expect(getStageDefinition(value).id).toBe(1);
+      expect(getStageDefinition(value).key).toBe('normal-1');
+    }
+  });
+
+  it('normalizes stable mode-stage keys without treating nightmare as stage seven', () => {
+    expect(ALL_STAGE_KEYS).toHaveLength(12);
+    expect(NIGHTMARE_STAGE_KEYS).toEqual([
+      'nightmare-1', 'nightmare-2', 'nightmare-3',
+      'nightmare-4', 'nightmare-5', 'nightmare-6',
+    ]);
+    expect(normalizeStageKey(6)).toBe('normal-6');
+    expect(normalizeStageKey('nightmare-6')).toBe('nightmare-6');
+    expect(normalizeStageKey('nightmare-7')).toBe('normal-1');
+    expect(stageRef('nightmare-4')).toEqual({
+      key: 'nightmare-4',
+      mode: 'nightmare',
+      number: 4,
+    });
+  });
+
+  it('defines the six approved nightmare maps and economy', () => {
+    const expected = [
+      ['달빛 늪', 30, 62, 1.00, 1.00, 1.00, 1.00, 18_500, 23_000],
+      ['썩은 숲', 27, 56, 1.10, 1.02, 0.97, 1.04, 19_000, 23_500],
+      ['잿빛 폐허', 25, 52, 1.21, 1.04, 0.94, 1.08, 19_500, 24_000],
+      ['핏빛 협곡', 26, 54, 1.33, 1.06, 0.91, 1.12, 20_500, 25_000],
+      ['흑요석 광산', 24, 50, 1.47, 1.08, 0.88, 1.16, 20_500, 25_000],
+      ['심연의 성문', 23, 48, 1.62, 1.10, 0.85, 1.20, 21_500, 26_500],
+    ] as const;
+
+    for (const [index, row] of expected.entries()) {
+      const stage = getStageDefinition(`nightmare-${index + 1}`);
+      expect([
+        stage.name,
+        stage.map.pathCells.length - 1,
+        stage.map.buildableCells([]).length,
+        stage.hpMultiplier,
+        stage.speedMultiplier,
+        stage.spawnIntervalMultiplier,
+        stage.countMultiplier,
+        stage.twoStarScore,
+        stage.threeStarScore,
+      ]).toEqual(row);
+      expect(stage.startingGold).toBe(280);
+      expect(stage.baseHp).toBe(12);
+      expect(stage.rewardMultiplier).toBe(0.85);
+      expect(stage.scoreMultiplier).toBe(1.5);
     }
   });
 
