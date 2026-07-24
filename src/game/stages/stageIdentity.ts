@@ -9,6 +9,15 @@ export type StageKey = `${GameMode}-${StageNumber}`;
 
 export const DEFAULT_STAGE_KEY: StageKey = 'normal-1';
 
+export const NORMAL_THEME_IDS = [
+  'sunnyField',
+  'windingStream',
+  'windyHill',
+  'orcCanyon',
+  'golemQuarry',
+  'minotaurGate',
+] as const;
+
 export const NIGHTMARE_THEME_IDS = [
   'moonlitSwamp',
   'rottenForest',
@@ -18,7 +27,7 @@ export const NIGHTMARE_THEME_IDS = [
   'abyssGate',
 ] as const;
 
-export const STAGE_THEME_IDS = ['normal', ...NIGHTMARE_THEME_IDS] as const;
+export const STAGE_THEME_IDS = [...NORMAL_THEME_IDS, ...NIGHTMARE_THEME_IDS] as const;
 
 export type StageThemeId = (typeof STAGE_THEME_IDS)[number];
 

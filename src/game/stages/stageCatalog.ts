@@ -10,6 +10,7 @@ import {
 } from '../waves/stageWaves';
 import {
   NIGHTMARE_THEME_IDS,
+  NORMAL_THEME_IDS,
   normalizeStageKey,
   normalizeStageNumber,
   stageKey,
@@ -62,6 +63,7 @@ export type StageDefinition = Readonly<{
 
 type NormalStageSeed = Readonly<{
   name: string;
+  themeId: StageThemeId;
   waypoints: Parameters<typeof createStageMap>[0];
   waves: readonly Wave[];
   hpMultiplier: number;
@@ -72,6 +74,7 @@ type NormalStageSeed = Readonly<{
 const NORMAL_STAGE_SEEDS: readonly NormalStageSeed[] = [
   {
     name: '초록 들판',
+    themeId: NORMAL_THEME_IDS[0],
     waypoints: [
       { col: 0, row: 2 },
       { col: 5, row: 2 },
@@ -87,6 +90,7 @@ const NORMAL_STAGE_SEEDS: readonly NormalStageSeed[] = [
   },
   {
     name: '굽이 개울',
+    themeId: NORMAL_THEME_IDS[1],
     waypoints: [
       { col: 0, row: 7 },
       { col: 6, row: 7 },
@@ -102,6 +106,7 @@ const NORMAL_STAGE_SEEDS: readonly NormalStageSeed[] = [
   },
   {
     name: '바람 언덕',
+    themeId: NORMAL_THEME_IDS[2],
     waypoints: [
       { col: 0, row: 1 },
       { col: 7, row: 1 },
@@ -117,6 +122,7 @@ const NORMAL_STAGE_SEEDS: readonly NormalStageSeed[] = [
   },
   {
     name: '오크 협곡',
+    themeId: NORMAL_THEME_IDS[3],
     waypoints: [
       { col: 0, row: 8 },
       { col: 5, row: 8 },
@@ -132,6 +138,7 @@ const NORMAL_STAGE_SEEDS: readonly NormalStageSeed[] = [
   },
   {
     name: '골렘 채석장',
+    themeId: NORMAL_THEME_IDS[4],
     waypoints: [
       { col: 0, row: 2 },
       { col: 9, row: 2 },
@@ -145,6 +152,7 @@ const NORMAL_STAGE_SEEDS: readonly NormalStageSeed[] = [
   },
   {
     name: '미노타우르스 관문',
+    themeId: NORMAL_THEME_IDS[5],
     waypoints: [
       { col: 0, row: 1 },
       { col: 5, row: 1 },
@@ -240,7 +248,7 @@ const NORMAL_STAGES: readonly StageDefinition[] = STAGE_NUMBERS.map((number) => 
     mode: 'normal',
     number,
     name: seed.name,
-    themeId: 'normal',
+    themeId: seed.themeId,
     map: createStageMap(seed.waypoints),
     waves: seed.waves,
     hpMultiplier: seed.hpMultiplier,

@@ -11,8 +11,10 @@ import {
   STAGE_IDS,
 } from '../../src/game/stages/stageCatalog';
 import {
+  NORMAL_THEME_IDS,
   normalizeStageKey,
   stageRef,
+  STAGE_THEME_IDS,
 } from '../../src/game/stages/stageIdentity';
 
 const EXPECTED = [
@@ -85,6 +87,21 @@ const EXPECTED = [
 ] as const;
 
 describe('twelve-stage catalog', () => {
+  it('maps the six normal stages to distinct approved themes', () => {
+    expect(NORMAL_THEME_IDS).toEqual([
+      'sunnyField',
+      'windingStream',
+      'windyHill',
+      'orcCanyon',
+      'golemQuarry',
+      'minotaurGate',
+    ]);
+    expect(
+      NORMAL_THEME_IDS.map((_, index) => getStageDefinition(`normal-${index + 1}`).themeId),
+    ).toEqual(NORMAL_THEME_IDS);
+    expect(new Set(STAGE_THEME_IDS).size).toBe(12);
+  });
+
   it('defines the approved IDs, maps, multipliers, waves, and economy', () => {
     expect(STAGE_IDS).toEqual([1, 2, 3, 4, 5, 6]);
     expect(STAGE_CATALOG).toHaveLength(12);
