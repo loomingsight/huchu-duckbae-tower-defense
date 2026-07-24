@@ -10,6 +10,7 @@ import { createGame } from '../../src/game/simulation/createGame';
 import { updateEnemies } from '../../src/game/simulation/updateEnemies';
 import { placeTower } from '../../src/game/simulation/placeTower';
 import { spawnEnemy } from '../../src/game/simulation/updateWaves';
+import { getStageDefinition } from '../../src/game/stages/stageCatalog';
 import { TOWER_CATALOG } from '../../src/game/towers/towerCatalog';
 
 describe('nightmare enemy traits', () => {
@@ -119,8 +120,14 @@ describe('nightmare enemy traits', () => {
     spawnEnemy(state, 'skeletonKnight', 4, 'elite');
 
     const enemy = state.enemies[0];
+    const stage = getStageDefinition(state.stageKey);
     expect(enemy.variant).toBe('elite');
-    expect(enemy.maxHp).toBeCloseTo(ENEMY_CATALOG.skeletonKnight.hp * 1.1 * 1.32 * 1.8);
+    expect(enemy.maxHp).toBeCloseTo(
+      ENEMY_CATALOG.skeletonKnight.hp
+      * stage.hpMultiplier
+      * (1 + 4 * stage.waveHpGrowth)
+      * 1.8,
+    );
     expect(enemy.baseSpeed).toBeCloseTo(ENEMY_CATALOG.skeletonKnight.speed * 1.05);
     expect(enemy.reward).toBe(19);
     expect(enemy.combatScore).toBe(140);
