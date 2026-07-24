@@ -31,6 +31,7 @@ export type GameRuntimeDependencies = Readonly<{
 export type GameRuntime = Readonly<{
   startFrames(): void;
   startGame(): void;
+  returnToStageSelect(): void;
   togglePause(): void;
   toggleSpeed(): void;
   selectTower(type: TowerType | null): void;
@@ -117,6 +118,18 @@ export function createGameRuntime(dependencies: GameRuntimeDependencies): GameRu
       selectedCell = null;
       inspectedTowerId = null;
       elapsedSeconds = 0;
+      loop = makeLoop();
+      dependencies.render();
+    },
+    returnToStageSelect() {
+      if (phase !== 'playing' && phase !== 'paused') return;
+      game = dependencies.createGame();
+      phase = 'ready';
+      selectedTower = null;
+      selectedCell = null;
+      inspectedTowerId = null;
+      elapsedSeconds = 0;
+      lastFrameMs = null;
       loop = makeLoop();
       dependencies.render();
     },

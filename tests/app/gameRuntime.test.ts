@@ -197,4 +197,35 @@ describe('GameRuntime lifecycle', () => {
     runtime.startGame();
     expect(runtime.getSnapshot().inspectedTowerId).toBeNull();
   });
+
+  it('returns an abandoned run to a fresh ready state without stopping the RAF', () => {
+    const updates: number[] = [];
+    const { runtime, scheduler } = setupRuntime((delta) => updates.push(delta));
+    runtime.startFrames();
+    runtime.startGame();
+    runtime.selectTower('arrow');
+    runtime.setSelectedCell({ col: 2, row: 5 });
+
+    scheduler.frame(0);
+    scheduler.frame(100);
+    const abandonedGame = runtime.getSnapshot().game;
+    expect(runtime.getSnapshot().elapsedSeconds).toBeGreaterThan(0);
+
+    runtime.returnToStageSelect();
+
+    expect(runtime.getSnapshot()).toMatchObject({
+      phase: 'ready',
+      selectedTower: null,
+      selectedCell: null,
+      inspectedTowerId: null,
+      elapsedSeconds: 0,
+    });
+    expect(runtime.getSnapshot().game).not.toBe(abandonedGame);
+    expect(scheduler.callbacks.size).toBe(1);
+
+    const updatesAtExit = updates.length;
+    scheduler.frame(5_000);
+    expect(updates).toHaveLength(updatesAtExit);
+    expect(scheduler.callbacks.size).toBe(1);
+  });
 });
