@@ -246,6 +246,14 @@ describe('runtime effects', () => {
     }])).toEqual([]);
   });
 
+  it('does not create the obsolete obsidian-golem armor crack effect', () => {
+    expect(effectsForTraits([{
+      kind: 'armor-crack',
+      enemyId: 4,
+      position: { x: 3.5, y: 2.5 },
+    }])).toEqual([]);
+  });
+
   it('ignores non-visual damage and invalid trait event coordinates', () => {
     expect(effectsForTraits([
       { kind: 'damage', enemyId: 1, position: { x: 1, y: 1 } },

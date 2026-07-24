@@ -391,15 +391,6 @@ function drawEnemyBody(
     ctx.ellipse(0, -size * 0.2, size * 0.34, size * 0.14, 0, 0, Math.PI * 2);
     ctx.stroke();
   }
-  if (enemy.armorStage > 0) {
-    ctx.strokeStyle = '#ff8a38';
-    ctx.lineWidth = Math.max(1.5, size * 0.025);
-    ctx.beginPath();
-    ctx.moveTo(-size * 0.08, -size * 0.55);
-    ctx.lineTo(size * 0.04, -size * 0.36);
-    ctx.lineTo(-size * 0.02, -size * 0.16);
-    ctx.stroke();
-  }
   ctx.restore();
 }
 

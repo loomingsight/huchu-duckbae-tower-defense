@@ -202,7 +202,6 @@ function drawRuntimeEffect(
     || effect.kind === 'shield-break'
     || effect.kind === 'split-burst'
     || effect.kind === 'slow-resist'
-    || effect.kind === 'armor-crack'
     || effect.kind === 'lich-phase-two'
   ) {
     drawTraitEffect(ctx, layout, effect, center, visualUnit, progress, reducedMotion);
@@ -323,27 +322,6 @@ function drawTraitEffect(
       Math.PI * 1.82,
     );
     ctx.stroke();
-  } else if (effect.kind === 'armor-crack') {
-    ctx.strokeStyle = '#ff8a38';
-    ctx.globalAlpha = 0.95 * (1 - progress);
-    ctx.lineWidth = Math.max(1.5, visualUnit * 0.055);
-    const offsets = [-0.18, 0, 0.18] as const;
-    for (const offset of offsets) {
-      ctx.beginPath();
-      ctx.moveTo(
-        center.x + visualUnit * offset,
-        center.y - visualUnit * (0.55 - Math.abs(offset)),
-      );
-      ctx.lineTo(
-        center.x + visualUnit * (offset + 0.07),
-        center.y - visualUnit * 0.28,
-      );
-      ctx.lineTo(
-        center.x + visualUnit * (offset - 0.03),
-        center.y - visualUnit * 0.08,
-      );
-      ctx.stroke();
-    }
   } else if (effect.kind === 'lich-phase-two') {
     const pulse = projectWorldRing(
       layout,

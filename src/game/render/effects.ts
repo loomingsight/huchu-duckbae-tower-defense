@@ -20,7 +20,6 @@ export type TraitRuntimeEffectKind =
   | 'shield-break'
   | 'split-burst'
   | 'slow-resist'
-  | 'armor-crack'
   | 'lich-aura'
   | 'lich-phase-two';
 
@@ -141,7 +140,7 @@ export function effectsForHits(events: readonly Readonly<GameHitEvent>[]): Runti
 const TRAIT_EFFECTS: Readonly<Record<
   Exclude<
     EnemyTraitVisualEvent['kind'],
-    'damage' | 'split' | 'split-open'
+    'damage' | 'split' | 'split-open' | 'armor-crack'
   > | 'split-burst',
   number
 >> = {
@@ -150,7 +149,6 @@ const TRAIT_EFFECTS: Readonly<Record<
   'shield-break': 0.24,
   'split-burst': 0.4,
   'slow-resist': 0.28,
-  'armor-crack': 0.35,
   'lich-aura': 0.4,
   'lich-phase-two': 0.8,
 };
@@ -162,6 +160,7 @@ export function effectsForTraits(
     if (
       event.kind === 'damage'
       || event.kind === 'split-open'
+      || event.kind === 'armor-crack'
       || !Number.isFinite(event.position.x)
       || !Number.isFinite(event.position.y)
     ) return [];

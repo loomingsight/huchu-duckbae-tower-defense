@@ -336,6 +336,32 @@ describe('entity depth rendering', () => {
     expect(labels).toEqual(expect.arrayContaining(['암', '박', '해', '흑', '리', 'BOSS']));
     expect(calls.some((call) => imageTag(call)?.startsWith('enemy-shadow-slime'))).toBe(false);
   });
+
+  it('does not draw a persistent armor marker on the obsidian golem', () => {
+    const layout = computeCanvasLayout({ width: 844, height: 390, dpr: 1 });
+    const { context, calls } = createRecordingContext();
+
+    drawEntities(context, layout, snapshot({
+      stageKey: 'nightmare-4',
+      enemies: [{
+        id: 4,
+        type: 'obsidianGolem',
+        variant: 'standard',
+        boss: false,
+        hp: 240,
+        maxHp: 620,
+        progress: 3,
+        slowMultiplier: 1,
+        armorStage: 2,
+        rewarded: false,
+        lastHitAtSeconds: 0,
+      }],
+    }), createTestAssets(), { timeSeconds: 1 });
+
+    expect(calls.some((call) => (
+      call.method === 'stroke' && call.strokeStyle === '#ff8a38'
+    ))).toBe(false);
+  });
 });
 
 describe('renderer layer order', () => {
