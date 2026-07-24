@@ -19,6 +19,12 @@ const splitOpenEvent = {
   position: { x: 0.5, y: 0.5 },
 };
 
+const shieldOpenEvent = {
+  kind: 'shield-open' as const,
+  enemyId: 7,
+  position: { x: 4.5, y: 3.5 },
+};
+
 describe('nightmare-one trait onboarding state', () => {
   it('shows the fixed copy for 2.5 seconds after the first event', () => {
     const state = updateTraitNoticeState(
@@ -106,6 +112,56 @@ describe('nightmare-one trait onboarding state', () => {
     )).toBeNull();
     expect(traitNoticeView(
       updateTraitNoticeState(normal, [slowResistEvent], 3),
+      3,
+    )).toBeNull();
+  });
+
+  it('shows the sealed-shield explanation only on nightmare three', () => {
+    const nightmareThree = updateTraitNoticeState(
+      createTraitNoticeState('nightmare-3'),
+      [shieldOpenEvent],
+      8,
+    );
+
+    expect(traitNoticeView(nightmareThree, 8)).toEqual({
+      title: '해골 기사 · 봉인 방패',
+      body: '슬로우·덕배·후추로 방패를 해제하세요',
+    });
+    expect(traitNoticeView(nightmareThree, 10.499)).not.toBeNull();
+    expect(traitNoticeView(nightmareThree, 10.5)).toBeNull();
+
+    for (const stageKey of ['nightmare-2', 'nightmare-4', 'normal-3']) {
+      const state = updateTraitNoticeState(
+        createTraitNoticeState(stageKey),
+        [shieldOpenEvent],
+        8,
+      );
+      expect(traitNoticeView(state, 8)).toBeNull();
+    }
+  });
+
+  it('does not repeat the sealed-shield explanation in the same attempt', () => {
+    const first = updateTraitNoticeState(
+      createTraitNoticeState('nightmare-3'),
+      [shieldOpenEvent],
+      4,
+    );
+    const expired = updateTraitNoticeState(first, [], 6.5);
+    const repeated = updateTraitNoticeState(expired, [shieldOpenEvent], 7);
+
+    expect(traitNoticeView(first, 4)).not.toBeNull();
+    expect(traitNoticeView(repeated, 7)).toBeNull();
+  });
+
+  it('does not replay N1 split or slow-resistance notices on nightmare three', () => {
+    const initial = createTraitNoticeState('nightmare-3');
+
+    expect(traitNoticeView(
+      updateTraitNoticeState(initial, [splitOpenEvent], 3),
+      3,
+    )).toBeNull();
+    expect(traitNoticeView(
+      updateTraitNoticeState(initial, [slowResistEvent], 3),
       3,
     )).toBeNull();
   });
