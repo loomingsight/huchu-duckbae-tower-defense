@@ -26,6 +26,7 @@ function clearedRecord(score: number, stars: 1 | 2 | 3 = 2): StageRecord {
     bestScore: score,
     bestClearScore: score,
     bestClearSeconds: 95,
+    firstClearSeconds: 110,
     bestStars: stars,
     bossDefeated: true,
   };
@@ -211,6 +212,7 @@ describe('mobile HUD view', () => {
           bestScore: 2200,
           bestClearScore: 0,
           bestClearSeconds: null,
+          firstClearSeconds: null,
           bestStars: 0,
           bossDefeated: false,
         },
@@ -305,6 +307,8 @@ describe('mobile HUD view', () => {
       difficultyBonus: 600,
       bestScore: 1800,
       bestClearText: '--:--',
+      firstClearText: '6:20',
+      targetClearText: '5:00~7:00',
       totalAttempts: 3,
       totalVictories: 1,
       nextGoalText: '별 하나를 더 받으려면 16,700점이 필요해요.',
@@ -317,6 +321,8 @@ describe('mobile HUD view', () => {
     expect(markup).toContain('나이트메어 보너스 ×1.5');
     expect(markup).toContain('+600');
     expect(markup).toContain('심연의 수호자');
+    expect(markup).toContain('첫 클리어 6:20');
+    expect(markup).toContain('목표 5:00~7:00');
   });
 
   it('moves focus and inert state only when modal visibility changes', () => {

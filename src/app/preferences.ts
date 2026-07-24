@@ -18,6 +18,7 @@ export type StageRecord = Readonly<{
   bestScore: number;
   bestClearScore: number;
   bestClearSeconds: number | null;
+  firstClearSeconds: number | null;
   bestStars: StarRating;
   bossDefeated: boolean;
 }>;
@@ -39,7 +40,8 @@ export type GamePreferences = Readonly<{
 
 export type PreferencesStorage = Pick<Storage, 'getItem' | 'setItem'>;
 
-const PREFERENCES_KEY = 'huchu-defense.preferences.v4';
+const PREFERENCES_KEY = 'huchu-defense.preferences.v5';
+const V4_PREFERENCES_KEY = 'huchu-defense.preferences.v4';
 const V3_PREFERENCES_KEY = 'huchu-defense.preferences.v3';
 const V2_PREFERENCES_KEY = 'huchu-defense.preferences.v2';
 const V1_PREFERENCES_KEY = 'huchu-defense.preferences.v1';
@@ -48,6 +50,7 @@ const EMPTY_STAGE_RECORD: StageRecord = {
   bestScore: 0,
   bestClearScore: 0,
   bestClearSeconds: null,
+  firstClearSeconds: null,
   bestStars: 0,
   bossDefeated: false,
 };
@@ -101,6 +104,7 @@ function normalizedStageRecord(value: unknown): StageRecord {
     bestScore: safeCount(candidate.bestScore),
     bestClearScore: safeCount(candidate.bestClearScore),
     bestClearSeconds: safeClearSeconds(candidate.bestClearSeconds),
+    firstClearSeconds: safeClearSeconds(candidate.firstClearSeconds),
     bestStars: safeStars(candidate.bestStars),
     bossDefeated: candidate.bossDefeated === true,
   };
@@ -150,6 +154,7 @@ function legacyStageRecord(value: unknown): StageRecord {
     bestScore,
     bestClearScore: cleared ? bestScore : 0,
     bestClearSeconds,
+    firstClearSeconds: null,
     bestStars: cleared
       ? bestScore >= 10_000 ? 3 : bestScore >= 7_000 ? 2 : 1
       : 0,
@@ -232,6 +237,9 @@ export function loadPreferences(storage?: PreferencesStorage | null): GamePrefer
     const current = storage.getItem(PREFERENCES_KEY);
     if (current !== null) return normalizedPreferences(JSON.parse(current));
 
+    const v4 = storage.getItem(V4_PREFERENCES_KEY);
+    if (v4 !== null) return normalizedPreferences(JSON.parse(v4));
+
     const v3 = storage.getItem(V3_PREFERENCES_KEY);
     if (v3 !== null) return migrateV3Preferences(JSON.parse(v3));
 
@@ -311,12 +319,16 @@ export function recordOutcome(
       ? result.elapsedSeconds
       : Math.min(currentRecord.bestClearSeconds, result.elapsedSeconds)
     : currentRecord.bestClearSeconds;
+  const firstClearSeconds = validClear && currentRecord.firstClearSeconds === null
+    ? result.elapsedSeconds
+    : currentRecord.firstClearSeconds;
   const nextRecord: StageRecord = {
     bestScore: Math.max(currentRecord.bestScore, score),
     bestClearScore: validClear
       ? Math.max(currentRecord.bestClearScore, score)
       : currentRecord.bestClearScore,
     bestClearSeconds,
+    firstClearSeconds,
     bestStars: validClear
       ? Math.max(currentRecord.bestStars, safeStars(result.stars)) as StarRating
       : currentRecord.bestStars,

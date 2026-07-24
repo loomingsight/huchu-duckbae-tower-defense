@@ -618,6 +618,8 @@ export type ResultPanelView = Readonly<{
   difficultyBonus: number;
   bestScore: number;
   bestClearText: string;
+  firstClearText: string;
+  targetClearText: string;
   totalAttempts: number;
   totalVictories: number;
   nextGoalText: string;
@@ -649,6 +651,8 @@ export function createResultPanelMarkup(view: ResultPanelView): string {
     <div class="game-result__records">
       <span>최고 ${view.bestScore.toLocaleString('ko-KR')}점</span>
       <span>최단 ${view.bestClearText}</span>
+      <span>첫 클리어 ${view.firstClearText}</span>
+      <span>목표 ${view.targetClearText}</span>
       <span>도전 ${view.totalAttempts}회 · 승리 ${view.totalVictories}회</span>
     </div>
     <p class="game-result__goal">${view.nextGoalText}</p>

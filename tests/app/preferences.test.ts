@@ -57,6 +57,7 @@ describe('local game preferences', () => {
           bestScore: 8200,
           bestClearScore: 8200,
           bestClearSeconds: 95,
+          firstClearSeconds: null,
           bestStars: 2,
           bossDefeated: true,
         },
@@ -85,6 +86,7 @@ describe('local game preferences', () => {
       bestScore: 8200,
       bestClearScore: 8200,
       bestClearSeconds: 95,
+      firstClearSeconds: null,
       bestStars: 2,
       bossDefeated: true,
     });
@@ -112,6 +114,7 @@ describe('local game preferences', () => {
           bestScore: 7000,
           bestClearScore: 7000,
           bestClearSeconds: 75.25,
+          firstClearSeconds: 90,
           bestStars: 2,
           bossDefeated: true,
         },
@@ -159,6 +162,7 @@ describe('local game preferences', () => {
           bestScore: 0,
           bestClearScore: 0,
           bestClearSeconds: null,
+          firstClearSeconds: null,
           bestStars: 0,
           bossDefeated: false,
         },
@@ -166,6 +170,7 @@ describe('local game preferences', () => {
           bestScore: 9012,
           bestClearScore: 8000,
           bestClearSeconds: 81.5,
+          firstClearSeconds: null,
           bestStars: 3,
           bossDefeated: true,
         },
@@ -220,6 +225,7 @@ describe('local game preferences', () => {
       bestScore: 17_000,
       bestClearScore: 0,
       bestClearSeconds: null,
+      firstClearSeconds: null,
       bestStars: 0,
       bossDefeated: false,
     });
@@ -252,6 +258,7 @@ describe('local game preferences', () => {
           bestScore: 9000,
           bestClearScore: 7500,
           bestClearSeconds: 100,
+          firstClearSeconds: 130,
           bestStars: 2,
           bossDefeated: true,
         },
@@ -271,8 +278,34 @@ describe('local game preferences', () => {
       bestScore: 9000,
       bestClearScore: 8000,
       bestClearSeconds: 100,
+      firstClearSeconds: 130,
       bestStars: 2,
       bossDefeated: true,
+    });
+  });
+
+  it('records the first clear once while allowing the fastest clear to improve', () => {
+    const storage = storageWith({});
+    const first = recordOutcome(storage, {
+      stageKey: 'normal-1',
+      score: 7000,
+      stars: 2,
+      bossDefeated: true,
+      victory: true,
+      elapsedSeconds: 360,
+    });
+    const second = recordOutcome(storage, {
+      stageKey: 'normal-1',
+      score: 7500,
+      stars: 2,
+      bossDefeated: true,
+      victory: true,
+      elapsedSeconds: 330,
+    }, first.preferences);
+
+    expect(stageRecordFor(second.preferences, 'normal-1')).toMatchObject({
+      firstClearSeconds: 360,
+      bestClearSeconds: 330,
     });
   });
 

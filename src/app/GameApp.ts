@@ -462,6 +462,10 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
             bestClearText: stageRecord.bestClearSeconds === null
               ? '--:--'
               : clearTime(stageRecord.bestClearSeconds),
+            firstClearText: stageRecord.firstClearSeconds === null
+              ? '--:--'
+              : clearTime(stageRecord.firstClearSeconds),
+            targetClearText: `${clearTime(stage.targetClearSeconds.min)}~${clearTime(stage.targetClearSeconds.max)}`,
             totalAttempts: preferences.totalAttempts,
             totalVictories: preferences.totalVictories,
             nextGoalText: score.nextStarScore === null
