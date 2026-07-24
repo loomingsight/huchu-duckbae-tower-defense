@@ -53,6 +53,7 @@ export function createNightmareWaves(
   countMultiplier: number,
 ): readonly Wave[] {
   const stageIndex = stageNumber - 1;
+  const earlyShadowSlimeKillValueMultiplier = stageNumber === 2 ? 1.7 : 1.6;
   const safeCountMultiplier = Number.isFinite(countMultiplier) && countMultiplier > 0
     ? countMultiplier
     : 1;
@@ -66,7 +67,7 @@ export function createNightmareWaves(
         ),
         spawnInterval: INTERVALS[Math.floor(waveIndex / 2)][typeIndex],
         ...(waveIndex < 3 && typeIndex === 0
-          ? { killValueMultiplier: 1.6 }
+          ? { killValueMultiplier: earlyShadowSlimeKillValueMultiplier }
           : {}),
       }];
     });

@@ -104,7 +104,7 @@ describe('stage 1 waves', () => {
     expect(createNightmareWaves(2, Number.NaN)).toEqual(waves);
   });
 
-  it('adds measured early slime pressure without accelerating tower income', () => {
+  it('keeps measured early slime pressure with stage-specific tower income', () => {
     const expectedCounts = [
       [7, 6, 5, 8, 0, 6, 10, 6, 8, 6],
       [6, 5, 5, 7, 0, 5, 9, 5, 7, 5],
@@ -113,10 +113,13 @@ describe('stage 1 waves', () => {
       [6, 5, 4, 7, 0, 5, 9, 5, 7, 5],
       [8, 7, 6, 9, 0, 7, 12, 7, 9, 7],
     ] as const;
+    const expectedEarlyKillValueMultiplier = [1.6, 1.7, 1.6, 1.6, 1.6, 1.6] as const;
+    const expectedFamilyGold = [9, 10, 9, 9, 9, 9] as const;
+    const expectedFamilyCombatScore = [34, 35.5, 34, 34, 34, 34] as const;
     const previousGold = [165, 154, 132, 220, 132, 198] as const;
-    const expectedGold = [162, 144, 135, 225, 135, 189] as const;
+    const expectedGold = [162, 160, 135, 225, 135, 189] as const;
     const previousCombatScore = [600, 560, 480, 800, 480, 720] as const;
-    const expectedCombatScore = [612, 544, 510, 850, 510, 714] as const;
+    const expectedCombatScore = [612, 568, 510, 850, 510, 714] as const;
 
     for (const [index, stageNumber] of ([1, 2, 3, 4, 5, 6] as const).entries()) {
       const stage = getStageDefinition(`nightmare-${stageNumber}`);
@@ -128,21 +131,22 @@ describe('stage 1 waves', () => {
       expect(shadowGroups.map((group) => group?.count ?? 0))
         .toEqual(expectedCounts[index]);
       expect(shadowGroups.slice(0, 3).map((group) => group?.killValueMultiplier))
-        .toEqual([1.6, 1.6, 1.6]);
+        .toEqual(Array(3).fill(expectedEarlyKillValueMultiplier[index]));
       expect(shadowGroups.slice(3).every(
         (group) => group?.killValueMultiplier === undefined,
       )).toBe(true);
 
       const earlyParentCount = shadowGroups.slice(0, 3)
         .reduce((sum, group) => sum + (group?.count ?? 0), 0);
-      expect(earlyParentCount * 9).toBe(expectedGold[index]);
-      expect(earlyParentCount * 34).toBe(expectedCombatScore[index]);
+      expect(earlyParentCount * expectedFamilyGold[index]).toBe(expectedGold[index]);
+      expect(earlyParentCount * expectedFamilyCombatScore[index])
+        .toBe(expectedCombatScore[index]);
       expect(Math.round(
         ((expectedGold[index] / previousGold[index]) - 1) * 100,
       )).toBeGreaterThanOrEqual(-6);
       expect(Math.round(
         ((expectedGold[index] / previousGold[index]) - 1) * 100,
-      )).toBeLessThanOrEqual(2);
+      )).toBeLessThanOrEqual(4);
       expect(Math.round(
         ((expectedCombatScore[index] / previousCombatScore[index]) - 1) * 100,
       )).toBeGreaterThanOrEqual(-3);
