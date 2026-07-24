@@ -9,7 +9,7 @@ import { ENEMY_CATALOG } from '../../src/game/enemies/enemyCatalog';
 import { createGame } from '../../src/game/simulation/createGame';
 import { updateEnemies } from '../../src/game/simulation/updateEnemies';
 import { placeTower } from '../../src/game/simulation/placeTower';
-import { spawnEnemy } from '../../src/game/simulation/updateWaves';
+import { spawnEnemy, updateWaves } from '../../src/game/simulation/updateWaves';
 import { getStageDefinition } from '../../src/game/stages/stageCatalog';
 import { TOWER_CATALOG } from '../../src/game/towers/towerCatalog';
 
@@ -20,6 +20,25 @@ describe('nightmare enemy traits', () => {
     spawnEnemy(state, 'shadowSlime', 0);
 
     expect(state.traitEvents.at(-1)?.kind).toBe('split-open');
+  });
+
+  it('applies the early wave kill value multiplier to the parent once', () => {
+    const state = createGame('nightmare-1');
+
+    updateWaves(state, 0.01);
+
+    expect(state.enemies[0]).toMatchObject({
+      type: 'shadowSlime',
+      reward: 7,
+      combatScore: 30,
+    });
+
+    const direct = createGame('nightmare-1');
+    spawnEnemy(direct, 'shadowSlime', 0, 'standard', Number.NaN);
+    expect(direct.enemies[0]).toMatchObject({
+      reward: 3,
+      combatScore: 15,
+    });
   });
 
   it('blocks exactly three damage events before the skeleton takes damage', () => {

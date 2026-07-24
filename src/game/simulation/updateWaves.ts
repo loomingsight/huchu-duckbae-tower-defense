@@ -16,10 +16,15 @@ export function spawnEnemy(
   type: EnemyType,
   waveIndex: number,
   variant: EnemyVariant = 'standard',
+  killValueMultiplier = 1,
 ): void {
   const definition = ENEMY_CATALOG[type];
   const stage = getStageDefinition(state.stageKey);
   const elite = variant === 'elite';
+  const safeKillValueMultiplier = Number.isFinite(killValueMultiplier)
+    && killValueMultiplier > 0
+    ? killValueMultiplier
+    : 1;
   const scaledHp = definition.hp
     * stage.hpMultiplier
     * (1 + waveIndex * stage.waveHpGrowth)
@@ -36,10 +41,15 @@ export function spawnEnemy(
     auraMultiplier: 1,
     auraRemaining: 0,
     reward: Math.round(
-      definition.reward * stage.rewardMultiplier * (elite ? 1.5 : 1),
+      definition.reward
+      * stage.rewardMultiplier
+      * (elite ? 1.5 : 1)
+      * safeKillValueMultiplier,
     ),
     leak: definition.leak,
-    combatScore: definition.combatScore + (elite ? 100 : 0),
+    combatScore:
+      definition.combatScore * safeKillValueMultiplier
+      + (elite ? 100 : 0),
     boss: definition.boss,
     splitGeneration: 0 as const,
     shieldHitsRemaining: type === 'skeletonKnight' ? 3 : 0,
@@ -123,7 +133,13 @@ export function updateWaves(state: GameState, dt: number): void {
 
     remaining -= state.wave.spawnCooldown;
     state.wave.spawnCooldown = 0;
-    spawnEnemy(state, group.type, state.wave.index, group.variant);
+    spawnEnemy(
+      state,
+      group.type,
+      state.wave.index,
+      group.variant,
+      group.killValueMultiplier,
+    );
     state.wave.spawnedInGroup += 1;
     canSpawnAtCurrentTime = false;
     steps += 1;

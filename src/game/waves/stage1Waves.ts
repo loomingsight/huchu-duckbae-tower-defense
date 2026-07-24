@@ -9,6 +9,7 @@ export type WaveGroup = {
   count: number;
   spawnInterval: number;
   variant?: EnemyVariant;
+  killValueMultiplier?: number;
 };
 
 export type Wave = {
@@ -18,7 +19,13 @@ export type Wave = {
 export function isValidWaveGroup(group: unknown): group is WaveGroup {
   if (typeof group !== 'object' || group === null) return false;
   const candidate = group as Partial<WaveGroup>;
-  const { type, count, spawnInterval, variant } = candidate;
+  const {
+    type,
+    count,
+    spawnInterval,
+    variant,
+    killValueMultiplier,
+  } = candidate;
   return typeof type === 'string'
     && (ENEMY_TYPES as readonly string[]).includes(type)
     && typeof count === 'number'
@@ -30,7 +37,13 @@ export function isValidWaveGroup(group: unknown): group is WaveGroup {
     && (variant === undefined
       || variant === 'standard'
       || variant === 'elite'
-      || variant === 'split-child');
+      || variant === 'split-child')
+    && (killValueMultiplier === undefined
+      || (
+        typeof killValueMultiplier === 'number'
+        && Number.isFinite(killValueMultiplier)
+        && killValueMultiplier > 0
+      ));
 }
 
 export const STAGE_1_WAVES: readonly Wave[] = [
