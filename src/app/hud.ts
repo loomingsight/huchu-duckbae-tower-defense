@@ -399,9 +399,9 @@ export function createHud(root: HTMLElement): HudElements {
     <main class="game-shell">
       <header class="game-hud" aria-label="게임 상태와 조작">
         <div class="game-hud__stats">
-          <span class="game-stat" data-stat="gold" aria-label="골드 0"><span aria-hidden="true">🪙</span><strong data-hud="gold">0</strong></span>
+          <span class="game-stat" data-stat="gold" aria-label="골드 0"><span class="game-stat__coin" aria-hidden="true">G</span><strong data-hud="gold">0</strong></span>
           <span class="game-stat" data-stat="base-hp" aria-label="기지 체력 20"><span aria-hidden="true">❤️</span><strong data-hud="base-hp">20</strong></span>
-          <span class="game-stat" data-stat="wave" aria-label="스테이지 1, 현재 웨이브 1/10"><span aria-hidden="true">🌊</span><strong data-hud="wave">S1 · 1/10</strong></span>
+          <span class="game-stat" data-stat="wave" aria-label="스테이지 1, 현재 웨이브 1/10"><span class="game-stat__label" aria-hidden="true">Wave</span><strong data-hud="wave">S1 · 1/10</strong></span>
         </div>
         <div class="game-hud__controls">
           <button class="game-control icon-control" data-control="pause" type="button" aria-label="게임 일시정지">정지</button>

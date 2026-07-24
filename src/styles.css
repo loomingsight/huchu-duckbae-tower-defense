@@ -123,6 +123,30 @@ button {
   font-variant-numeric: tabular-nums;
 }
 
+.game-stat__coin {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  place-items: center;
+  border: 1px solid #fff0a6;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #fff4a8 0%, #f5c545 46%, #bf7315 100%);
+  box-shadow:
+    inset 0 0 0 2px rgba(117, 63, 5, 0.24),
+    0 1px 2px rgba(7, 22, 15, 0.4);
+  color: #714008;
+  font-size: 0.58rem;
+  font-weight: 1000;
+}
+
+.game-stat__label {
+  color: #dff7e9;
+  font-size: 0.58rem;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+}
+
 .icon-control {
   display: inline-grid;
   min-width: 48px;

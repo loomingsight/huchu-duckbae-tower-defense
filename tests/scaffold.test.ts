@@ -71,6 +71,17 @@ describe('project scaffold', () => {
     expect(css).toMatch(/\.game-control\s*\{[^}]*min-width: 44px;[^}]*min-height: 44px;/s);
   });
 
+  it('uses deterministic gold-coin and Wave labels instead of OS emoji', () => {
+    const hud = readFileSync('src/app/hud.ts', 'utf8');
+    const css = readFileSync('src/styles.css', 'utf8');
+
+    expect(hud).toContain('class="game-stat__coin" aria-hidden="true">G</span>');
+    expect(hud).toContain('class="game-stat__label" aria-hidden="true">Wave</span>');
+    expect(hud).not.toContain('🪙');
+    expect(hud).not.toContain('🌊');
+    expect(css).toMatch(/\.game-stat__coin\s*\{[^}]*border-radius: 50%;/s);
+  });
+
   it('renders an opaque independent stage-select screen with accessible 3-by-2 cards', () => {
     const css = readFileSync('src/styles.css', 'utf8');
     const hud = readFileSync('src/app/hud.ts', 'utf8');
