@@ -1,7 +1,11 @@
 import { cellCenter } from '../core/geometry';
 import type { StageMap } from '../map/createStageMap';
 import type { StageDefinition } from '../stages/stageCatalog';
-import type { StageThemeId } from '../stages/stageIdentity';
+import {
+  NIGHTMARE_THEME_IDS,
+  NORMAL_THEME_IDS,
+  type StageThemeId,
+} from '../stages/stageIdentity';
 import type { Cell } from '../types';
 import type { GameAssets, LoadedSprite } from './assetLoader';
 import type { CanvasLayout } from './layout';
@@ -22,17 +26,37 @@ type StagePalette = Readonly<{
   boardSide: string;
 }>;
 
-const NORMAL_PALETTE: StagePalette = {
-  ground: '#17382f',
-  land: '#4f8c65',
-  alternate: '#5d9a70',
-  road: '#e4c99f',
-  boardSide: '#2f6247',
+type NormalThemeId = (typeof NORMAL_THEME_IDS)[number];
+type NightmareThemeId = (typeof NIGHTMARE_THEME_IDS)[number];
+
+export const NORMAL_PALETTES: Readonly<Record<NormalThemeId, StagePalette>> = {
+  sunnyField: {
+    ground: '#17382f', land: '#4f8c65', alternate: '#5d9a70', road: '#e4c99f',
+    boardSide: '#2f6247',
+  },
+  windingStream: {
+    ground: '#143b38', land: '#478c70', alternate: '#569b7d', road: '#d8cba8',
+    boardSide: '#285f50',
+  },
+  windyHill: {
+    ground: '#21412d', land: '#6d9e62', alternate: '#79aa6c', road: '#ead4aa',
+    boardSide: '#3c6846',
+  },
+  orcCanyon: {
+    ground: '#2c3522', land: '#687244', alternate: '#747e4b', road: '#c6a47b',
+    boardSide: '#4e542f',
+  },
+  golemQuarry: {
+    ground: '#2a3631', land: '#65786a', alternate: '#718376', road: '#b9b3a1',
+    boardSide: '#46534a',
+  },
+  minotaurGate: {
+    ground: '#1d3324', land: '#496b4a', alternate: '#557953', road: '#d6bc82',
+    boardSide: '#3a5538',
+  },
 };
 
-export const NIGHTMARE_PALETTES: Readonly<
-  Record<Exclude<StageThemeId, 'normal'>, StagePalette>
-> = {
+export const NIGHTMARE_PALETTES: Readonly<Record<NightmareThemeId, StagePalette>> = {
   moonlitSwamp: {
     ground: '#0f1728', land: '#18243a', alternate: '#1d3040', road: '#485064',
     boardSide: '#0b1120',
@@ -59,6 +83,11 @@ export const NIGHTMARE_PALETTES: Readonly<
   },
 };
 
+export const STAGE_PALETTES: Readonly<Record<StageThemeId, StagePalette>> = {
+  ...NORMAL_PALETTES,
+  ...NIGHTMARE_PALETTES,
+};
+
 const OVERLAY_COLORS = {
   grid: 'rgba(36, 74, 61, 0.3)',
   selected: 'rgba(50, 218, 220, 0.38)',
@@ -71,7 +100,7 @@ const OVERLAY_COLORS = {
 } as const;
 
 function paletteFor(themeId: StageThemeId): StagePalette {
-  return themeId === 'normal' ? NORMAL_PALETTE : NIGHTMARE_PALETTES[themeId];
+  return STAGE_PALETTES[themeId];
 }
 
 export type MapSelection = {
@@ -225,17 +254,255 @@ function drawSelection(
   ctx.stroke();
 }
 
-const ATMOSPHERE_COLORS: Readonly<Record<Exclude<StageThemeId, 'normal'>, string>> = {
-  moonlitSwamp: '#57d7c2',
-  rottenForest: '#bb77db',
-  ashenRuins: '#d4cfd8',
-  bloodRavine: '#d95058',
-  obsidianMine: '#ff923d',
-  abyssGate: '#a45ce0',
+type AtmosphereKind = 'pollen' | 'glint' | 'leaf' | 'dust' | 'sparkle' | 'ember' | 'mote';
+type AtmosphereOverlay =
+  | 'sunwash'
+  | 'mist'
+  | 'cloud'
+  | 'shade'
+  | 'mineral'
+  | 'lightSweep'
+  | 'vignette'
+  | null;
+
+export type AtmosphereProfile = Readonly<{
+  kind: AtmosphereKind;
+  colors: readonly string[];
+  count: number;
+  speed: number;
+  driftX: number;
+  driftY: number;
+  minSize: number;
+  maxSize: number;
+  overlay: AtmosphereOverlay;
+}>;
+
+export const ATMOSPHERE_PROFILES: Readonly<Record<StageThemeId, AtmosphereProfile>> = {
+  sunnyField: {
+    kind: 'pollen',
+    colors: ['#ffd66b', '#fff0a3'],
+    count: 12,
+    speed: 0.016,
+    driftX: 0.22,
+    driftY: -1,
+    minSize: 0.025,
+    maxSize: 0.055,
+    overlay: 'sunwash',
+  },
+  windingStream: {
+    kind: 'glint',
+    colors: ['#8fe9ee', '#c8fbf7'],
+    count: 12,
+    speed: 0.02,
+    driftX: 0.38,
+    driftY: -0.45,
+    minSize: 0.04,
+    maxSize: 0.09,
+    overlay: 'mist',
+  },
+  windyHill: {
+    kind: 'leaf',
+    colors: ['#d9ee80', '#a9d66f'],
+    count: 12,
+    speed: 0.024,
+    driftX: 1,
+    driftY: 0.1,
+    minSize: 0.04,
+    maxSize: 0.085,
+    overlay: 'cloud',
+  },
+  orcCanyon: {
+    kind: 'dust',
+    colors: ['#c6784f', '#d69a6a'],
+    count: 12,
+    speed: 0.014,
+    driftX: 0.4,
+    driftY: -0.7,
+    minSize: 0.035,
+    maxSize: 0.08,
+    overlay: 'shade',
+  },
+  golemQuarry: {
+    kind: 'sparkle',
+    colors: ['#c9d2cf', '#eef3e9'],
+    count: 12,
+    speed: 0.011,
+    driftX: 0.08,
+    driftY: -0.5,
+    minSize: 0.035,
+    maxSize: 0.075,
+    overlay: 'mineral',
+  },
+  minotaurGate: {
+    kind: 'ember',
+    colors: ['#ffbd55', '#ffe08a'],
+    count: 12,
+    speed: 0.022,
+    driftX: 0.18,
+    driftY: -1,
+    minSize: 0.03,
+    maxSize: 0.075,
+    overlay: 'lightSweep',
+  },
+  moonlitSwamp: {
+    kind: 'mote', colors: ['#57d7c2'], count: 12, speed: 0.018,
+    driftX: 0, driftY: -1, minSize: 0.055, maxSize: 0.109, overlay: null,
+  },
+  rottenForest: {
+    kind: 'mote', colors: ['#bb77db'], count: 12, speed: 0.018,
+    driftX: 0, driftY: -1, minSize: 0.055, maxSize: 0.109, overlay: null,
+  },
+  ashenRuins: {
+    kind: 'mote', colors: ['#d4cfd8'], count: 12, speed: 0.018,
+    driftX: 0, driftY: -1, minSize: 0.055, maxSize: 0.109, overlay: null,
+  },
+  bloodRavine: {
+    kind: 'mote', colors: ['#d95058'], count: 12, speed: 0.018,
+    driftX: 0, driftY: -1, minSize: 0.055, maxSize: 0.109, overlay: null,
+  },
+  obsidianMine: {
+    kind: 'mote', colors: ['#ff923d'], count: 12, speed: 0.018,
+    driftX: 0, driftY: -1, minSize: 0.055, maxSize: 0.109, overlay: null,
+  },
+  abyssGate: {
+    kind: 'mote', colors: ['#a45ce0'], count: 12, speed: 0.018,
+    driftX: 0, driftY: -1, minSize: 0.055, maxSize: 0.109, overlay: 'vignette',
+  },
 };
 
 function wrapped(value: number): number {
   return ((value % 1) + 1) % 1;
+}
+
+function drawAtmosphereOverlay(
+  ctx: CanvasRenderingContext2D,
+  layout: CanvasLayout,
+  overlay: AtmosphereOverlay,
+  time: number,
+  reducedMotion: boolean,
+): void {
+  if (overlay === null) return;
+  const { x, y, width, height } = layout.gameArea;
+  if (overlay === 'vignette') {
+    const centerX = x + width / 2;
+    const centerY = y + height / 2;
+    const gradient = ctx.createRadialGradient(
+      centerX,
+      centerY,
+      height * 0.12,
+      centerX,
+      centerY,
+      width * 0.62,
+    );
+    gradient.addColorStop(0, 'rgba(28, 12, 42, 0)');
+    gradient.addColorStop(1, `rgba(12, 4, 22, ${reducedMotion ? 0.16 : 0.3})`);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x, y, width, height);
+    return;
+  }
+
+  const motionTime = time * (reducedMotion ? 0.2 : 1);
+  ctx.globalAlpha = reducedMotion ? 0.05 : 0.08;
+  if (overlay === 'sunwash') {
+    const gradient = ctx.createLinearGradient(x, y, x + width, y + height);
+    gradient.addColorStop(0, 'rgba(255, 244, 176, 0.8)');
+    gradient.addColorStop(0.46, 'rgba(255, 234, 139, 0.18)');
+    gradient.addColorStop(1, 'rgba(255, 230, 120, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x, y, width, height);
+  } else if (overlay === 'mist') {
+    const gradient = ctx.createLinearGradient(x, y + height, x, y);
+    gradient.addColorStop(0, 'rgba(198, 248, 244, 0.68)');
+    gradient.addColorStop(0.55, 'rgba(150, 224, 221, 0.12)');
+    gradient.addColorStop(1, 'rgba(150, 224, 221, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x, y, width, height);
+  } else if (overlay === 'cloud') {
+    const cloudWidth = width * 0.32;
+    const cloudX = x + wrapped(motionTime * 0.012) * (width + cloudWidth) - cloudWidth;
+    ctx.fillStyle = 'rgba(33, 64, 42, 0.42)';
+    ctx.fillRect(cloudX, y, cloudWidth, height);
+  } else if (overlay === 'shade') {
+    const gradient = ctx.createLinearGradient(x, y, x + width, y);
+    gradient.addColorStop(0, 'rgba(99, 51, 32, 0.45)');
+    gradient.addColorStop(0.5, 'rgba(99, 51, 32, 0)');
+    gradient.addColorStop(1, 'rgba(72, 42, 30, 0.35)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x, y, width, height);
+  } else if (overlay === 'mineral') {
+    const gradient = ctx.createRadialGradient(
+      x + width * 0.68,
+      y + height * 0.44,
+      0,
+      x + width * 0.68,
+      y + height * 0.44,
+      width * 0.42,
+    );
+    gradient.addColorStop(0, 'rgba(218, 235, 226, 0.58)');
+    gradient.addColorStop(1, 'rgba(218, 235, 226, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(x, y, width, height);
+  } else {
+    const sweepWidth = width * 0.22;
+    const sweepX = x + wrapped(motionTime * 0.018) * (width + sweepWidth) - sweepWidth;
+    const gradient = ctx.createLinearGradient(sweepX, y, sweepX + sweepWidth, y);
+    gradient.addColorStop(0, 'rgba(255, 213, 112, 0)');
+    gradient.addColorStop(0.5, 'rgba(255, 220, 132, 0.72)');
+    gradient.addColorStop(1, 'rgba(255, 213, 112, 0)');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(sweepX, y, sweepWidth, height);
+  }
+}
+
+function drawAtmosphereElement(
+  ctx: CanvasRenderingContext2D,
+  kind: AtmosphereKind,
+  color: string,
+  x: number,
+  y: number,
+  size: number,
+  index: number,
+): void {
+  if (kind === 'glint') {
+    ctx.beginPath();
+    ctx.moveTo(x - size, y);
+    ctx.lineTo(x + size, y - size * 0.16);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(1, size * 0.18);
+    ctx.stroke();
+    return;
+  }
+  if (kind === 'leaf') {
+    ctx.beginPath();
+    ctx.moveTo(x - size, y);
+    ctx.lineTo(x, y - size * 0.42);
+    ctx.lineTo(x + size, y);
+    ctx.lineTo(x, y + size * 0.42);
+    ctx.closePath();
+    ctx.fillStyle = color;
+    ctx.fill();
+    return;
+  }
+  if (kind === 'sparkle') {
+    ctx.beginPath();
+    ctx.moveTo(x - size, y);
+    ctx.lineTo(x + size, y);
+    ctx.moveTo(x, y - size);
+    ctx.lineTo(x, y + size);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = Math.max(0.8, size * 0.12);
+    ctx.stroke();
+    return;
+  }
+
+  ctx.beginPath();
+  const radius = kind === 'ember'
+    ? size * (0.72 + (index % 2) * 0.18)
+    : size;
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
 }
 
 export function drawStageAtmosphere(
@@ -245,49 +512,61 @@ export function drawStageAtmosphere(
   timeSeconds: number,
   reducedMotion = false,
 ): void {
-  if (themeId === 'normal') return;
   const time = Number.isFinite(timeSeconds) ? Math.max(0, timeSeconds) : 0;
-  const count = reducedMotion ? 6 : 12;
-  const color = ATMOSPHERE_COLORS[themeId];
+  const profile = ATMOSPHERE_PROFILES[themeId];
+  const count = Math.min(profile.count, reducedMotion ? 6 : 12);
+  const motionScale = reducedMotion ? 0.2 : 1;
   ctx.save();
-  ctx.fillStyle = color;
+  if (profile.overlay !== 'vignette') {
+    drawAtmosphereOverlay(ctx, layout, profile.overlay, time, reducedMotion);
+  }
   ctx.globalAlpha = reducedMotion ? 0.055 : 0.09;
   for (let index = 0; index < count; index += 1) {
     const seed = index * 0.61803398875;
-    const drift = wrapped(seed + time * (0.018 + (index % 3) * 0.004));
-    const x = layout.gameArea.x
-      + wrapped(seed * 1.71 + Math.sin(time * 0.12 + index) * 0.035)
-        * layout.gameArea.width;
-    const y = layout.gameArea.y + (1 - drift) * layout.gameArea.height;
-    const radius = Math.max(1.5, layout.tileWidth * (0.055 + (index % 4) * 0.018));
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fill();
+    if (profile.kind === 'mote') {
+      const drift = wrapped(
+        seed + time * (profile.speed + (index % 3) * 0.004) * motionScale,
+      );
+      const x = layout.gameArea.x
+        + wrapped(seed * 1.71 + Math.sin(time * 0.12 * motionScale + index) * 0.035)
+          * layout.gameArea.width;
+      const y = layout.gameArea.y + (1 - drift) * layout.gameArea.height;
+      const radius = Math.max(
+        1.5,
+        layout.tileWidth * (profile.minSize + (index % 4) * 0.018),
+      );
+      drawAtmosphereElement(
+        ctx,
+        profile.kind,
+        profile.colors[index % profile.colors.length],
+        x,
+        y,
+        radius,
+        index,
+      );
+      continue;
+    }
+    const progress = time * profile.speed * motionScale;
+    const x = layout.gameArea.x + wrapped(
+      seed * 1.71 + progress * profile.driftX + Math.sin(time * 0.11 + index) * 0.018,
+    ) * layout.gameArea.width;
+    const y = layout.gameArea.y + wrapped(
+      seed * 2.37 + progress * profile.driftY,
+    ) * layout.gameArea.height;
+    const sizeFraction = profile.minSize
+      + (index % 4) / 3 * (profile.maxSize - profile.minSize);
+    drawAtmosphereElement(
+      ctx,
+      profile.kind,
+      profile.colors[index % profile.colors.length],
+      x,
+      y,
+      Math.max(1.25, layout.tileWidth * sizeFraction),
+      index,
+    );
   }
-  if (themeId === 'abyssGate') {
-    const centerX = layout.gameArea.x + layout.gameArea.width / 2;
-    const centerY = layout.gameArea.y + layout.gameArea.height / 2;
-    const gradient = ctx.createRadialGradient(
-      centerX,
-      centerY,
-      layout.gameArea.height * 0.12,
-      centerX,
-      centerY,
-      layout.gameArea.width * 0.62,
-    );
-    gradient.addColorStop(0, 'rgba(28, 12, 42, 0)');
-    gradient.addColorStop(
-      1,
-      `rgba(12, 4, 22, ${reducedMotion ? 0.16 : 0.3})`,
-    );
-    ctx.globalAlpha = 1;
-    ctx.fillStyle = gradient;
-    ctx.fillRect(
-      layout.gameArea.x,
-      layout.gameArea.y,
-      layout.gameArea.width,
-      layout.gameArea.height,
-    );
+  if (profile.overlay === 'vignette') {
+    drawAtmosphereOverlay(ctx, layout, profile.overlay, time, reducedMotion);
   }
   ctx.restore();
 }

@@ -126,6 +126,10 @@ export function createRecordingContext(options: { rejectNonFinite?: boolean } = 
       record('createRadialGradient', args);
       return { addColorStop: (...colorArgs: unknown[]) => record('addColorStop', colorArgs) };
     },
+    createLinearGradient: (...args: unknown[]) => {
+      record('createLinearGradient', args);
+      return { addColorStop: (...colorArgs: unknown[]) => record('addColorStop', colorArgs) };
+    },
   } as unknown as CanvasRenderingContext2D;
 
   return { context, calls };
