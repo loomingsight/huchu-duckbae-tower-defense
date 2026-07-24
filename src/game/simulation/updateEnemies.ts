@@ -2,7 +2,7 @@ import { emitEnemyTraitEvent } from '../enemies/enemyTraits';
 import { getStageDefinition } from '../stages/stageCatalog';
 import type { GameEnemy, GameState } from './createGame';
 
-const SHADOW_SLIME_CHILD_HP_RATIO = 0.25;
+const SHADOW_SLIME_CHILD_HP_RATIO = 0.17;
 
 function splitChildren(state: GameState, parent: GameEnemy): GameEnemy[] {
   if (parent.type !== 'shadowSlime' || parent.splitGeneration !== 0) return [];

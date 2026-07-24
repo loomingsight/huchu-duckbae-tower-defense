@@ -71,7 +71,7 @@ describe('nightmare enemy traits', () => {
 
     expect(state.enemies).toHaveLength(2);
     expect(state.enemies.every(({ variant }) => variant === 'split-child')).toBe(true);
-    expect(state.enemies.every(({ maxHp }) => maxHp === 72 * 0.25)).toBe(true);
+    expect(state.enemies.every(({ maxHp }) => maxHp === 72 * 0.17)).toBe(true);
     expect(state.gold).toBe(283);
     expect(state.stats.combatScore).toBe(15);
 
@@ -95,13 +95,63 @@ describe('nightmare enemy traits', () => {
     updateEnemies(state, 0);
 
     expect(state.enemies).toHaveLength(2);
-    expect(state.enemies.every(({ maxHp }) => maxHp === arrowDamage)).toBe(true);
+    expect(state.enemies.every(({ maxHp }) => maxHp <= arrowDamage)).toBe(true);
     for (const child of state.enemies) {
       applyEnemyDamage(state, child, arrowDamage);
     }
     updateEnemies(state, 0);
 
     expect(state.enemies).toEqual([]);
+  });
+
+  it('keeps the approved early child arrow-hit curve across nightmare stages', () => {
+    const arrowDamage = TOWER_CATALOG.arrow.damage ?? 0;
+    const expectedHits = [
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 1],
+      [1, 1, 2],
+      [1, 2, 2],
+    ] as const;
+
+    for (const [stageIndex, stageNumber] of (
+      [1, 2, 3, 4, 5, 6] as const
+    ).entries()) {
+      for (const waveIndex of [0, 1, 2] as const) {
+        const state = createGame(`nightmare-${stageNumber}`);
+        spawnEnemy(state, 'shadowSlime', waveIndex);
+        state.enemies[0].hp = 0;
+
+        updateEnemies(state, 0);
+
+        expect(state.enemies).toHaveLength(2);
+        expect(Math.ceil(state.enemies[0].maxHp / arrowDamage))
+          .toBe(expectedHits[stageIndex][waveIndex]);
+      }
+    }
+  });
+
+  it('preserves early family gold and score without boosting late families', () => {
+    const early = createGame('nightmare-1');
+    spawnEnemy(early, 'shadowSlime', 0, 'standard', 2);
+    early.enemies[0].hp = 0;
+    updateEnemies(early, 0);
+    for (const child of early.enemies) child.hp = 0;
+    updateEnemies(early, 0);
+
+    expect(early.gold).toBe(291);
+    expect(early.stats.combatScore).toBe(40);
+
+    const late = createGame('nightmare-1');
+    spawnEnemy(late, 'shadowSlime', 3);
+    late.enemies[0].hp = 0;
+    updateEnemies(late, 0);
+    for (const child of late.enemies) child.hp = 0;
+    updateEnemies(late, 0);
+
+    expect(late.gold).toBe(287);
+    expect(late.stats.combatScore).toBe(25);
   });
 
   it('reduces the slow strength by half for vampire bats', () => {
