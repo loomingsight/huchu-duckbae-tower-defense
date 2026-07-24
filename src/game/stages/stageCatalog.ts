@@ -52,6 +52,12 @@ export type StageDefinition = Readonly<{
   scoreMultiplier: number;
   twoStarScore: number;
   threeStarScore: number;
+  waveHpGrowth: number;
+  interWaveDelaySeconds: number;
+  targetClearSeconds: Readonly<{
+    min: number;
+    max: number;
+  }>;
 }>;
 
 type NormalStageSeed = Readonly<{
@@ -172,12 +178,60 @@ const NIGHTMARE_ROUTES = [
   [[0, 4], [8, 4], [8, 6], [13, 6], [13, 4], [19, 4]],
 ] as const;
 
-const NIGHTMARE_HP_MULTIPLIERS = [1, 1.10, 1.21, 1.33, 1.47, 1.62] as const;
-const NIGHTMARE_SPEED_MULTIPLIERS = [1, 1.02, 1.04, 1.06, 1.08, 1.10] as const;
-const NIGHTMARE_SPAWN_MULTIPLIERS = [1, 0.97, 0.94, 0.91, 0.88, 0.85] as const;
-const NIGHTMARE_COUNT_MULTIPLIERS = [1, 1.04, 1.08, 1.12, 1.16, 1.20] as const;
-const NIGHTMARE_TWO_STAR_SCORES = [18_500, 19_000, 19_500, 20_500, 20_500, 21_500] as const;
-const NIGHTMARE_THREE_STAR_SCORES = [23_000, 23_500, 24_000, 25_000, 25_000, 26_500] as const;
+const DEFAULT_WAVE_HP_GROWTH = 0.08;
+const DEFAULT_INTER_WAVE_DELAY_SECONDS = 5;
+const DEFAULT_TARGET_CLEAR_SECONDS = Object.freeze({ min: 300, max: 420 });
+
+const NIGHTMARE_DIFFICULTY = [
+  {
+    hpMultiplier: 1,
+    speedMultiplier: 1,
+    spawnIntervalMultiplier: 1,
+    countMultiplier: 1,
+    twoStarScore: 18_500,
+    threeStarScore: 23_000,
+  },
+  {
+    hpMultiplier: 1.04,
+    speedMultiplier: 1,
+    spawnIntervalMultiplier: 1,
+    countMultiplier: 1,
+    twoStarScore: 18_500,
+    threeStarScore: 23_000,
+  },
+  {
+    hpMultiplier: 1.10,
+    speedMultiplier: 1.02,
+    spawnIntervalMultiplier: 0.98,
+    countMultiplier: 1.02,
+    twoStarScore: 19_000,
+    threeStarScore: 23_500,
+  },
+  {
+    hpMultiplier: 1.20,
+    speedMultiplier: 1.03,
+    spawnIntervalMultiplier: 0.96,
+    countMultiplier: 1.05,
+    twoStarScore: 19_500,
+    threeStarScore: 24_000,
+  },
+  {
+    hpMultiplier: 1.34,
+    speedMultiplier: 1.05,
+    spawnIntervalMultiplier: 0.93,
+    countMultiplier: 1.09,
+    twoStarScore: 19_500,
+    threeStarScore: 24_000,
+  },
+  {
+    hpMultiplier: 1.46,
+    speedMultiplier: 1.07,
+    spawnIntervalMultiplier: 0.90,
+    countMultiplier: 1.12,
+    twoStarScore: 20_500,
+    threeStarScore: 25_000,
+  },
+] as const;
 
 const NORMAL_STAGES: readonly StageDefinition[] = STAGE_NUMBERS.map((number) => {
   const seed = NORMAL_STAGE_SEEDS[number - 1];
@@ -199,11 +253,15 @@ const NORMAL_STAGES: readonly StageDefinition[] = STAGE_NUMBERS.map((number) => 
     scoreMultiplier: 1,
     twoStarScore: 7_000,
     threeStarScore: 10_000,
+    waveHpGrowth: DEFAULT_WAVE_HP_GROWTH,
+    interWaveDelaySeconds: DEFAULT_INTER_WAVE_DELAY_SECONDS,
+    targetClearSeconds: DEFAULT_TARGET_CLEAR_SECONDS,
   };
 });
 
 const NIGHTMARE_STAGES: readonly StageDefinition[] = STAGE_NUMBERS.map((number) => {
   const index = number - 1;
+  const difficulty = NIGHTMARE_DIFFICULTY[index];
   const waypoints = NIGHTMARE_ROUTES[index].map(([col, row]) => ({ col, row }));
   return {
     key: stageKey('nightmare', number),
@@ -212,17 +270,20 @@ const NIGHTMARE_STAGES: readonly StageDefinition[] = STAGE_NUMBERS.map((number) 
     name: NIGHTMARE_NAMES[index],
     themeId: NIGHTMARE_THEME_IDS[index],
     map: createStageMap(waypoints),
-    waves: createNightmareWaves(number),
-    hpMultiplier: NIGHTMARE_HP_MULTIPLIERS[index],
-    speedMultiplier: NIGHTMARE_SPEED_MULTIPLIERS[index],
-    spawnIntervalMultiplier: NIGHTMARE_SPAWN_MULTIPLIERS[index],
-    countMultiplier: NIGHTMARE_COUNT_MULTIPLIERS[index],
+    waves: createNightmareWaves(number, difficulty.countMultiplier),
+    hpMultiplier: difficulty.hpMultiplier,
+    speedMultiplier: difficulty.speedMultiplier,
+    spawnIntervalMultiplier: difficulty.spawnIntervalMultiplier,
+    countMultiplier: difficulty.countMultiplier,
     startingGold: 280,
     baseHp: 12,
     rewardMultiplier: 0.85,
     scoreMultiplier: 1.5,
-    twoStarScore: NIGHTMARE_TWO_STAR_SCORES[index],
-    threeStarScore: NIGHTMARE_THREE_STAR_SCORES[index],
+    twoStarScore: difficulty.twoStarScore,
+    threeStarScore: difficulty.threeStarScore,
+    waveHpGrowth: DEFAULT_WAVE_HP_GROWTH,
+    interWaveDelaySeconds: DEFAULT_INTER_WAVE_DELAY_SECONDS,
+    targetClearSeconds: DEFAULT_TARGET_CLEAR_SECONDS,
   };
 });
 

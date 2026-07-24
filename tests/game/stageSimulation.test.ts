@@ -32,9 +32,12 @@ describe('stage-aware simulation', () => {
 
   it('applies the stage and wave HP multipliers exactly once', () => {
     const state = createGame('normal-6');
+    const stage = getStageDefinition('normal-6');
     spawnEnemy(state, 'minotaur', 9);
 
-    const expectedHp = ENEMY_CATALOG.minotaur.hp * 1.52 * 1.72;
+    const expectedHp = ENEMY_CATALOG.minotaur.hp
+      * stage.hpMultiplier
+      * (1 + 9 * stage.waveHpGrowth);
     expect(state.enemies[0].maxHp).toBeCloseTo(expectedHp);
     expect(state.enemies[0].hp).toBeCloseTo(expectedHp);
   });
@@ -60,6 +63,19 @@ describe('stage-aware simulation', () => {
 
     expect(state.enemies).toHaveLength(1);
     expect(state.wave.spawnCooldown).toBeCloseTo((0.70 * 0.92) - 0.01);
+  });
+
+  it('uses the selected stage inter-wave delay', () => {
+    const state = createGame('nightmare-2');
+    const stage = getStageDefinition('nightmare-2');
+    state.wave.groupIndex = stage.waves[0].groups.length;
+    state.enemies = [];
+
+    updateWaves(state, 0.01);
+
+    expect(state.wave.delayActive).toBe(true);
+    expect(state.wave.delayRemaining)
+      .toBeCloseTo(stage.interWaveDelaySeconds - 0.01);
   });
 
   it('uses the selected map for placement and targeting coordinates', () => {

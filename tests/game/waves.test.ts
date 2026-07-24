@@ -3,6 +3,7 @@ import { createGame } from '../../src/game/simulation/createGame';
 import { updateWaves } from '../../src/game/simulation/updateWaves';
 import { createNightmareWaves } from '../../src/game/waves/nightmareWaves';
 import { isValidWaveGroup, STAGE_1_WAVES } from '../../src/game/waves/stage1Waves';
+import { getStageDefinition } from '../../src/game/stages/stageCatalog';
 
 describe('stage 1 waves', () => {
   it('contains ten declarative waves', () => {
@@ -57,8 +58,9 @@ describe('stage 1 waves', () => {
   });
 
   it('creates ten deterministic nightmare waves with one elite and one lich', () => {
-    const first = createNightmareWaves(4);
-    const second = createNightmareWaves(4);
+    const countMultiplier = getStageDefinition('nightmare-4').countMultiplier;
+    const first = createNightmareWaves(4, countMultiplier);
+    const second = createNightmareWaves(4, countMultiplier);
 
     expect(first).toEqual(second);
     expect(first).toHaveLength(10);
@@ -71,5 +73,15 @@ describe('stage 1 waves', () => {
       count: 1,
       spawnInterval: 0,
     });
+  });
+
+  it('uses the catalog count multiplier and normalizes invalid values', () => {
+    const waves = createNightmareWaves(2, 1);
+    const ordinaryCount = waves.flatMap(({ groups }) => groups)
+      .filter(({ type, variant }) => type !== 'lichKing' && variant !== 'elite')
+      .reduce((sum, { count }) => sum + count, 0);
+
+    expect(ordinaryCount).toBe(215);
+    expect(createNightmareWaves(2, Number.NaN)).toEqual(waves);
   });
 });

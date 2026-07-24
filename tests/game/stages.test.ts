@@ -99,6 +99,9 @@ describe('twelve-stage catalog', () => {
       expect(stage.hpMultiplier).toBe(expected.hp);
       expect(stage.speedMultiplier).toBe(expected.speed);
       expect(stage.spawnIntervalMultiplier).toBe(expected.spawn);
+      expect(stage.waveHpGrowth).toBe(0.08);
+      expect(stage.interWaveDelaySeconds).toBe(5);
+      expect(stage.targetClearSeconds).toEqual({ min: 300, max: 420 });
       expect(stage.waves).toHaveLength(10);
 
       const groups = stage.waves.flatMap((wave) => wave.groups);
@@ -143,11 +146,11 @@ describe('twelve-stage catalog', () => {
   it('defines the six approved nightmare maps and economy', () => {
     const expected = [
       ['달빛 늪', 30, 62, 1.00, 1.00, 1.00, 1.00, 18_500, 23_000],
-      ['썩은 숲', 27, 56, 1.10, 1.02, 0.97, 1.04, 19_000, 23_500],
-      ['잿빛 폐허', 25, 52, 1.21, 1.04, 0.94, 1.08, 19_500, 24_000],
-      ['핏빛 협곡', 26, 54, 1.33, 1.06, 0.91, 1.12, 20_500, 25_000],
-      ['흑요석 광산', 24, 50, 1.47, 1.08, 0.88, 1.16, 20_500, 25_000],
-      ['심연의 성문', 23, 48, 1.62, 1.10, 0.85, 1.20, 21_500, 26_500],
+      ['썩은 숲', 27, 56, 1.04, 1.00, 1.00, 1.00, 18_500, 23_000],
+      ['잿빛 폐허', 25, 52, 1.10, 1.02, 0.98, 1.02, 19_000, 23_500],
+      ['핏빛 협곡', 26, 54, 1.20, 1.03, 0.96, 1.05, 19_500, 24_000],
+      ['흑요석 광산', 24, 50, 1.34, 1.05, 0.93, 1.09, 19_500, 24_000],
+      ['심연의 성문', 23, 48, 1.46, 1.07, 0.90, 1.12, 20_500, 25_000],
     ] as const;
 
     for (const [index, row] of expected.entries()) {
@@ -167,6 +170,9 @@ describe('twelve-stage catalog', () => {
       expect(stage.baseHp).toBe(12);
       expect(stage.rewardMultiplier).toBe(0.85);
       expect(stage.scoreMultiplier).toBe(1.5);
+      expect(stage.waveHpGrowth).toBe(0.08);
+      expect(stage.interWaveDelaySeconds).toBe(5);
+      expect(stage.targetClearSeconds).toEqual({ min: 300, max: 420 });
     }
   });
 

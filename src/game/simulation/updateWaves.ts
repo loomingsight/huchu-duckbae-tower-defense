@@ -8,7 +8,6 @@ import { getStageDefinition } from '../stages/stageCatalog';
 import { isValidWaveGroup } from '../waves/stage1Waves';
 import type { GameState } from './createGame';
 
-export const INTER_WAVE_DELAY_SECONDS = 5;
 export const MAX_WAVE_SPAWNS_PER_UPDATE = 1024;
 const TIME_EPSILON = 1e-12;
 
@@ -23,7 +22,7 @@ export function spawnEnemy(
   const elite = variant === 'elite';
   const scaledHp = definition.hp
     * stage.hpMultiplier
-    * (1 + waveIndex * 0.08)
+    * (1 + waveIndex * stage.waveHpGrowth)
     * (elite ? 1.8 : 1);
   const enemy = {
     id: state.nextEnemyId,
@@ -88,7 +87,7 @@ export function updateWaves(state: GameState, dt: number): void {
 
       if (!state.wave.delayActive) {
         state.wave.delayActive = true;
-        state.wave.delayRemaining = INTER_WAVE_DELAY_SECONDS;
+        state.wave.delayRemaining = stage.interWaveDelaySeconds;
       }
       if (remaining < state.wave.delayRemaining - TIME_EPSILON) {
         state.wave.delayRemaining -= remaining;

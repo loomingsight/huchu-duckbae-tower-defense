@@ -22,8 +22,6 @@ const BASE_COUNTS = [
   [6, 8, 10, 5],
 ] as const;
 
-const COUNT_MULTIPLIERS = [1, 1.04, 1.08, 1.12, 1.16, 1.20] as const;
-
 const TYPE_WEIGHTS = [
   [1, 1, 1, 1],
   [0.90, 1.25, 1, 0.90],
@@ -50,15 +48,21 @@ const INTERVALS = [
   [0.39, 0.33, 0.46, 0.76],
 ] as const;
 
-export function createNightmareWaves(stageNumber: StageNumber): readonly Wave[] {
+export function createNightmareWaves(
+  stageNumber: StageNumber,
+  countMultiplier: number,
+): readonly Wave[] {
   const stageIndex = stageNumber - 1;
+  const safeCountMultiplier = Number.isFinite(countMultiplier) && countMultiplier > 0
+    ? countMultiplier
+    : 1;
   return BASE_COUNTS.map((counts, waveIndex) => {
     const groups: WaveGroup[] = counts.flatMap((baseCount, typeIndex) => {
       if (baseCount === 0) return [];
       return [{
         type: TYPES[typeIndex],
         count: Math.round(
-          baseCount * COUNT_MULTIPLIERS[stageIndex] * TYPE_WEIGHTS[stageIndex][typeIndex],
+          baseCount * safeCountMultiplier * TYPE_WEIGHTS[stageIndex][typeIndex],
         ),
         spawnInterval: INTERVALS[Math.floor(waveIndex / 2)][typeIndex],
       }];
