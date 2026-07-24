@@ -1,12 +1,14 @@
 export type AudioParamLike = Readonly<{
   setValueAtTime(value: number, startTime: number): void;
   exponentialRampToValueAtTime(value: number, endTime: number): void;
+  linearRampToValueAtTime(value: number, endTime: number): void;
 }>;
 
 export type OscillatorLike = {
   type: OscillatorType;
   readonly frequency: AudioParamLike;
   connect(destination: unknown): void;
+  disconnect?(): void;
   start(when?: number): void;
   stop(when?: number): void;
 };
@@ -14,6 +16,7 @@ export type OscillatorLike = {
 export type GainLike = Readonly<{
   gain: AudioParamLike;
   connect(destination: unknown): void;
+  disconnect?(): void;
 }>;
 
 export type AudioContextLike = Readonly<{

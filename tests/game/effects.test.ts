@@ -371,12 +371,17 @@ function fakeAudioContext(): AudioContextLike {
     gain: {
       setValueAtTime: vi.fn(),
       exponentialRampToValueAtTime: vi.fn(),
+      linearRampToValueAtTime: vi.fn(),
     },
     connect: vi.fn(),
   };
   const oscillator = {
     type: 'sine' as OscillatorType,
-    frequency: { setValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() },
+    frequency: {
+      setValueAtTime: vi.fn(),
+      exponentialRampToValueAtTime: vi.fn(),
+      linearRampToValueAtTime: vi.fn(),
+    },
     connect: vi.fn(),
     start: vi.fn(),
     stop: vi.fn(),
