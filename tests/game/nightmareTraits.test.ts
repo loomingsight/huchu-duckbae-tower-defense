@@ -13,6 +13,14 @@ import { spawnEnemy } from '../../src/game/simulation/updateWaves';
 import { TOWER_CATALOG } from '../../src/game/towers/towerCatalog';
 
 describe('nightmare enemy traits', () => {
+  it('announces the split trait when a shadow slime first appears', () => {
+    const state = createGame('nightmare-1');
+
+    spawnEnemy(state, 'shadowSlime', 0);
+
+    expect(state.traitEvents.at(-1)?.kind).toBe('split-open');
+  });
+
   it('blocks exactly three damage events before the skeleton takes damage', () => {
     const state = createGame('nightmare-1');
     spawnEnemy(state, 'skeletonKnight', 0);

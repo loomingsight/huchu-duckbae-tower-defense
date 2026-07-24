@@ -13,6 +13,7 @@ export type EnemyTraitVisualEvent = Readonly<{
     | 'shield-break'
     | 'damage'
     | 'split'
+    | 'split-open'
     | 'slow-resist'
     | 'armor-crack'
     | 'lich-aura'

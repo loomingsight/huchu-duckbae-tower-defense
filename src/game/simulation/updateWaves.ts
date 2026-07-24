@@ -52,6 +52,9 @@ export function spawnEnemy(
     lastHitAtSeconds: null,
   };
   state.enemies.push(enemy);
+  if (type === 'shadowSlime') {
+    emitEnemyTraitEvent(state, enemy, 'split-open');
+  }
   if (type === 'skeletonKnight') {
     emitEnemyTraitEvent(state, enemy, 'shield-open');
   }

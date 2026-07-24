@@ -139,7 +139,10 @@ export function effectsForHits(events: readonly Readonly<GameHitEvent>[]): Runti
 }
 
 const TRAIT_EFFECTS: Readonly<Record<
-  Exclude<EnemyTraitVisualEvent['kind'], 'damage' | 'split'> | 'split-burst',
+  Exclude<
+    EnemyTraitVisualEvent['kind'],
+    'damage' | 'split' | 'split-open'
+  > | 'split-burst',
   number
 >> = {
   'shield-open': 0.35,
@@ -158,6 +161,7 @@ export function effectsForTraits(
   return events.flatMap((event) => {
     if (
       event.kind === 'damage'
+      || event.kind === 'split-open'
       || !Number.isFinite(event.position.x)
       || !Number.isFinite(event.position.y)
     ) return [];

@@ -238,6 +238,14 @@ describe('runtime effects', () => {
     expect(buffer.peek().traitEvents).toEqual([]);
   });
 
+  it('does not turn the shadow-slime onboarding event into a canvas effect', () => {
+    expect(effectsForTraits([{
+      kind: 'split-open',
+      enemyId: 1,
+      position: { x: 0.5, y: 0.5 },
+    }])).toEqual([]);
+  });
+
   it('ignores non-visual damage and invalid trait event coordinates', () => {
     expect(effectsForTraits([
       { kind: 'damage', enemyId: 1, position: { x: 1, y: 1 } },

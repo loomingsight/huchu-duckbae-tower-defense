@@ -13,6 +13,12 @@ const slowResistEvent = {
   position: { x: 3.5, y: 2.5 },
 };
 
+const splitOpenEvent = {
+  kind: 'split-open' as const,
+  enemyId: 1,
+  position: { x: 0.5, y: 0.5 },
+};
+
 describe('slow resistance onboarding state', () => {
   it('shows the fixed copy for 2.5 seconds after the first event', () => {
     const state = updateTraitNoticeState(
@@ -61,5 +67,28 @@ describe('slow resistance onboarding state', () => {
     );
     expect(traitNoticeView(shown, 5)).not.toBeNull();
     expect(traitNoticeView(createTraitNoticeState(), 5)).toBeNull();
+  });
+
+  it('shows the split explanation only on the first shadow-slime appearance', () => {
+    const first = updateTraitNoticeState(
+      createTraitNoticeState(),
+      [splitOpenEvent],
+      3,
+    );
+
+    expect(traitNoticeView(first, 3)).toEqual({
+      title: '분열 슬라임 · 분열',
+      body: '처치하면 작은 슬라임 2마리로 나뉘어요',
+    });
+    expect(traitNoticeView(first, 5.499)).not.toBeNull();
+    expect(traitNoticeView(first, 5.5)).toBeNull();
+
+    const repeated = updateTraitNoticeState(first, [splitOpenEvent], 6);
+    expect(repeated).toMatchObject({
+      splitShown: true,
+      activeNotice: null,
+      noticeEndsAt: null,
+    });
+    expect(traitNoticeView(repeated, 6)).toBeNull();
   });
 });
