@@ -109,17 +109,17 @@ describe('stage 1 waves', () => {
       [7, 6, 5, 8, 0, 6, 10, 6, 8, 6],
       [6, 5, 5, 7, 0, 5, 9, 5, 7, 5],
       [6, 5, 4, 7, 0, 5, 9, 5, 7, 5],
-      [10, 8, 7, 11, 1, 8, 14, 8, 11, 8],
-      [6, 5, 4, 7, 0, 5, 9, 5, 7, 5],
-      [8, 7, 6, 9, 0, 7, 12, 7, 9, 7],
+      [9, 8, 7, 11, 1, 8, 13, 8, 11, 8],
+      [6, 5, 4, 7, 0, 5, 8, 5, 7, 5],
+      [8, 7, 6, 9, 0, 7, 11, 7, 9, 7],
     ] as const;
     const expectedEarlyKillValueMultiplier = [1.6, 1.7, 1.6, 1.6, 1.6, 1.6] as const;
     const expectedFamilyGold = [9, 10, 9, 9, 9, 9] as const;
     const expectedFamilyCombatScore = [34, 35.5, 34, 34, 34, 34] as const;
     const previousGold = [165, 154, 132, 220, 132, 198] as const;
-    const expectedGold = [162, 160, 135, 225, 135, 189] as const;
+    const expectedGold = [162, 160, 135, 216, 135, 189] as const;
     const previousCombatScore = [600, 560, 480, 800, 480, 720] as const;
-    const expectedCombatScore = [612, 568, 510, 850, 510, 714] as const;
+    const expectedCombatScore = [612, 568, 510, 816, 510, 714] as const;
 
     for (const [index, stageNumber] of ([1, 2, 3, 4, 5, 6] as const).entries()) {
       const stage = getStageDefinition(`nightmare-${stageNumber}`);

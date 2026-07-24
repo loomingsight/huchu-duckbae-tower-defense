@@ -24,7 +24,7 @@ describe('stage-aware simulation', () => {
 
     expect(createGame('nightmare-3')).toMatchObject({
       stageKey: 'nightmare-3',
-      gold: 280,
+      gold: 360,
       baseHp: 12,
     });
     expect(createGame(99).stageKey).toBe('normal-1');

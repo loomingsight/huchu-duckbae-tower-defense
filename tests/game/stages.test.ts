@@ -162,12 +162,12 @@ describe('twelve-stage catalog', () => {
 
   it('defines the six approved nightmare maps and economy', () => {
     const expected = [
-      ['달빛 늪', 30, 62, 1.00, 1.00, 1.00, 1.00, 18_500, 23_000],
-      ['썩은 숲', 27, 56, 1.04, 1.00, 1.00, 1.00, 18_500, 23_000],
-      ['잿빛 폐허', 25, 52, 1.10, 1.02, 0.98, 1.02, 19_000, 23_500],
-      ['핏빛 협곡', 26, 54, 1.20, 1.03, 0.96, 1.05, 19_500, 24_000],
-      ['흑요석 광산', 24, 50, 1.34, 1.05, 0.93, 1.09, 19_500, 24_000],
-      ['심연의 성문', 23, 48, 1.46, 1.07, 0.90, 1.12, 20_500, 25_000],
+      ['달빛 늪', 30, 62, 1.00, 1.00, 1.00, 1.00, 280, 18_500, 23_000],
+      ['썩은 숲', 27, 56, 1.04, 1.00, 1.00, 1.00, 280, 18_500, 23_000],
+      ['잿빛 폐허', 25, 52, 1.07, 1.01, 1.00, 1.00, 360, 19_000, 23_500],
+      ['핏빛 협곡', 26, 54, 1.13, 1.02, 0.98, 1.02, 380, 19_500, 24_000],
+      ['흑요석 광산', 24, 50, 1.21, 1.03, 0.96, 1.05, 480, 19_500, 24_000],
+      ['심연의 성문', 23, 48, 1.30, 1.05, 0.94, 1.08, 480, 20_500, 25_000],
     ] as const;
 
     for (const [index, row] of expected.entries()) {
@@ -180,10 +180,10 @@ describe('twelve-stage catalog', () => {
         stage.speedMultiplier,
         stage.spawnIntervalMultiplier,
         stage.countMultiplier,
+        stage.startingGold,
         stage.twoStarScore,
         stage.threeStarScore,
       ]).toEqual(row);
-      expect(stage.startingGold).toBe(280);
       expect(stage.baseHp).toBe(12);
       expect(stage.rewardMultiplier).toBe(0.85);
       expect(stage.scoreMultiplier).toBe(1.5);
