@@ -77,32 +77,37 @@ export class MusicSequencer {
   setTrack(
     trackId: MusicTrackId | null,
     crossfadeSeconds = FIRST_TRACK_FADE_SECONDS,
-  ): void {
-    if (this.destroyed) return;
+  ): boolean {
+    if (this.destroyed) return false;
     if (trackId !== null) {
       const track = MUSIC_TRACKS[trackId];
-      if (track === undefined || !validateMusicTrack(track)) return;
+      if (track === undefined || !validateMusicTrack(track)) return false;
     }
-    if (trackId === this.desiredTrackId) return;
-    this.desiredTrackId = trackId;
+    const activeVoice = this.voices.find((voice) => voice.fadeEndTime === null);
+    if (trackId === this.desiredTrackId && (
+      trackId === null || activeVoice?.track.id === trackId
+    )) return true;
     if (this.muted) {
+      this.desiredTrackId = trackId;
       this.stopAllVoices();
-      return;
+      return true;
     }
     if (trackId === null) {
+      this.desiredTrackId = null;
       this.stopAllVoices();
-      return;
+      return true;
     }
 
     const now = this.safeCurrentTime();
-    const activeVoice = this.voices.find((voice) => voice.fadeEndTime === null);
     const fadeSeconds = activeVoice === undefined
       ? Math.min(FIRST_TRACK_FADE_SECONDS, finiteDuration(crossfadeSeconds, FIRST_TRACK_FADE_SECONDS))
       : finiteDuration(crossfadeSeconds, 1);
+    if (!this.startVoice(MUSIC_TRACKS[trackId], now, fadeSeconds)) return false;
     if (activeVoice !== undefined) {
       this.fadeOutVoice(activeVoice, now, fadeSeconds);
     }
-    this.startVoice(MUSIC_TRACKS[trackId], now, fadeSeconds);
+    this.desiredTrackId = trackId;
+    return true;
   }
 
   setDucked(ducked: boolean): void {
@@ -162,15 +167,20 @@ export class MusicSequencer {
       : 0;
   }
 
-  private startVoice(track: MusicTrack, now: number, fadeSeconds: number): void {
-    let bus: GainLike;
+  private startVoice(track: MusicTrack, now: number, fadeSeconds: number): boolean {
+    let bus: GainLike | null = null;
     try {
       bus = this.context.createGain();
       bus.gain.setValueAtTime(0, now);
       bus.gain.linearRampToValueAtTime(1, now + fadeSeconds);
       bus.connect(this.master);
     } catch {
-      return;
+      try {
+        bus?.disconnect?.();
+      } catch {
+        // A partially-created voice bus may not support disconnect.
+      }
+      return false;
     }
     this.voices.push({
       id: this.nextVoiceId,
@@ -182,6 +192,7 @@ export class MusicSequencer {
       fadeEndTime: null,
     });
     this.nextVoiceId += 1;
+    return true;
   }
 
   private fadeOutVoice(voice: TrackVoice, now: number, fadeSeconds: number): void {

@@ -1,3 +1,7 @@
+import type { GameMode } from '../stages/stageIdentity';
+import { MusicSequencer } from './MusicSequencer';
+import { musicTrackIdFor, type MusicTrackId } from './musicTracks';
+
 export type AudioParamLike = Readonly<{
   setValueAtTime(value: number, startTime: number): void;
   exponentialRampToValueAtTime(value: number, endTime: number): void;
@@ -176,8 +180,9 @@ export class SoundEngine {
       && nextTrackId.endsWith('Boss');
     sequencer.setMuted(this.muted);
     sequencer.setDucked(this.musicState.ducked);
-    sequencer.setTrack(nextTrackId, isBossTransition ? 1 : 0.25);
-    this.appliedTrackId = nextTrackId;
+    if (sequencer.setTrack(nextTrackId, isBossTransition ? 1 : 0.25)) {
+      this.appliedTrackId = nextTrackId;
+    }
     sequencer.tick();
   }
 
@@ -203,6 +208,3 @@ export class SoundEngine {
     }
   }
 }
-import { MusicSequencer } from './MusicSequencer';
-import { musicTrackIdFor, type MusicTrackId } from './musicTracks';
-import type { GameMode } from '../stages/stageIdentity';

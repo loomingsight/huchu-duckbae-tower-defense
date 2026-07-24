@@ -32,6 +32,7 @@ type FakeOscillator = OscillatorLike & Readonly<{
 function createFakeAudioContext() {
   let now = 0;
   let failOscillator = false;
+  let failNextGain = false;
   const gains: FakeGain[] = [];
   const oscillators: FakeOscillator[] = [];
   const createParam = (calls: ParamCall[]): AudioParamLike => ({
@@ -52,6 +53,10 @@ function createFakeAudioContext() {
     resume: vi.fn(async () => undefined),
     close: vi.fn(async () => undefined),
     createGain: vi.fn(() => {
+      if (failNextGain) {
+        failNextGain = false;
+        throw new Error('gain unavailable');
+      }
       const calls: ParamCall[] = [];
       const gain: FakeGain = {
         gain: createParam(calls),
@@ -86,6 +91,7 @@ function createFakeAudioContext() {
     oscillators,
     setTime(value: number) { now = value; },
     setFailOscillator(value: boolean) { failOscillator = value; },
+    failOneGain() { failNextGain = true; },
   };
 }
 
@@ -222,5 +228,19 @@ describe('MusicSequencer', () => {
     expect(() => sequencer.tick()).not.toThrow();
     expect(() => sequencer.destroy()).not.toThrow();
     expect(fake.gains[0].disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('retries the same desired track after a transient voice-bus failure', () => {
+    const fake = createFakeAudioContext();
+    const sequencer = new MusicSequencer(fake.context);
+    fake.failOneGain();
+
+    sequencer.setTrack('normalBattle');
+    sequencer.tick();
+    expect(fake.oscillators).toHaveLength(0);
+
+    sequencer.setTrack('normalBattle');
+    sequencer.tick();
+    expect(fake.oscillators.length).toBeGreaterThan(0);
   });
 });
