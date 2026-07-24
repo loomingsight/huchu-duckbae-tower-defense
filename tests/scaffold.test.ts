@@ -162,6 +162,23 @@ describe('project scaffold', () => {
     expect(app).toContain('runtime.inspectTower(');
   });
 
+  it('provides an accessible in-game exit confirmation control', () => {
+    const hud = readFileSync('src/app/hud.ts', 'utf8');
+    const css = readFileSync('src/styles.css', 'utf8');
+
+    expect(hud).toContain('data-control="exit"');
+    expect(hud).toContain(
+      'aria-label="현재 게임을 그만두고 스테이지 선택으로 이동"',
+    );
+    expect(hud).toContain('data-state-secondary-action');
+    expect(css).toMatch(
+      /\.stage-select-screen\[data-overlay-mode="confirm"\]\s*\{[^}]*background: rgba\(/s,
+    );
+    expect(css).toMatch(
+      /\.stage-select-screen__secondary-action\s*\{[^}]*min-height: 44px;/s,
+    );
+  });
+
   it('resets monster onboarding against the selected stage', () => {
     const app = readFileSync('src/app/GameApp.ts', 'utf8');
 

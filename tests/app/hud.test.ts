@@ -4,6 +4,7 @@ import {
   createHudView,
   createModalFocusManager,
   createResultPanelMarkup,
+  createStateOverlayView,
   createStageSelectView,
   createTowerInspectionView,
   createTraitNoticeMarkup,
@@ -289,6 +290,21 @@ describe('mobile HUD view', () => {
       .toBe('나이트메어 1 시작');
   });
 
+  it('builds the approved in-game exit confirmation view', () => {
+    expect(createStateOverlayView('paused', '', undefined, true)).toEqual({
+      visible: true,
+      mode: 'confirm',
+      title: '게임을 그만둘까요?',
+      body: '현재 스테이지 진행은 저장되지 않아요.',
+      primaryAction: '계속하기',
+      primaryDisabled: false,
+      secondaryAction: '스테이지 선택',
+      secondaryVisible: true,
+    });
+
+    expect(createStateOverlayView('playing', '', undefined, false).visible).toBe(false);
+  });
+
   it('renders nightmare result bonuses, zero stars, and the guardian badge', () => {
     const markup = createResultPanelMarkup({
       modeLabel: '나이트메어',
@@ -391,5 +407,38 @@ describe('mobile HUD view', () => {
     expect(origin.focusCount).toBe(0);
     manager.commit();
     expect(origin.focusCount).toBe(1);
+  });
+
+  it('refocuses the primary action when the state overlay changes identity', () => {
+    class FakeTarget implements ModalFocusTarget {
+      inert = false;
+      isConnected = true;
+      focusCount = 0;
+      focus() { this.focusCount += 1; }
+    }
+    const origin = new FakeTarget();
+    const stateAction = new FakeTarget();
+    const manager = createModalFocusManager({
+      backgrounds: [new FakeTarget()],
+      stateOverlay: new FakeTarget(),
+      stateAction,
+      portraitPrompt: new FakeTarget(),
+      fallback: new FakeTarget(),
+      getActiveElement: () => origin,
+    });
+
+    manager.sync({
+      stateVisible: true,
+      portraitBlocked: false,
+      stateKey: 'exit-confirm',
+    });
+    manager.sync({
+      stateVisible: true,
+      portraitBlocked: false,
+      stateKey: 'stage-select',
+    });
+
+    expect(stateAction.focusCount).toBe(2);
+    expect(origin.focusCount).toBe(0);
   });
 });

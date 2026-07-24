@@ -479,6 +479,11 @@ button {
   display: none;
 }
 
+.stage-select-screen[data-overlay-mode="confirm"] {
+  background: rgba(7, 20, 16, 0.76);
+  backdrop-filter: blur(4px);
+}
+
 .stage-select-screen__panel {
   width: min(96vw, 760px);
   max-height: calc(100dvh - 16px);
@@ -489,6 +494,17 @@ button {
   background: linear-gradient(150deg, #315b48, var(--md-sys-color-surface-container));
   box-shadow: var(--md-sys-elevation-2);
   text-align: center;
+}
+
+.stage-select-screen[data-overlay-mode="confirm"] .stage-select-screen__panel {
+  width: min(88vw, 420px);
+}
+
+.stage-select-screen[data-overlay-mode="confirm"] .stage-mode-tabs,
+.stage-select-screen[data-overlay-mode="confirm"] .stage-picker,
+.stage-select-screen[data-overlay-mode="confirm"] .stage-select-screen__badge,
+.stage-select-screen[data-overlay-mode="confirm"] .game-result {
+  display: none;
 }
 
 .stage-select-screen__eyebrow {
@@ -734,7 +750,34 @@ button {
   font-weight: 800;
 }
 
+.stage-select-screen__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
 .stage-select-screen__action,
+.stage-select-screen__secondary-action {
+  min-width: 150px;
+  min-height: 44px;
+  margin-top: 0;
+  padding: 8px 18px;
+  border-radius: var(--md-sys-shape-small);
+  font-weight: 900;
+}
+
+.stage-select-screen__action {
+  background: var(--md-sys-color-secondary);
+  color: #2d2419;
+}
+
+.stage-select-screen__secondary-action {
+  border-color: rgba(255, 255, 255, 0.34);
+  background: var(--md-sys-color-surface-container-high);
+}
+
 .fatal-shell__button {
   min-width: 150px;
   margin-top: 10px;

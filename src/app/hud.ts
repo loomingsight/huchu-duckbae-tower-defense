@@ -302,14 +302,23 @@ export function createModalFocusManager(options: Readonly<{
   getActiveElement(): ModalFocusTarget | null;
 }>) {
   let mode: ModalMode = 'none';
+  let activeStateKey = '';
   let previousFocus: ModalFocusTarget | null = null;
   let pendingFocus: ModalFocusTarget | null = null;
 
-  function prepare(state: Readonly<{ stateVisible: boolean; portraitBlocked: boolean }>): boolean {
+  function prepare(state: Readonly<{
+    stateVisible: boolean;
+    portraitBlocked: boolean;
+    stateKey?: string;
+  }>): boolean {
     const nextMode: ModalMode = state.portraitBlocked
       ? 'portrait'
       : state.stateVisible ? 'state' : 'none';
-    if (nextMode === mode) return false;
+    const nextStateKey = nextMode === 'state' ? state.stateKey ?? 'state' : '';
+    const stateIdentityChanged = mode === 'state'
+      && nextMode === 'state'
+      && activeStateKey !== nextStateKey;
+    if (nextMode === mode && !stateIdentityChanged) return false;
 
     if (mode === 'none' && nextMode !== 'none') previousFocus = options.getActiveElement();
     const modalVisible = nextMode !== 'none';
@@ -317,6 +326,7 @@ export function createModalFocusManager(options: Readonly<{
     options.stateOverlay.inert = nextMode === 'portrait';
 
     mode = nextMode;
+    activeStateKey = nextStateKey;
     if (mode === 'portrait') pendingFocus = options.portraitPrompt;
     else if (mode === 'state') pendingFocus = options.stateAction;
     else {
@@ -332,7 +342,11 @@ export function createModalFocusManager(options: Readonly<{
     pendingFocus = null;
   }
 
-  function sync(state: Readonly<{ stateVisible: boolean; portraitBlocked: boolean }>): void {
+  function sync(state: Readonly<{
+    stateVisible: boolean;
+    portraitBlocked: boolean;
+    stateKey?: string;
+  }>): void {
     if (prepare(state)) commit();
   }
 
@@ -364,6 +378,7 @@ export type HudElements = Readonly<{
   pauseButton: HTMLButtonElement;
   speedButton: HTMLButtonElement;
   muteButton: HTMLButtonElement;
+  exitButton: HTMLButtonElement;
   towerTrayPositionButton: HTMLButtonElement;
   towerButtons: Readonly<Record<TowerType, HTMLButtonElement>>;
   placementStatus: HTMLElement;
@@ -386,6 +401,7 @@ export type HudElements = Readonly<{
   badge: HTMLElement;
   resultPanel: HTMLElement;
   stateAction: HTMLButtonElement;
+  stateSecondaryAction: HTMLButtonElement;
 }>;
 
 function requiredElement<T extends Element>(root: ParentNode, selector: string): T {
@@ -407,6 +423,8 @@ export function createHud(root: HTMLElement): HudElements {
           <button class="game-control icon-control" data-control="pause" type="button" aria-label="게임 일시정지">정지</button>
           <button class="game-control icon-control" data-control="speed" type="button" aria-label="게임 속도 1×, 변경">1×</button>
           <button class="game-control icon-control" data-control="mute" type="button" aria-label="소리 끄기" aria-pressed="false">🔊</button>
+          <button class="game-control icon-control" data-control="exit" type="button"
+            aria-label="현재 게임을 그만두고 스테이지 선택으로 이동">나가기</button>
         </div>
       </header>
       <section class="game-stage" aria-label="게임 보드">
@@ -473,7 +491,12 @@ export function createHud(root: HTMLElement): HudElements {
           </div>
           <p class="stage-select-screen__badge" data-stage-badge hidden>심연의 수호자</p>
           <div class="game-result" data-result-panel hidden></div>
-          <button class="game-control stage-select-screen__action" data-state-action type="button" disabled>잠시만요</button>
+          <div class="stage-select-screen__actions">
+            <button class="game-control stage-select-screen__action"
+              data-state-action type="button" disabled>잠시만요</button>
+            <button class="game-control stage-select-screen__secondary-action"
+              data-state-secondary-action type="button" hidden>스테이지 선택</button>
+          </div>
         </div>
       </section>
     </main>
@@ -508,6 +531,7 @@ export function createHud(root: HTMLElement): HudElements {
     pauseButton: requiredElement(root, '[data-control="pause"]'),
     speedButton: requiredElement(root, '[data-control="speed"]'),
     muteButton: requiredElement(root, '[data-control="mute"]'),
+    exitButton: requiredElement(root, '[data-control="exit"]'),
     towerTrayPositionButton: requiredElement(
       root,
       '[data-control="tower-tray-position"]',
@@ -533,6 +557,7 @@ export function createHud(root: HTMLElement): HudElements {
     badge: requiredElement(root, '[data-stage-badge]'),
     resultPanel: requiredElement(root, '[data-result-panel]'),
     stateAction: requiredElement(root, '[data-state-action]'),
+    stateSecondaryAction: requiredElement(root, '[data-state-secondary-action]'),
   };
 }
 
@@ -720,6 +745,7 @@ export function renderHud(
   elements.pauseButton.disabled = view.hudControlsDisabled;
   elements.speedButton.disabled = view.hudControlsDisabled;
   elements.muteButton.disabled = view.hudControlsDisabled;
+  elements.exitButton.disabled = view.hudControlsDisabled;
 
   for (const card of TOWER_CARDS) {
     const button = elements.towerButtons[card.type];
@@ -732,12 +758,36 @@ export function renderHud(
   }
 }
 
-export function showStateOverlay(
-  elements: HudElements,
+export type StateOverlayView = Readonly<{
+  visible: boolean;
+  mode: 'stage-select' | 'confirm';
+  title: string;
+  body: string;
+  primaryAction: string;
+  primaryDisabled: boolean;
+  secondaryAction: string;
+  secondaryVisible: boolean;
+}>;
+
+export function createStateOverlayView(
   phase: GamePhase,
   body = '',
   actionLabel?: string,
-): void {
+  exitConfirmationOpen = false,
+): StateOverlayView {
+  if (exitConfirmationOpen) {
+    return {
+      visible: true,
+      mode: 'confirm',
+      title: '게임을 그만둘까요?',
+      body: '현재 스테이지 진행은 저장되지 않아요.',
+      primaryAction: '계속하기',
+      primaryDisabled: false,
+      secondaryAction: '스테이지 선택',
+      secondaryVisible: true,
+    };
+  }
+
   const content: Partial<Record<GamePhase, { title: string; action: string }>> = {
     loading: { title: '게임 준비 중', action: '잠시만요' },
     ready: { title: '간식 창고를 지켜 주세요', action: '게임 시작' },
@@ -745,10 +795,37 @@ export function showStateOverlay(
     defeat: { title: '간식 창고가 다 털려버렸어요', action: '다시 도전' },
   };
   const state = content[phase];
-  elements.stateOverlay.hidden = state === undefined;
-  if (state === undefined) return;
-  elements.stateTitle.textContent = state.title;
-  elements.stateBody.textContent = body;
-  elements.stateAction.textContent = actionLabel ?? state.action;
-  elements.stateAction.disabled = phase === 'loading';
+  return {
+    visible: state !== undefined,
+    mode: 'stage-select',
+    title: state?.title ?? '',
+    body,
+    primaryAction: actionLabel ?? state?.action ?? '',
+    primaryDisabled: phase === 'loading',
+    secondaryAction: '스테이지 선택',
+    secondaryVisible: false,
+  };
+}
+
+export function showStateOverlay(
+  elements: HudElements,
+  phase: GamePhase,
+  body = '',
+  actionLabel?: string,
+  exitConfirmationOpen = false,
+): void {
+  const view = createStateOverlayView(
+    phase,
+    body,
+    actionLabel,
+    exitConfirmationOpen,
+  );
+  elements.stateOverlay.hidden = !view.visible;
+  elements.stateOverlay.dataset.overlayMode = view.mode;
+  elements.stateTitle.textContent = view.title;
+  elements.stateBody.textContent = view.body;
+  elements.stateAction.textContent = view.primaryAction;
+  elements.stateAction.disabled = view.primaryDisabled;
+  elements.stateSecondaryAction.textContent = view.secondaryAction;
+  elements.stateSecondaryAction.hidden = !view.secondaryVisible;
 }
