@@ -2,6 +2,8 @@ import { emitEnemyTraitEvent } from '../enemies/enemyTraits';
 import { getStageDefinition } from '../stages/stageCatalog';
 import type { GameEnemy, GameState } from './createGame';
 
+const SHADOW_SLIME_CHILD_HP_RATIO = 0.25;
+
 function splitChildren(state: GameState, parent: GameEnemy): GameEnemy[] {
   if (parent.type !== 'shadowSlime' || parent.splitGeneration !== 0) return [];
   emitEnemyTraitEvent(state, parent, 'split');
@@ -10,8 +12,8 @@ function splitChildren(state: GameState, parent: GameEnemy): GameEnemy[] {
       ...parent,
       id: state.nextEnemyId,
       variant: 'split-child',
-      maxHp: parent.maxHp * 0.35,
-      hp: parent.maxHp * 0.35,
+      maxHp: parent.maxHp * SHADOW_SLIME_CHILD_HP_RATIO,
+      hp: parent.maxHp * SHADOW_SLIME_CHILD_HP_RATIO,
       baseSpeed: parent.baseSpeed * 1.25,
       reward: 2,
       combatScore: 5,

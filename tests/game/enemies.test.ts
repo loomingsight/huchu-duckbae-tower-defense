@@ -16,7 +16,7 @@ describe('enemy catalog and movement', () => {
       orc: { hp: 132, speed: 1.035 },
       golem: { hp: 384, speed: 0.52 },
       minotaur: { hp: 2160, speed: 0.48 },
-      shadowSlime: { hp: 90, speed: 1.1 },
+      shadowSlime: { hp: 72, speed: 1.1 },
       vampireBat: { hp: 64, speed: 2.55 },
       skeletonKnight: { hp: 200, speed: 0.92 },
       obsidianGolem: { hp: 620, speed: 0.44 },

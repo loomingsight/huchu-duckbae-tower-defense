@@ -45,7 +45,7 @@ export const ENEMY_CATALOG: Readonly<Record<EnemyType, EnemyDefinition>> = {
     combatScore: 25, boss: true, trait: 'none',
   },
   shadowSlime: {
-    hp: 90, speed: 1.1, reward: 4, leak: 1,
+    hp: 72, speed: 1.1, reward: 4, leak: 1,
     combatScore: 15, boss: false, trait: 'split',
   },
   vampireBat: {

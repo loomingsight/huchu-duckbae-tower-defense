@@ -10,6 +10,7 @@ import { createGame } from '../../src/game/simulation/createGame';
 import { updateEnemies } from '../../src/game/simulation/updateEnemies';
 import { placeTower } from '../../src/game/simulation/placeTower';
 import { spawnEnemy } from '../../src/game/simulation/updateWaves';
+import { TOWER_CATALOG } from '../../src/game/towers/towerCatalog';
 
 describe('nightmare enemy traits', () => {
   it('blocks exactly three damage events before the skeleton takes damage', () => {
@@ -42,7 +43,7 @@ describe('nightmare enemy traits', () => {
 
     expect(state.enemies).toHaveLength(2);
     expect(state.enemies.every(({ variant }) => variant === 'split-child')).toBe(true);
-    expect(state.enemies.every(({ maxHp }) => maxHp === 90 * 0.35)).toBe(true);
+    expect(state.enemies.every(({ maxHp }) => maxHp === 72 * 0.25)).toBe(true);
     expect(state.gold).toBe(283);
     expect(state.stats.combatScore).toBe(15);
 
@@ -51,6 +52,28 @@ describe('nightmare enemy traits', () => {
     expect(state.enemies).toEqual([]);
     expect(state.gold).toBe(287);
     expect(state.stats.combatScore).toBe(25);
+  });
+
+  it('lets the starter arrow tower clear one N1 slime family in six hits', () => {
+    const state = createGame('nightmare-1');
+    const arrowDamage = TOWER_CATALOG.arrow.damage ?? 0;
+    spawnEnemy(state, 'shadowSlime', 0);
+    const parent = state.enemies[0];
+
+    expect(parent.maxHp).toBe(72);
+    for (let hit = 0; hit < 4; hit += 1) {
+      applyEnemyDamage(state, parent, arrowDamage);
+    }
+    updateEnemies(state, 0);
+
+    expect(state.enemies).toHaveLength(2);
+    expect(state.enemies.every(({ maxHp }) => maxHp === arrowDamage)).toBe(true);
+    for (const child of state.enemies) {
+      applyEnemyDamage(state, child, arrowDamage);
+    }
+    updateEnemies(state, 0);
+
+    expect(state.enemies).toEqual([]);
   });
 
   it('reduces the slow strength by half for vampire bats', () => {
