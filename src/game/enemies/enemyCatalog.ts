@@ -57,7 +57,7 @@ export const ENEMY_CATALOG: Readonly<Record<EnemyType, EnemyDefinition>> = {
     combatScore: 40, boss: false, trait: 'shield',
   },
   obsidianGolem: {
-    hp: 620, speed: 0.44, reward: 28, leak: 3,
+    hp: 620, speed: 0.52, reward: 28, leak: 3,
     combatScore: 75, boss: false, trait: 'armored',
   },
   lichKing: {

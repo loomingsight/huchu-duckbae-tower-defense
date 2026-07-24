@@ -165,6 +165,39 @@ describe('nightmare enemy traits', () => {
     expect(state.traitEvents.at(-1)?.kind).toBe('slow-resist');
   });
 
+  it('makes obsidian golems fast enough to reward slow coverage', () => {
+    const expectedTravelSeconds = [57.7, 51.9, 47.1, 48.5, 44.0, 41.3] as const;
+
+    for (const [index, stageNumber] of (
+      [1, 2, 3, 4, 5, 6] as const
+    ).entries()) {
+      const state = createGame(`nightmare-${stageNumber}`);
+      const stage = getStageDefinition(state.stageKey);
+      spawnEnemy(state, 'obsidianGolem', 5);
+
+      updateEnemies(state, 1);
+
+      const effectiveSpeed = 0.52 * stage.speedMultiplier;
+      expect(state.enemies[0].progress).toBeCloseTo(effectiveSpeed);
+      expect((stage.map.pathCells.length - 1) / effectiveSpeed)
+        .toBeCloseTo(expectedTravelSeconds[index], 1);
+    }
+
+    const slowed = createGame('nightmare-1');
+    placeTower(slowed, 'slow', { col: 0, row: 6 });
+    spawnEnemy(slowed, 'obsidianGolem', 5);
+
+    updateSlow(slowed);
+    updateEnemies(slowed, 1);
+
+    expect(slowed.enemies[0].progress).toBeCloseTo(0.52 * 0.62);
+    expect(slowed.enemies[0]).toMatchObject({
+      maxHp: 620 * (1 + 5 * 0.08),
+      reward: 24,
+      leak: 3,
+    });
+  });
+
   it('applies a non-stacking lich aura and enters phase two once on nightmare six', () => {
     const state = createGame('nightmare-6');
     spawnEnemy(state, 'lichKing', 9);
