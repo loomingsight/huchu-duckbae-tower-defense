@@ -158,6 +158,80 @@ test('844x390 touch flow builds, controls time, and progresses deterministically
   expect(consoleErrors).toEqual([]);
 });
 
+test('in-game exit confirmation resumes safely and returns to stage select', async ({ page }) => {
+  const consoleErrors = captureConsoleErrors(page);
+  await startGame(page);
+  await page.locator('[data-tower="arrow"]').click();
+  await page.locator('canvas').click({
+    position: await canvasPositionForCell(page, 2, 1),
+  });
+  await expect(page.getByRole('button', { name: '화살 타워 배치 확정' })).toBeVisible();
+  const preferencesBeforeExit = await page.evaluate(() => (
+    Object.fromEntries(
+      Array.from({ length: localStorage.length }, (_, index) => {
+        const key = localStorage.key(index) ?? '';
+        return [key, localStorage.getItem(key)];
+      }),
+    )
+  ));
+
+  const exitButton = page.getByRole('button', {
+    name: '현재 게임을 그만두고 스테이지 선택으로 이동',
+  });
+  await exitButton.click();
+  await expect(page.getByRole('heading', { name: '게임을 그만둘까요?' })).toBeVisible();
+  await expect(page.getByText('현재 스테이지 진행은 저장되지 않아요.')).toBeVisible();
+  const pausedByDialog = await clockSnapshot(page);
+  expect(pausedByDialog.phase).toBe('paused');
+  expect((await advance(page, 2_000)).elapsedSeconds).toBe(pausedByDialog.elapsedSeconds);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(
+    page.getByRole('dialog', { name: '가로 화면으로 돌려 주세요' }),
+  ).toBeVisible();
+  await page.setViewportSize({ width: 844, height: 390 });
+  await expect(page.getByRole('heading', { name: '게임을 그만둘까요?' })).toBeVisible();
+
+  await page.getByRole('button', { name: '계속하기', exact: true }).click();
+  await expect(page.getByRole('button', { name: '화살 타워 배치 확정' })).toBeVisible();
+  await page.getByRole('button', { name: '화살 타워 배치 확정' }).click();
+  const resumed = await advance(page, 1_000);
+  expect(resumed.phase).toBe('playing');
+  expect(resumed.elapsedSeconds).toBeGreaterThan(pausedByDialog.elapsedSeconds);
+  expect(resumed.towerCells).toContainEqual({ col: 2, row: 1 });
+
+  await page.getByRole('button', { name: '게임 일시정지' }).click();
+  await exitButton.click();
+  await page.keyboard.press('Escape');
+  const manuallyPaused = await clockSnapshot(page);
+  expect(manuallyPaused.phase).toBe('paused');
+  expect((await advance(page, 2_000)).elapsedSeconds).toBe(manuallyPaused.elapsedSeconds);
+
+  await exitButton.click();
+  await page.getByRole('button', { name: '스테이지 선택', exact: true }).click();
+  await expect(
+    page.getByRole('heading', { name: '간식 창고를 지켜 주세요' }),
+  ).toBeVisible();
+  await expect(page.locator('[data-stage-key="normal-1"]')).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  expect(await clockSnapshot(page)).toMatchObject({
+    phase: 'ready',
+    elapsedSeconds: 0,
+    towerCells: [],
+  });
+  expect(await page.evaluate(() => (
+    Object.fromEntries(
+      Array.from({ length: localStorage.length }, (_, index) => {
+        const key = localStorage.key(index) ?? '';
+        return [key, localStorage.getItem(key)];
+      }),
+    )
+  ))).toEqual(preferencesBeforeExit);
+  expect(consoleErrors).toEqual([]);
+});
+
 test('victory overlay appears and restart resets the game', async ({ page }, testInfo) => {
   const consoleErrors = captureConsoleErrors(page);
   await startGame(page);

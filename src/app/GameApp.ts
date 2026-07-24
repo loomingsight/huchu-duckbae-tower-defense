@@ -274,6 +274,8 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     let invalidTimer = 0;
     let lastHudKey = '';
     let lastOverlayKey = '';
+    let exitConfirmationOpen = false;
+    let resumeAfterExitConfirmation = false;
     let runtime: GameRuntime;
     let renderedGame: GameRuntimeSnapshot['game'] | null = null;
     let effects: RuntimeEffect[] = [];
@@ -323,10 +325,14 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       return '';
     }
 
-    function stateOverlayVisible(snapshot: GameRuntimeSnapshot): boolean {
+    function stageSelectionVisible(snapshot: GameRuntimeSnapshot): boolean {
       return snapshot.phase === 'ready'
         || snapshot.phase === 'victory'
         || snapshot.phase === 'defeat';
+    }
+
+    function stateOverlayVisible(snapshot: GameRuntimeSnapshot): boolean {
+      return exitConfirmationOpen || stageSelectionVisible(snapshot);
     }
 
     function render(): void {
@@ -417,7 +423,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       frameEvents.clear();
 
       const body = overlayBody(snapshot);
-      const pickerVisible = stateOverlayVisible(snapshot);
+      const pickerVisible = stageSelectionVisible(snapshot);
       renderStagePicker(
         hud,
         activeMode,
@@ -427,6 +433,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       );
       const overlayKey = [
         snapshot.phase,
+        exitConfirmationOpen,
         body,
         snapshot.game.stageKey,
         selectedStageKey,
@@ -441,6 +448,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
           snapshot.phase,
           body,
           stageActionLabel(snapshot.phase, snapshot.game.stageKey, selectedStageKey),
+          exitConfirmationOpen,
         );
         if (snapshot.phase === 'victory' || snapshot.phase === 'defeat') {
           const stageRecord = stageRecordFor(preferences, snapshot.game.stageKey);
@@ -485,6 +493,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       const modalityChanged = focusManager.prepare({
         stateVisible: stateOverlayVisible(snapshot),
         portraitBlocked: snapshot.portraitBlocked,
+        stateKey: exitConfirmationOpen ? 'exit-confirm' : 'stage-select',
       });
 
       const hudKey = [
@@ -599,7 +608,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       }, 360);
     }
 
-    function startNewGame(): void {
+    function resetTransientGameUi(): void {
       globalThis.clearTimeout(invalidTimer);
       hud.stage.classList.remove('game-stage--invalid');
       baseHitFeedback.clear();
@@ -612,9 +621,48 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       traitNoticeState = createTraitNoticeState(selectedStageKey);
       renderTraitNotice(hud, null);
       pickerNotice = '';
+    }
+
+    function startNewGame(): void {
+      resetTransientGameUi();
       placementMessage.show('타워를 선택해 주세요.');
       preferences = recordAttempt(storage, preferences);
       runtime.startGame();
+    }
+
+    function openExitConfirmation(): void {
+      if (exitConfirmationOpen) return;
+      const snapshot = runtime.getSnapshot();
+      if (
+        snapshot.portraitBlocked
+        || (snapshot.phase !== 'playing' && snapshot.phase !== 'paused')
+      ) return;
+
+      exitConfirmationOpen = true;
+      resumeAfterExitConfirmation = snapshot.phase === 'playing';
+      if (resumeAfterExitConfirmation) runtime.togglePause();
+      else runtime.renderNow();
+    }
+
+    function continueAfterExitConfirmation(): void {
+      if (!exitConfirmationOpen) return;
+      const shouldResume = resumeAfterExitConfirmation;
+      exitConfirmationOpen = false;
+      resumeAfterExitConfirmation = false;
+      if (shouldResume && runtime.getSnapshot().phase === 'paused') runtime.togglePause();
+      else runtime.renderNow();
+    }
+
+    function confirmStageExit(): void {
+      if (!exitConfirmationOpen) return;
+      const currentStageKey = runtime.getSnapshot().game.stageKey;
+      selectedStageKey = currentStageKey;
+      activeMode = stageRef(currentStageKey).mode;
+      exitConfirmationOpen = false;
+      resumeAfterExitConfirmation = false;
+      resetTransientGameUi();
+      placementMessage.clear();
+      runtime.returnToStageSelect();
     }
 
     function unlockAudio(): void {
@@ -687,9 +735,23 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
 
     scope.listen(hud.stateAction, 'click', () => {
       unlockAudio();
+      if (exitConfirmationOpen) {
+        continueAfterExitConfirmation();
+        return;
+      }
       const phase = runtime.getSnapshot().phase;
       if (phase === 'ready' || phase === 'victory' || phase === 'defeat') startNewGame();
     });
+    scope.listen(hud.stateSecondaryAction, 'click', confirmStageExit);
+    scope.listen(hud.exitButton, 'click', () => {
+      unlockAudio();
+      openExitConfirmation();
+    });
+    scope.listen(globalThis, 'keydown', ((event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !exitConfirmationOpen) return;
+      event.preventDefault();
+      continueAfterExitConfirmation();
+    }) as EventListener);
     for (const mode of GAME_MODES) {
       scope.listen(hud.modeTabs[mode], 'click', () => {
         const phase = runtime.getSnapshot().phase;
