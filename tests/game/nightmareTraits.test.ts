@@ -61,6 +61,63 @@ describe('nightmare enemy traits', () => {
     ]);
   });
 
+  it('keeps the N3 counter shield locked against arrows', () => {
+    const state = createGame('nightmare-3');
+    spawnEnemy(state, 'skeletonKnight', 0);
+    const enemy = state.enemies[0];
+
+    for (let hit = 0; hit < 6; hit += 1) {
+      applyEnemyDamage(state, enemy, 18, 'arrow');
+    }
+
+    expect(enemy.hp).toBe(enemy.maxHp);
+    expect(enemy.shieldHitsRemaining).toBe(3);
+    expect(state.traitEvents.filter(({ kind }) => kind === 'shield-block'))
+      .toHaveLength(6);
+  });
+
+  it('keeps the N2 three-hit shield compatible with arrow damage', () => {
+    const state = createGame('nightmare-2');
+    spawnEnemy(state, 'skeletonKnight', 0);
+    const enemy = state.enemies[0];
+
+    applyEnemyDamage(state, enemy, 18, 'arrow');
+
+    expect(enemy.hp).toBe(enemy.maxHp);
+    expect(enemy.shieldHitsRemaining).toBe(2);
+  });
+
+  it('lets a slow tower disrupt the N3 counter shield once', () => {
+    const state = createGame('nightmare-3');
+    placeTower(state, 'slow', { col: 0, row: 7 });
+    spawnEnemy(state, 'skeletonKnight', 0);
+
+    updateSlow(state);
+    updateSlow(state);
+
+    expect(state.enemies[0].shieldHitsRemaining).toBe(0);
+    expect(state.traitEvents.filter(({ kind }) => kind === 'shield-break'))
+      .toHaveLength(1);
+  });
+
+  it.each(['deokbae', 'huchu'] as const)(
+    'lets %s consume its first hit to disrupt the N3 counter shield',
+    (type) => {
+      const state = createGame('nightmare-3');
+      spawnEnemy(state, 'skeletonKnight', 0);
+      const enemy = state.enemies[0];
+
+      applyEnemyDamage(state, enemy, 72, type);
+
+      expect(enemy.shieldHitsRemaining).toBe(0);
+      expect(enemy.hp).toBe(enemy.maxHp);
+
+      applyEnemyDamage(state, enemy, 72, type);
+
+      expect(enemy.hp).toBe(enemy.maxHp - 72);
+    },
+  );
+
   it('splits a killed parent once and preserves family reward and score', () => {
     const state = createGame('nightmare-1');
     spawnEnemy(state, 'shadowSlime', 0);
@@ -111,8 +168,8 @@ describe('nightmare enemy traits', () => {
       [1, 1, 1],
       [1, 1, 1],
       [1, 1, 1],
+      [1, 1, 1],
       [1, 1, 2],
-      [1, 2, 2],
     ] as const;
 
     for (const [stageIndex, stageNumber] of (
@@ -166,7 +223,7 @@ describe('nightmare enemy traits', () => {
   });
 
   it('makes obsidian golems fast enough to reward slow coverage', () => {
-    const expectedTravelSeconds = [57.7, 51.9, 47.1, 48.5, 44.0, 41.3] as const;
+    const expectedTravelSeconds = [57.7, 51.9, 47.6, 49.0, 44.8, 42.1] as const;
 
     for (const [index, stageNumber] of (
       [1, 2, 3, 4, 5, 6] as const

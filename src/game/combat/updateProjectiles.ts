@@ -29,11 +29,21 @@ export function updateProjectiles(state: GameState, dt: number): void {
           const position = enemyPosition(enemy, state.stageKey);
           if (position === undefined) continue;
           if (isWithinRadius(impactPosition, position, projectile.splash)) {
-            applyEnemyDamage(state, enemy, projectile.damage);
+            applyEnemyDamage(
+              state,
+              enemy,
+              projectile.damage,
+              projectile.towerType,
+            );
           }
         }
       } else {
-        applyEnemyDamage(state, target, projectile.damage);
+        applyEnemyDamage(
+          state,
+          target,
+          projectile.damage,
+          projectile.towerType,
+        );
       }
 
       state.hitEvents.push({

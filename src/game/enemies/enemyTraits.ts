@@ -4,6 +4,8 @@ import type {
   GameEnemy,
   GameState,
 } from '../simulation/createGame';
+import { stageRef } from '../stages/stageIdentity';
+import type { TowerType } from '../towers/towerCatalog';
 import type { Vec2 } from '../types';
 
 export type EnemyTraitVisualEvent = Readonly<{
@@ -44,12 +46,42 @@ export function emitEnemyTraitEvent(
   });
 }
 
+function hasCounterShield(
+  state: Readonly<GameState>,
+  enemy: Readonly<GameEnemy>,
+): boolean {
+  const stage = stageRef(state.stageKey);
+  return stage.mode === 'nightmare'
+    && stage.number >= 3
+    && enemy.type === 'skeletonKnight'
+    && enemy.shieldHitsRemaining > 0;
+}
+
+export function disruptEnemyShield(
+  state: GameState,
+  enemy: GameEnemy,
+): boolean {
+  if (!hasCounterShield(state, enemy)) return false;
+  enemy.shieldHitsRemaining = 0;
+  emitEnemyTraitEvent(state, enemy, 'shield-break');
+  return true;
+}
+
 export function applyEnemyDamage(
   state: GameState,
   enemy: GameEnemy,
   damage: number,
+  sourceType?: TowerType,
 ): void {
   if (enemy.hp <= 0 || !Number.isFinite(damage) || damage <= 0) return;
+  if (hasCounterShield(state, enemy)) {
+    if (sourceType === 'deokbae' || sourceType === 'huchu') {
+      disruptEnemyShield(state, enemy);
+    } else {
+      emitEnemyTraitEvent(state, enemy, 'shield-block');
+    }
+    return;
+  }
   if (enemy.shieldHitsRemaining > 0) {
     enemy.shieldHitsRemaining -= 1;
     emitEnemyTraitEvent(

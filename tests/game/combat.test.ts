@@ -57,6 +57,33 @@ describe('tower combat', () => {
     expect(state.hitEvents[0]).toMatchObject({ towerType: type, radius: splash });
   });
 
+  it.each([
+    ['deokbae', 14, 0.85],
+    ['huchu', 72, 1.25],
+  ] as const)(
+    '%s projectile disrupts an N3 counter shield before dealing damage',
+    (type, damage, splash) => {
+      const state = createGame('nightmare-3');
+      spawnEnemy(state, 'skeletonKnight', 0);
+      const enemy = state.enemies[0];
+      state.projectiles.push({
+        id: 1,
+        towerType: type,
+        position: { x: 0.5, y: 8.5 },
+        targetId: enemy.id,
+        damage,
+        speed: TOWER_CATALOG[type].projectileSpeed ?? 0,
+        splash,
+      });
+
+      updateProjectiles(state, 1 / 60);
+
+      expect(enemy.shieldHitsRemaining).toBe(0);
+      expect(enemy.hp).toBe(enemy.maxHp);
+      expect(state.traitEvents.at(-1)?.kind).toBe('shield-break');
+    },
+  );
+
   it('gives each reward once when one splash kills multiple enemies', () => {
     const state = combatState('huchu');
     spawnEnemy(state, 'fairy', 0);

@@ -1,5 +1,8 @@
 import { TOWER_CATALOG } from '../towers/towerCatalog';
-import { emitEnemyTraitEvent } from '../enemies/enemyTraits';
+import {
+  disruptEnemyShield,
+  emitEnemyTraitEvent,
+} from '../enemies/enemyTraits';
 import type { GameState } from '../simulation/createGame';
 import { isWithinRadius } from './radius';
 import { enemyPosition } from './targeting';
@@ -18,6 +21,7 @@ export function updateSlow(state: GameState): void {
       const position = enemyPosition(enemy, state.stageKey);
       if (position === undefined) continue;
       if (isWithinRadius(tower.position, position, definition.range)) {
+        disruptEnemyShield(state, enemy);
         const requested = definition.multiplier ?? 1;
         const resistance = enemy.type === 'vampireBat' ? 0.5 : 0;
         const effective = 1 - (1 - requested) * (1 - resistance);
