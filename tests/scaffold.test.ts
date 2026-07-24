@@ -161,4 +161,10 @@ describe('project scaffold', () => {
     expect(app).toContain('renderTowerInspection(');
     expect(app).toContain('runtime.inspectTower(');
   });
+
+  it('resets monster onboarding against the selected stage', () => {
+    const app = readFileSync('src/app/GameApp.ts', 'utf8');
+
+    expect(app.match(/createTraitNoticeState\(selectedStageKey\)/g)).toHaveLength(2);
+  });
 });

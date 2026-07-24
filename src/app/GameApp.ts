@@ -281,7 +281,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
     let lastRenderedGold = 0;
     let newBestScore = false;
     let newBadge = false;
-    let traitNoticeState = createTraitNoticeState();
+    let traitNoticeState = createTraitNoticeState(selectedStageKey);
     const frameEvents = createFrameEventBuffer();
     const renderer = await createRendererWithFallback(hud.canvas);
     const reducedMotionQuery = typeof globalThis.matchMedia === 'function'
@@ -593,7 +593,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       renderedGame = null;
       newBestScore = false;
       newBadge = false;
-      traitNoticeState = createTraitNoticeState();
+      traitNoticeState = createTraitNoticeState(selectedStageKey);
       renderTraitNotice(hud, null);
       pickerNotice = '';
       placementMessage.show('타워를 선택해 주세요.');

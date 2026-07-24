@@ -1,10 +1,12 @@
 import type { EnemyTraitVisualEvent } from '../game/enemies/enemyTraits';
+import { normalizeStageKey } from '../game/stages/stageIdentity';
 
 export const SLOW_RESIST_NOTICE_DURATION_SECONDS = 2.5;
 
 type ActiveTraitNotice = 'slow-resistance' | 'split';
 
 export type TraitNoticeState = Readonly<{
+  enabled: boolean;
   slowResistanceShown: boolean;
   splitShown: boolean;
   activeNotice: ActiveTraitNotice | null;
@@ -35,8 +37,9 @@ function safeTime(value: number): number {
   return Number.isFinite(value) ? Math.max(0, value) : 0;
 }
 
-export function createTraitNoticeState(): TraitNoticeState {
+export function createTraitNoticeState(stageKey: unknown): TraitNoticeState {
   return {
+    enabled: normalizeStageKey(stageKey) === 'nightmare-1',
     slowResistanceShown: false,
     splitShown: false,
     activeNotice: null,
@@ -49,6 +52,7 @@ export function updateTraitNoticeState(
   events: readonly EnemyTraitVisualEvent[],
   elapsedSeconds: number,
 ): TraitNoticeState {
+  if (!state.enabled) return state;
   const now = safeTime(elapsedSeconds);
   if (state.noticeEndsAt !== null && now < state.noticeEndsAt) return state;
 
@@ -84,7 +88,8 @@ export function traitNoticeView(
   elapsedSeconds: number,
 ): TraitNoticeView | null {
   if (
-    state.activeNotice === null
+    !state.enabled
+    || state.activeNotice === null
     || state.noticeEndsAt === null
     || safeTime(elapsedSeconds) >= state.noticeEndsAt
   ) return null;

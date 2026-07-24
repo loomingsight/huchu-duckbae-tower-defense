@@ -19,10 +19,10 @@ const splitOpenEvent = {
   position: { x: 0.5, y: 0.5 },
 };
 
-describe('slow resistance onboarding state', () => {
+describe('nightmare-one trait onboarding state', () => {
   it('shows the fixed copy for 2.5 seconds after the first event', () => {
     const state = updateTraitNoticeState(
-      createTraitNoticeState(),
+      createTraitNoticeState('nightmare-1'),
       [slowResistEvent],
       10,
     );
@@ -38,7 +38,7 @@ describe('slow resistance onboarding state', () => {
 
   it('does not extend the notice for later events in the same attempt', () => {
     const first = updateTraitNoticeState(
-      createTraitNoticeState(),
+      createTraitNoticeState('nightmare-1'),
       [slowResistEvent],
       10,
     );
@@ -50,7 +50,7 @@ describe('slow resistance onboarding state', () => {
 
   it('ignores unrelated events and resets with a fresh state', () => {
     const untouched = updateTraitNoticeState(
-      createTraitNoticeState(),
+      createTraitNoticeState('nightmare-1'),
       [{
         kind: 'shield-block',
         enemyId: 2,
@@ -66,12 +66,12 @@ describe('slow resistance onboarding state', () => {
       5,
     );
     expect(traitNoticeView(shown, 5)).not.toBeNull();
-    expect(traitNoticeView(createTraitNoticeState(), 5)).toBeNull();
+    expect(traitNoticeView(createTraitNoticeState('nightmare-1'), 5)).toBeNull();
   });
 
   it('shows the split explanation only on the first shadow-slime appearance', () => {
     const first = updateTraitNoticeState(
-      createTraitNoticeState(),
+      createTraitNoticeState('nightmare-1'),
       [splitOpenEvent],
       3,
     );
@@ -90,5 +90,23 @@ describe('slow resistance onboarding state', () => {
       noticeEndsAt: null,
     });
     expect(traitNoticeView(repeated, 6)).toBeNull();
+  });
+
+  it('disables repeated monster explanations after nightmare one', () => {
+    const nightmareOne = createTraitNoticeState('nightmare-1');
+    const nightmareTwo = createTraitNoticeState('nightmare-2');
+    const normal = createTraitNoticeState('normal-1');
+
+    expect(nightmareOne.enabled).toBe(true);
+    expect(nightmareTwo.enabled).toBe(false);
+    expect(normal.enabled).toBe(false);
+    expect(traitNoticeView(
+      updateTraitNoticeState(nightmareTwo, [splitOpenEvent], 3),
+      3,
+    )).toBeNull();
+    expect(traitNoticeView(
+      updateTraitNoticeState(normal, [slowResistEvent], 3),
+      3,
+    )).toBeNull();
   });
 });
