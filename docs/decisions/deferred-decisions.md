@@ -1,8 +1,27 @@
 # Deferred balance and presentation decisions
 
-All values below are executable MVP defaults. They are deliberately centralized
-here until playtesting establishes replacement values; change the referenced
-location together with its focused tests.
+## 2026-07-24 재검토 결과
+
+아래 `Task 3~8` 표는 최초 단일 스테이지 MVP의 의사결정 기록이며 더 이상
+그 자체를 실행 가능한 최신 설정으로 간주하지 않는다. 현재 기준은 다음 표와
+각 변경 위치의 집중 테스트다.
+
+| 영역 | 상태 | 현재 기준 | 최신 변경 위치 |
+| --- | --- | --- | --- |
+| 맵·시뮬레이션 | 적용 완료 | 20×10 격자와 60Hz 고정 스텝은 유지한다. 맵은 노멀 6개·나이트메어 6개의 직각 경로 데이터로 확장됐다. | `src/game/config.ts`, `src/game/stages/stageCatalog.ts`, `src/game/core/fixedStepLoop.ts` |
+| 스테이지 경제·웨이브 | 적용 완료 / 후속 검증 | 시작 골드·창고 체력·HP·속도·수량·스폰 간격·보상·웨이브 HP 증가율·웨이브 대기 시간·목표 클리어 시간을 스테이지 정의에서 관리한다. 노멀은 320G/20HP, 나이트메어는 280G/12HP이며 목표 시간은 모두 5~7분이다. 최초 클리어 시간을 실제 플레이 결과로 저장하므로 누적 표본을 바탕으로 추가 조정한다. | `src/game/stages/stageCatalog.ts`, `src/game/waves/nightmareWaves.ts`, `src/game/simulation/updateWaves.ts`, `src/app/preferences.ts` |
+| 적 수치 | 대체됨 | 최초 HP·속도·보상값은 이후 전역 난이도 조정과 나이트메어 전용 적군으로 대체됐다. 현재 카탈로그와 스테이지 배율을 함께 사용한다. | `src/game/enemies/enemyCatalog.ts`, `src/game/stages/stageCatalog.ts` |
+| 타워 수치 | 일부 적용 / 일부 대체됨 | 슬로우·화살의 기본 역할은 유지한다. 덕배·후추 비용은 각각 420G·560G로 대체됐고 현재 카탈로그가 단일 기준이다. | `src/game/towers/towerCatalog.ts` |
+| 적 스프라이트 제작 | 대체됨 | 5종×4방향 정적 출력 대신 항상 정면을 보는 모션 시트와 나이트메어 적 에셋을 사용한다. | `src/game/render/spriteManifest.ts`, `assets/renders/redesign-preview-v1/`, `assets/renders/nightmare-v1/` |
+| 캔버스 구성 | 일부 적용 / 일부 대체됨 | DPR 상한은 유지한다. 고정 16:9 레터박스 대신 모바일 가로 화면을 최대한 사용하는 원근 투영 레이아웃을 적용한다. | `src/game/render/layout.ts`, `src/game/render/projection.ts`, `src/game/render/canvasRenderer.ts` |
+| 조작·환경설정 | 적용 완료 | 1×/2× 속도, 최소 44px 터치 목표, 4개 타워, 8px 탭 판정은 유지한다. 환경설정은 v5이며 스테이지별 최초·최단 클리어 시간을 분리 저장한다. | `src/app/GameApp.ts`, `src/app/hud.ts`, `src/app/input.ts`, `src/app/preferences.ts` |
+| 몬스터 특성 안내 | 적용 완료 | 특성 안내는 나이트메어 1에서만 최대 3초 노출하고 나이트메어 2~6에서는 생략한다. | `src/app/traitNotice.ts`, `src/app/GameApp.ts` |
+
+`후속 검증`은 기능 미구현을 뜻하지 않는다. 최초 클리어 시간 수집과 5~7분
+목표 표시는 구현됐으며, 실제 플레이 표본이 쌓일 때 스테이지별 수치를 다시
+조정하기 위한 운영 항목이다.
+
+## 최초 MVP 결정 기록
 
 ## Task 3 — map and simulation timing
 
