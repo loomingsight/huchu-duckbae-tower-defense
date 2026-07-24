@@ -10,9 +10,9 @@ const TYPES = [
 ] as const;
 
 const BASE_COUNTS = [
-  [6, 0, 0, 0],
-  [5, 6, 0, 0],
-  [4, 8, 3, 0],
+  [7, 0, 0, 0],
+  [6, 6, 0, 0],
+  [5, 8, 3, 0],
   [8, 4, 6, 0],
   [0, 8, 6, 0],
   [6, 6, 8, 2],
@@ -66,7 +66,7 @@ export function createNightmareWaves(
         ),
         spawnInterval: INTERVALS[Math.floor(waveIndex / 2)][typeIndex],
         ...(waveIndex < 3 && typeIndex === 0
-          ? { killValueMultiplier: 2 }
+          ? { killValueMultiplier: 1.6 }
           : {}),
       }];
     });

@@ -29,8 +29,8 @@ describe('nightmare enemy traits', () => {
 
     expect(state.enemies[0]).toMatchObject({
       type: 'shadowSlime',
-      reward: 7,
-      combatScore: 30,
+      reward: 5,
+      combatScore: 24,
     });
 
     const direct = createGame('nightmare-1');
@@ -134,14 +134,14 @@ describe('nightmare enemy traits', () => {
 
   it('preserves early family gold and score without boosting late families', () => {
     const early = createGame('nightmare-1');
-    spawnEnemy(early, 'shadowSlime', 0, 'standard', 2);
+    spawnEnemy(early, 'shadowSlime', 0, 'standard', 1.6);
     early.enemies[0].hp = 0;
     updateEnemies(early, 0);
     for (const child of early.enemies) child.hp = 0;
     updateEnemies(early, 0);
 
-    expect(early.gold).toBe(291);
-    expect(early.stats.combatScore).toBe(40);
+    expect(early.gold).toBe(289);
+    expect(early.stats.combatScore).toBe(34);
 
     const late = createGame('nightmare-1');
     spawnEnemy(late, 'shadowSlime', 3);
