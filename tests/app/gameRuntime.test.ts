@@ -151,6 +151,7 @@ describe('GameRuntime lifecycle', () => {
     expect(snapshot.speed).toBe(1);
     expect(snapshot.selectedTower).toBeNull();
     expect(snapshot.selectedCell).toBeNull();
+    expect(snapshot.inspectedTowerId).toBeNull();
     expect(snapshot.elapsedSeconds).toBe(0);
     expect(updates).toBe(0);
   });
@@ -163,5 +164,37 @@ describe('GameRuntime lifecycle', () => {
     runtime.selectTower('slow');
 
     expect(runtime.getSnapshot().selectedCell).toBeNull();
+  });
+
+  it('tracks one inspected tower independently and clears placement state', () => {
+    const { runtime } = setupRuntime();
+    runtime.startGame();
+    runtime.selectTower('arrow');
+    runtime.setSelectedCell({ col: 2, row: 5 });
+
+    runtime.inspectTower(7);
+    expect(runtime.getSnapshot()).toMatchObject({
+      selectedTower: null,
+      selectedCell: null,
+      inspectedTowerId: 7,
+    });
+
+    runtime.inspectTower(9);
+    expect(runtime.getSnapshot().inspectedTowerId).toBe(9);
+
+    runtime.selectTower('slow');
+    expect(runtime.getSnapshot().inspectedTowerId).toBeNull();
+  });
+
+  it('normalizes invalid inspection IDs and clears inspection on restart', () => {
+    const { runtime } = setupRuntime();
+    runtime.startGame();
+
+    runtime.inspectTower(Number.NaN);
+    expect(runtime.getSnapshot().inspectedTowerId).toBeNull();
+
+    runtime.inspectTower(3);
+    runtime.startGame();
+    expect(runtime.getSnapshot().inspectedTowerId).toBeNull();
   });
 });

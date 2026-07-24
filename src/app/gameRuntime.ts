@@ -15,6 +15,7 @@ export type GameRuntimeSnapshot = Readonly<{
   speed: GameSpeed;
   selectedTower: TowerType | null;
   selectedCell: Cell | null;
+  inspectedTowerId: number | null;
   portraitBlocked: boolean;
   elapsedSeconds: number;
 }>;
@@ -34,6 +35,7 @@ export type GameRuntime = Readonly<{
   toggleSpeed(): void;
   selectTower(type: TowerType | null): void;
   setSelectedCell(cell: Cell | null): void;
+  inspectTower(id: number | null): void;
   setPortraitBlocked(blocked: boolean): void;
   getSnapshot(): GameRuntimeSnapshot;
   renderNow(): void;
@@ -46,6 +48,7 @@ export function createGameRuntime(dependencies: GameRuntimeDependencies): GameRu
   let speed: GameSpeed = 1;
   let selectedTower: TowerType | null = null;
   let selectedCell: Cell | null = null;
+  let inspectedTowerId: number | null = null;
   let portraitBlocked = false;
   let elapsedSeconds = 0;
   let lastFrameMs: number | null = null;
@@ -60,6 +63,7 @@ export function createGameRuntime(dependencies: GameRuntimeDependencies): GameRu
       speed,
       selectedTower,
       selectedCell,
+      inspectedTowerId,
       portraitBlocked,
       elapsedSeconds,
     };
@@ -79,6 +83,7 @@ export function createGameRuntime(dependencies: GameRuntimeDependencies): GameRu
         phase = game.outcome;
         selectedTower = null;
         selectedCell = null;
+        inspectedTowerId = null;
         dependencies.onOutcome?.(game.outcome, elapsedSeconds);
       },
       render: dependencies.render,
@@ -110,6 +115,7 @@ export function createGameRuntime(dependencies: GameRuntimeDependencies): GameRu
       speed = 1;
       selectedTower = null;
       selectedCell = null;
+      inspectedTowerId = null;
       elapsedSeconds = 0;
       loop = makeLoop();
       dependencies.render();
@@ -127,10 +133,19 @@ export function createGameRuntime(dependencies: GameRuntimeDependencies): GameRu
     selectTower(type) {
       if (selectedTower !== type) selectedCell = null;
       selectedTower = type;
+      if (type !== null) inspectedTowerId = null;
       dependencies.render();
     },
     setSelectedCell(cell) {
       selectedCell = cell === null ? null : { ...cell };
+      dependencies.render();
+    },
+    inspectTower(id) {
+      selectedTower = null;
+      selectedCell = null;
+      inspectedTowerId = typeof id === 'number' && Number.isInteger(id) && id > 0
+        ? id
+        : null;
       dependencies.render();
     },
     setPortraitBlocked(blocked) {
