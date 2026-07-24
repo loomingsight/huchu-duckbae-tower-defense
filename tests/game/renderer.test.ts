@@ -9,6 +9,7 @@ import {
   towerSizeFactor,
 } from '../../src/game/render/drawEntities';
 import { slowPulseRadius } from '../../src/game/render/drawEffects';
+import { NORMAL_PALETTES } from '../../src/game/render/drawMap';
 import {
   effectsForHits,
   effectsForTraits,
@@ -380,7 +381,7 @@ describe('renderer layer order', () => {
     renderer.render(snapshot({ stageKey: 'normal-6' }));
 
     expect(calls.filter((call) => (
-      call.method === 'fill' && call.fillStyle === '#e4c99f'
+      call.method === 'fill' && call.fillStyle === NORMAL_PALETTES.minotaurGate.road
     ))).toHaveLength(stage.map.pathCells.length);
   });
 
