@@ -134,6 +134,7 @@ describe('project scaffold', () => {
   });
 
   it('provides a compact accessible installed-tower panel', () => {
+    const app = readFileSync('src/app/GameApp.ts', 'utf8');
     const hud = readFileSync('src/app/hud.ts', 'utf8');
     const css = readFileSync('src/styles.css', 'utf8');
 
@@ -144,5 +145,9 @@ describe('project scaffold', () => {
     expect(css).toMatch(
       /\.tower-inspection__close\s*\{[^}]*min-width: 44px;[^}]*min-height: 44px;/s,
     );
+    expect(app).toContain('towerAtCell(');
+    expect(app).toContain('towerById(');
+    expect(app).toContain('renderTowerInspection(');
+    expect(app).toContain('runtime.inspectTower(');
   });
 });

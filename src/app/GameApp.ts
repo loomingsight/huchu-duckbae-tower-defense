@@ -39,6 +39,7 @@ import {
   renderStagePicker,
   renderResultPanel,
   renderHud,
+  renderTowerInspection,
   renderTowerTrayPosition,
   renderTraitNotice,
   showPlacementActions,
@@ -63,6 +64,7 @@ import {
   updateTraitNoticeState,
 } from './traitNotice';
 import { createTransientMessageController } from './transientMessage';
+import { towerAtCell, towerById } from './towerInspection';
 
 export type GameApp = Readonly<{
   destroy(): void;
@@ -365,9 +367,18 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       const placementValidation = snapshot.selectedTower === null || snapshot.selectedCell === null
         ? null
         : validateTowerPlacement(snapshot.game, snapshot.selectedTower, snapshot.selectedCell);
-      const selectedRange = snapshot.selectedTower === null || snapshot.selectedCell === null
-        ? undefined
-        : TOWER_CATALOG[snapshot.selectedTower].range;
+      const inspectedTower = snapshot.inspectedTowerId === null
+        ? null
+        : towerById(snapshot.game.towers, snapshot.inspectedTowerId);
+      const placingTower = snapshot.selectedTower !== null && snapshot.selectedCell !== null;
+      const mapSelectedCell = placingTower
+        ? snapshot.selectedCell
+        : inspectedTower?.cell ?? null;
+      const selectedRange = placingTower && snapshot.selectedTower !== null
+        ? TOWER_CATALOG[snapshot.selectedTower].range
+        : inspectedTower === null
+          ? undefined
+          : TOWER_CATALOG[inspectedTower.type].range;
       const placementGuideCells = snapshot.selectedTower !== null
         && snapshot.phase === 'playing'
         && !snapshot.portraitBlocked
@@ -375,7 +386,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         : undefined;
       renderer.render(snapshot.game, {
         placementGuideCells,
-        selectedCell: snapshot.selectedCell,
+        selectedCell: mapSelectedCell,
         selectedRange,
         selectedValid: placementValidation?.ok,
         previewTower: snapshot.selectedTower === null || snapshot.selectedCell === null
@@ -477,6 +488,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         snapshot.selectedTower,
         snapshot.selectedCell?.col ?? '',
         snapshot.selectedCell?.row ?? '',
+        snapshot.inspectedTowerId ?? '',
         snapshot.portraitBlocked,
       ].join('|');
       if (hudKey !== lastHudKey) {
@@ -497,6 +509,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
           snapshot.selectedTower,
           snapshot.selectedCell !== null && placementValidation?.ok === true,
         );
+        renderTowerInspection(hud, inspectedTower?.type ?? null);
       }
       if (modalityChanged) focusManager.commit();
     }
@@ -617,6 +630,18 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       runtime.renderNow();
     }
 
+    function inspectTowerAt(point: ClientPoint): void {
+      const snapshot = runtime.getSnapshot();
+      if (
+        (snapshot.phase !== 'playing' && snapshot.phase !== 'paused')
+        || snapshot.selectedTower !== null
+        || snapshot.portraitBlocked
+      ) return;
+      const cell = pointerToCell(point, renderer.getLayout(), hud.canvas.getBoundingClientRect());
+      const tower = cell === null ? null : towerAtCell(snapshot.game.towers, cell);
+      runtime.inspectTower(tower?.id ?? null);
+    }
+
     function confirmPlacement(): void {
       const snapshot = runtime.getSnapshot();
       if (
@@ -716,6 +741,7 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       confirmPlacement();
     });
     scope.listen(hud.placementCancel, 'click', cancelPlacement);
+    scope.listen(hud.towerInspectionClose, 'click', () => runtime.inspectTower(null));
     for (const type of TOWER_TYPES) {
       scope.listen(hud.towerButtons[type], 'click', () => {
         unlockAudio();
@@ -732,11 +758,10 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       unlockAudio();
       const pointer = event as PointerEvent;
       const snapshot = runtime.getSnapshot();
-      if (
-        snapshot.phase !== 'playing'
-        || snapshot.selectedTower === null
-        || snapshot.portraitBlocked
-      ) return;
+      const canPlace = snapshot.phase === 'playing' && snapshot.selectedTower !== null;
+      const canInspect = (snapshot.phase === 'playing' || snapshot.phase === 'paused')
+        && snapshot.selectedTower === null;
+      if (snapshot.portraitBlocked || (!canPlace && !canInspect)) return;
       activePointer = { id: pointer.pointerId, start: { x: pointer.clientX, y: pointer.clientY } };
       try {
         hud.canvas.setPointerCapture(pointer.pointerId);
@@ -750,7 +775,9 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       activePointer = null;
       if (active === null || active.id !== pointer.pointerId) return;
       const end = { x: pointer.clientX, y: pointer.clientY };
-      if (isTapGesture(active.start, end)) previewSelectedTower(end);
+      if (!isTapGesture(active.start, end)) return;
+      if (runtime.getSnapshot().selectedTower === null) inspectTowerAt(end);
+      else previewSelectedTower(end);
     });
     scope.listen(hud.canvas, 'pointercancel', () => {
       activePointer = null;
