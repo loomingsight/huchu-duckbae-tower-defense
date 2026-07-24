@@ -167,4 +167,13 @@ describe('project scaffold', () => {
 
     expect(app.match(/createTraitNoticeState\(selectedStageKey\)/g)).toHaveLength(2);
   });
+
+  it('syncs mode, boss, pause, and portrait state into procedural music', () => {
+    const app = readFileSync('src/app/GameApp.ts', 'utf8');
+
+    expect(app).toContain('sound.syncMusic({');
+    expect(app).toContain("snapshot.phase === 'playing' || snapshot.phase === 'paused'");
+    expect(app).toContain('snapshot.game.bossSpawnedAtSeconds !== null');
+    expect(app).toContain("snapshot.phase === 'paused' || snapshot.portraitBlocked");
+  });
 });

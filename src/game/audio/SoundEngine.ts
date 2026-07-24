@@ -31,6 +31,13 @@ export type AudioContextLike = Readonly<{
 
 export type SoundCue = 'placement' | 'shot' | 'hit' | 'leak' | 'victory' | 'defeat';
 
+export type MusicPlaybackState = Readonly<{
+  mode: GameMode;
+  active: boolean;
+  bossActive: boolean;
+  ducked: boolean;
+}>;
+
 type Tone = Readonly<{
   frequency: number;
   endFrequency: number;
@@ -67,8 +74,16 @@ function browserAudioContext(): AudioContextLike | null {
 
 export class SoundEngine {
   private context: AudioContextLike | null = null;
+  private sequencer: MusicSequencer | null = null;
   private muted = false;
   private resumePromise: Promise<void> | null = null;
+  private appliedTrackId: MusicTrackId | null = null;
+  private musicState: MusicPlaybackState = {
+    mode: 'normal',
+    active: false,
+    bossActive: false,
+    ducked: false,
+  };
 
   constructor(private readonly factory: () => AudioContextLike | null = browserAudioContext) {}
 
@@ -100,10 +115,20 @@ export class SoundEngine {
       this.resumePromise = tracked;
       await tracked;
     }
+    if (this.context !== context || context?.state !== 'running') return;
+    this.ensureSequencer(context);
+    this.applyMusicState();
   }
 
   setMuted(muted: boolean): void {
     this.muted = muted;
+    this.sequencer?.setMuted(muted);
+    if (!muted) this.applyMusicState();
+  }
+
+  syncMusic(state: MusicPlaybackState): void {
+    this.musicState = { ...state };
+    this.applyMusicState();
   }
 
   play(cue: SoundCue): void {
@@ -115,6 +140,9 @@ export class SoundEngine {
 
   async destroy(): Promise<void> {
     const context = this.context;
+    this.sequencer?.destroy();
+    this.sequencer = null;
+    this.appliedTrackId = null;
     this.context = null;
     this.resumePromise = null;
     if (context === null || context.state === 'closed') return;
@@ -123,6 +151,34 @@ export class SoundEngine {
     } catch {
       // Closing is best-effort during page teardown.
     }
+  }
+
+  private ensureSequencer(context: AudioContextLike): void {
+    if (this.sequencer !== null) return;
+    try {
+      this.sequencer = new MusicSequencer(context);
+      this.sequencer.setMuted(this.muted);
+    } catch {
+      this.sequencer = null;
+    }
+  }
+
+  private applyMusicState(): void {
+    const context = this.context;
+    const sequencer = this.sequencer;
+    if (context === null || context.state !== 'running' || sequencer === null) return;
+    const nextTrackId = this.musicState.active
+      ? musicTrackIdFor(this.musicState.mode, this.musicState.bossActive)
+      : null;
+    const isBossTransition = this.appliedTrackId !== null
+      && this.appliedTrackId.endsWith('Battle')
+      && nextTrackId !== null
+      && nextTrackId.endsWith('Boss');
+    sequencer.setMuted(this.muted);
+    sequencer.setDucked(this.musicState.ducked);
+    sequencer.setTrack(nextTrackId, isBossTransition ? 1 : 0.25);
+    this.appliedTrackId = nextTrackId;
+    sequencer.tick();
   }
 
   private emit(context: AudioContextLike, cue: SoundCue): void {
@@ -147,3 +203,6 @@ export class SoundEngine {
     }
   }
 }
+import { MusicSequencer } from './MusicSequencer';
+import { musicTrackIdFor, type MusicTrackId } from './musicTracks';
+import type { GameMode } from '../stages/stageIdentity';

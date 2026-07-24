@@ -404,6 +404,12 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
         ],
         reducedMotion: reducedMotionQuery?.matches === true,
       });
+      sound.syncMusic({
+        mode: stage.mode,
+        active: snapshot.phase === 'playing' || snapshot.phase === 'paused',
+        bossActive: snapshot.game.bossSpawnedAtSeconds !== null,
+        ducked: snapshot.phase === 'paused' || snapshot.portraitBlocked,
+      });
       for (const cue of frame.cueTypes) sound.play(cue);
       effects = nextEffects;
       lastEffectTimeSeconds = snapshot.elapsedSeconds;
@@ -535,8 +541,14 @@ export async function mountGameApp(root: HTMLElement): Promise<GameApp> {
       },
       render,
       onOutcome(outcome, elapsedSeconds) {
-        sound.play(outcome);
         const game = runtime.getSnapshot().game;
+        sound.syncMusic({
+          mode: stageRef(game.stageKey).mode,
+          active: false,
+          bossActive: game.bossSpawnedAtSeconds !== null,
+          ducked: false,
+        });
+        sound.play(outcome);
         const score = calculateGameScore(game, outcome, elapsedSeconds);
         const recorded = recordOutcome(storage, {
           stageKey: game.stageKey,

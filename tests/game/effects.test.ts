@@ -263,6 +263,92 @@ describe('runtime effects', () => {
 });
 
 describe('SoundEngine', () => {
+  it('stores music state without creating audio and starts it after gesture unlock', async () => {
+    const context = fakeAudioContext();
+    const factory = vi.fn(() => context);
+    const sound = new SoundEngine(factory);
+
+    sound.syncMusic({
+      mode: 'normal',
+      active: true,
+      bossActive: false,
+      ducked: false,
+    });
+    expect(factory).not.toHaveBeenCalled();
+
+    await sound.unlock();
+
+    expect(factory).toHaveBeenCalledOnce();
+    expect(context.createOscillator).toHaveBeenCalled();
+  });
+
+  it('crossfades once for the boss and ducks paused music to thirty percent', async () => {
+    const context = fakeAudioContext();
+    const sound = new SoundEngine(() => context);
+    await sound.unlock();
+    sound.syncMusic({
+      mode: 'normal',
+      active: true,
+      bossActive: false,
+      ducked: false,
+    });
+    const beforeBoss = vi.mocked(context.createGain).mock.calls.length;
+
+    sound.syncMusic({
+      mode: 'normal',
+      active: true,
+      bossActive: true,
+      ducked: true,
+    });
+
+    expect(context.gainParam.linearRampToValueAtTime).toHaveBeenCalledWith(0, 1);
+    expect(context.gainParam.linearRampToValueAtTime).toHaveBeenCalledWith(1, 1);
+    expect(context.gainParam.linearRampToValueAtTime).toHaveBeenCalledWith(0.048, 0.2);
+    const afterBoss = vi.mocked(context.createGain).mock.calls.length;
+    expect(afterBoss).toBeGreaterThan(beforeBoss);
+
+    sound.syncMusic({
+      mode: 'normal',
+      active: true,
+      bossActive: true,
+      ducked: true,
+    });
+    expect(context.createGain).toHaveBeenCalledTimes(afterBoss);
+  });
+
+  it('stops music outside gameplay and restores the current track after unmute', async () => {
+    const context = fakeAudioContext();
+    const sound = new SoundEngine(() => context);
+    await sound.unlock();
+    sound.syncMusic({
+      mode: 'nightmare',
+      active: true,
+      bossActive: false,
+      ducked: false,
+    });
+    const scheduledBeforeMute = vi.mocked(context.createOscillator).mock.calls.length;
+
+    sound.setMuted(true);
+    sound.syncMusic({
+      mode: 'nightmare',
+      active: false,
+      bossActive: false,
+      ducked: false,
+    });
+    sound.setMuted(false);
+    expect(context.createOscillator).toHaveBeenCalledTimes(scheduledBeforeMute);
+
+    sound.syncMusic({
+      mode: 'nightmare',
+      active: true,
+      bossActive: false,
+      ducked: false,
+    });
+    expect(vi.mocked(context.createOscillator).mock.calls.length).toBeGreaterThan(
+      scheduledBeforeMute,
+    );
+  });
+
   it('creates its audio context lazily when explicitly unlocked by a gesture', async () => {
     const context = fakeAudioContext();
     const factory = vi.fn(() => context);
@@ -366,14 +452,22 @@ describe('SoundEngine', () => {
   });
 });
 
-function fakeAudioContext(): AudioContextLike {
+function fakeAudioContext(): AudioContextLike & {
+  gainParam: {
+    setValueAtTime: ReturnType<typeof vi.fn>;
+    exponentialRampToValueAtTime: ReturnType<typeof vi.fn>;
+    linearRampToValueAtTime: ReturnType<typeof vi.fn>;
+  };
+} {
+  const gainParam = {
+    setValueAtTime: vi.fn(),
+    exponentialRampToValueAtTime: vi.fn(),
+    linearRampToValueAtTime: vi.fn(),
+  };
   const gain = {
-    gain: {
-      setValueAtTime: vi.fn(),
-      exponentialRampToValueAtTime: vi.fn(),
-      linearRampToValueAtTime: vi.fn(),
-    },
+    gain: gainParam,
     connect: vi.fn(),
+    disconnect: vi.fn(),
   };
   const oscillator = {
     type: 'sine' as OscillatorType,
@@ -394,5 +488,6 @@ function fakeAudioContext(): AudioContextLike {
     close: vi.fn(async () => undefined),
     createGain: vi.fn(() => gain),
     createOscillator: vi.fn(() => oscillator),
+    gainParam,
   };
 }
