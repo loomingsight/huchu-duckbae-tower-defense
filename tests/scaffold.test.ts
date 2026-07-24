@@ -132,4 +132,17 @@ describe('project scaffold', () => {
       /\.game-shell--tower-tray-top \.tower-tray\s*\{[^}]*top:[^;]+;[^}]*bottom: auto;/s,
     );
   });
+
+  it('provides a compact accessible installed-tower panel', () => {
+    const hud = readFileSync('src/app/hud.ts', 'utf8');
+    const css = readFileSync('src/styles.css', 'utf8');
+
+    expect(hud).toContain('data-tower-inspection');
+    expect(hud).toContain('aria-label="설치 타워 정보"');
+    expect(hud).toContain('data-tower-inspection-close');
+    expect(css).toMatch(/\.tower-inspection\[hidden\]\s*\{[^}]*display: none;/s);
+    expect(css).toMatch(
+      /\.tower-inspection__close\s*\{[^}]*min-width: 44px;[^}]*min-height: 44px;/s,
+    );
+  });
 });

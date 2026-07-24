@@ -281,6 +281,52 @@ button {
   background: transparent;
 }
 
+.tower-inspection {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  bottom: calc(max(4px, env(safe-area-inset-bottom)) + 72px);
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 5px 4px 14px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 18px;
+  background: rgba(25, 54, 43, 0.96);
+  box-shadow: var(--md-sys-elevation-2);
+}
+
+.tower-inspection[hidden] {
+  display: none;
+}
+
+.tower-inspection__copy {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.tower-inspection__copy strong {
+  font-size: 0.82rem;
+}
+
+.tower-inspection__copy span {
+  color: #ffe09a;
+  font-size: 0.76rem;
+  font-weight: 900;
+}
+
+.tower-inspection__close {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  background: transparent;
+  font-size: 1.05rem;
+}
+
 .game-stage--invalid .game-canvas {
   animation: invalid-placement 320ms ease-out;
 }
@@ -789,6 +835,11 @@ button {
   .game-shell--tower-tray-top .tower-tray__position-toggle {
     top: auto;
     bottom: -48px;
+  }
+
+  .game-shell--tower-tray-top .tower-inspection {
+    top: calc(max(4px, env(safe-area-inset-top)) + 58px);
+    bottom: auto;
   }
 
   .game-shell--tower-tray-top .trait-notice {

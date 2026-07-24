@@ -90,6 +90,41 @@ export function towerCardAvailability(
   };
 }
 
+export function towerCardDisabled(
+  input: Pick<HudViewInput, 'gold' | 'phase' | 'portraitBlocked'>,
+  cost: number,
+  selected: boolean,
+): boolean {
+  const availability = towerCardAvailability(input, cost);
+  const controlsDisabled = input.portraitBlocked || input.phase !== 'playing';
+  return controlsDisabled || (availability.unaffordable && !selected);
+}
+
+export type TowerInspectionView = Readonly<{
+  name: string;
+  statLabel: string;
+  closeLabel: string;
+}>;
+
+function nonNegativeWhole(value: unknown): number {
+  return typeof value === 'number' && Number.isFinite(value)
+    ? Math.max(0, Math.round(value))
+    : 0;
+}
+
+export function createTowerInspectionView(type: TowerType): TowerInspectionView {
+  const card = TOWER_CARDS.find((candidate) => candidate.type === type)!;
+  const definition = TOWER_CATALOG[type];
+  const statLabel = type === 'slow'
+    ? `둔화 ${nonNegativeWhole((1 - (definition.multiplier ?? 1)) * 100)}%`
+    : `공격력 ${nonNegativeWhole(definition.damage)}`;
+  return {
+    name: card.name,
+    statLabel,
+    closeLabel: `${card.name} 정보 닫기`,
+  };
+}
+
 function wholeNumber(value: number): string {
   return String(Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0);
 }
@@ -337,6 +372,10 @@ export type HudElements = Readonly<{
   placementCost: HTMLElement;
   placementConfirm: HTMLButtonElement;
   placementCancel: HTMLButtonElement;
+  towerInspection: HTMLElement;
+  towerInspectionName: HTMLElement;
+  towerInspectionStat: HTMLElement;
+  towerInspectionClose: HTMLButtonElement;
   orientationPrompt: HTMLElement;
   stateOverlay: HTMLElement;
   stateTitle: HTMLElement;
@@ -380,6 +419,15 @@ export function createHud(root: HTMLElement): HudElements {
           <button class="game-control placement-actions__confirm" data-placement-confirm type="button">배치</button>
           <button class="game-control placement-actions__cancel" data-placement-cancel type="button">취소</button>
         </div>
+        <aside class="tower-inspection" data-tower-inspection
+          aria-label="설치 타워 정보" hidden>
+          <span class="tower-inspection__copy">
+            <strong data-tower-inspection-name>타워</strong>
+            <span data-tower-inspection-stat>공격력 0</span>
+          </span>
+          <button class="game-control tower-inspection__close"
+            data-tower-inspection-close type="button" aria-label="타워 정보 닫기">×</button>
+        </aside>
       </section>
       <nav class="tower-tray" aria-label="타워 선택">
         ${TOWER_CARDS.map((card) => `
@@ -471,6 +519,10 @@ export function createHud(root: HTMLElement): HudElements {
     placementCost: requiredElement(root, '[data-placement-cost]'),
     placementConfirm: requiredElement(root, '[data-placement-confirm]'),
     placementCancel: requiredElement(root, '[data-placement-cancel]'),
+    towerInspection: requiredElement(root, '[data-tower-inspection]'),
+    towerInspectionName: requiredElement(root, '[data-tower-inspection-name]'),
+    towerInspectionStat: requiredElement(root, '[data-tower-inspection-stat]'),
+    towerInspectionClose: requiredElement(root, '[data-tower-inspection-close]'),
     orientationPrompt: requiredElement(root, '[data-orientation-prompt]'),
     stateOverlay: requiredElement(root, '[data-state-overlay]'),
     stateTitle: requiredElement(root, '[data-state-title]'),
@@ -630,6 +682,18 @@ export function showPlacementActions(
   elements.placementCancel.setAttribute('aria-label', `${card.name} 배치 취소`);
 }
 
+export function renderTowerInspection(
+  elements: HudElements,
+  type: TowerType | null,
+): void {
+  elements.towerInspection.hidden = type === null;
+  if (type === null) return;
+  const view = createTowerInspectionView(type);
+  elements.towerInspectionName.textContent = view.name;
+  elements.towerInspectionStat.textContent = view.statLabel;
+  elements.towerInspectionClose.setAttribute('aria-label', view.closeLabel);
+}
+
 export function renderHud(
   elements: HudElements,
   input: HudViewInput,
@@ -657,7 +721,7 @@ export function renderHud(
     const button = elements.towerButtons[card.type];
     const isSelected = selectedTower === card.type;
     const availability = towerCardAvailability(input, card.cost);
-    button.disabled = availability.disabled;
+    button.disabled = towerCardDisabled(input, card.cost, isSelected);
     button.setAttribute('aria-pressed', String(isSelected));
     button.classList.toggle('tower-card--selected', isSelected);
     button.classList.toggle('tower-card--unaffordable', availability.unaffordable);

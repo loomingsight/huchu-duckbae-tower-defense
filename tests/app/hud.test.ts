@@ -5,12 +5,14 @@ import {
   createModalFocusManager,
   createResultPanelMarkup,
   createStageSelectView,
+  createTowerInspectionView,
   createTraitNoticeMarkup,
   GAME_NAME,
   stageActionLabel,
   TOWER_CARDS,
-  towerTrayPositionView,
   towerCardAvailability,
+  towerCardDisabled,
+  towerTrayPositionView,
   type ModalFocusTarget,
 } from '../../src/app/hud';
 import {
@@ -106,6 +108,30 @@ describe('mobile HUD view', () => {
       phase: 'playing',
       portraitBlocked: true,
     }, 100).disabled).toBe(true);
+  });
+
+  it('keeps only the selected unaffordable tower actionable during play', () => {
+    const input = {
+      gold: 0,
+      phase: 'playing' as const,
+      portraitBlocked: false,
+    };
+
+    expect(towerCardDisabled(input, 100, true)).toBe(false);
+    expect(towerCardDisabled(input, 100, false)).toBe(true);
+    expect(towerCardDisabled({ ...input, phase: 'paused' }, 100, true)).toBe(true);
+    expect(towerCardDisabled({ ...input, portraitBlocked: true }, 100, true)).toBe(true);
+  });
+
+  it('shows only the approved primary stat for installed towers', () => {
+    expect(createTowerInspectionView('slow')).toEqual({
+      name: '슬로우 타워',
+      statLabel: '둔화 38%',
+      closeLabel: '슬로우 타워 정보 닫기',
+    });
+    expect(createTowerInspectionView('arrow').statLabel).toBe('공격력 18');
+    expect(createTowerInspectionView('deokbae').statLabel).toBe('공격력 14');
+    expect(createTowerInspectionView('huchu').statLabel).toBe('공격력 72');
   });
 
   it('formats live values and accessible control states', () => {
